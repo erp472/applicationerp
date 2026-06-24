@@ -1,0 +1,36 @@
+# Dependencias
+node_modules/
+**/node_modules/
+.claude
+
+# Build
+dist/
+**/dist/
+
+# Entorno
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes locales
+data/
+
+# Python (transcripción)
+venv/
+__pycache__/
+*.pyc
+investigations/
+audio/

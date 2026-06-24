@@ -1,0 +1,114 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum RolUsuario {
+  CAJERO
+  ADMINISTRATIVO
+  TESORERIA
+  INVENTARIOS
+  SUPERVISOR_REGIONAL
+  ADMIN_NACIONAL
+  ADMIN_SISTEMA
+}
+
+model Sucursal {
+  id        String   @id @default(uuid()) @db.Uuid
+  codigo    String   @unique @db.VarChar(20)
+  nombre    String   @db.VarChar(120)
+  ciudad    String?  @db.VarChar(80)
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  usuarios           Usuario[]
+  equiposAutorizados EquipoAutorizado[]
+
+  @@map("sucursales")
+}
+
+model Usuario {
+  id           String     @id @default(uuid()) @db.Uuid
+  nombre       String     @db.VarChar(120)
+  email        String     @unique @db.VarChar(120)
+  passwordHash String     @db.VarChar(255)
+  rol          RolUsuario
+  sucursalId   String?    @db.Uuid
+  activo       Boolean    @default(true)
+  ultimoLogin  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  sucursal           Sucursal?          @relation(fields: [sucursalId], references: [id])
+  equiposAutorizados EquipoAutorizado[]
+
+  @@index([email])
+  @@index([rol])
+  @@index([sucursalId])
+  @@map("usuarios")
+}
+
+model EquipoAutorizado {
+  id         String   @id @default(uuid()) @db.Uuid
+  macAddress String   @db.VarChar(17)
+  sucursalId String   @db.Uuid
+  usuarioId  String?  @db.Uuid
+  nombre     String?  @db.VarChar(120)
+  activo     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  sucursal Sucursal  @relation(fields: [sucursalId], references: [id])
+  usuario  Usuario?  @relation(fields: [usuarioId], references: [id])
+
+  @@unique([macAddress, sucursalId, usuarioId])
+  @@index([usuarioId])
+  @@map("equipos_autorizados")
+}
+
+enum AuditAccion {
+  CREATE
+  READ
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  PRINT
+  EXPORT
+}
+
+enum AuditResultado {
+  OK
+  ERROR
+}
+
+model Auditoria {
+  id            String         @id @default(uuid()) @db.Uuid
+  trace_id      String?        @db.VarChar(32)
+  span_id       String?        @db.VarChar(16)
+  usuario_id    String?        @db.Uuid
+  accion        AuditAccion
+  entidad       String         @db.VarChar(64)
+  entidad_id    String?        @db.VarChar(64)
+  datos_antes   Json?
+  datos_despues Json?
+  ip_origen     String?        @db.VarChar(45)
+  resultado     AuditResultado @default(OK)
+  error_msg     String?
+  created_at    DateTime       @default(now())
+
+  @@index([trace_id])
+  @@index([usuario_id, created_at])
+  @@index([entidad, entidad_id])
+  @@index([created_at])
+  @@map("auditorias")
+}
