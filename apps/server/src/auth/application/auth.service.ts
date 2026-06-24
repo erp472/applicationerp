@@ -48,7 +48,7 @@ export class AuthService {
     const payload: JwtPayload = {
       sub: usuario.id,
       email: usuario.email,
-      rol: usuario.rol,
+      rol: Buffer.from(usuario.rol).toString('base64'),
       sucursal_id: usuario.sucursalId,
       nombre: usuario.nombre,
     };
