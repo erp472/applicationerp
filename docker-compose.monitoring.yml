@@ -1,0 +1,78 @@
+services:
+
+  # ── API NestJS ────────────────────────────────────────────────────
+  api:
+    build:
+      context: ./apps/server
+      dockerfile: Dockerfile
+    container_name: pos472_api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:123456@host.docker.internal:5432/pos_472?schema=public
+      JWT_SECRET: dev_secret_change_in_prod
+      JWT_EXPIRES_IN: 8h
+      PORT: 3000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ── Recolector de métricas ─────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: pos472_prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=30d
+    depends_on:
+      - api
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ── Métricas del sistema operativo (CPU, disco, RAM, red) ─────────
+  node_exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: pos472_node_exporter
+    restart: unless-stopped
+    pid: host
+    network_mode: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+
+  # ── Dashboards ────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.6.0
+    container_name: pos472_grafana
+    restart: unless-stopped
+    ports:
+      - "3002:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: grafana472
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  prometheus_data:
+  grafana_data:

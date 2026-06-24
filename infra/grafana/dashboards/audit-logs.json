@@ -1,0 +1,117 @@
+{
+  "uid": "pos472-auditorias",
+  "title": "4-72 POS — Auditorías",
+  "tags": ["pos472", "audit"],
+  "timezone": "America/Bogota",
+  "refresh": "30s",
+  "time": { "from": "now-24h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Total eventos (período)",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "colorMode": "background", "graphMode": "area", "textMode": "auto" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } } },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) FROM audit_logs WHERE created_at BETWEEN $__timeFrom() AND $__timeTo()",
+        "format": "table"
+      }]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Errores (período)",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } } },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) FROM audit_logs WHERE resultado = 'ERROR' AND created_at BETWEEN $__timeFrom() AND $__timeTo()",
+        "format": "table"
+      }]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Logins (período)",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "colorMode": "background", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } } },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) FROM audit_logs WHERE accion = 'LOGIN' AND resultado = 'OK' AND created_at BETWEEN $__timeFrom() AND $__timeTo()",
+        "format": "table"
+      }]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Usuarios activos",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }] } } },
+      "targets": [{
+        "rawSql": "SELECT COUNT(DISTINCT usuario_id) FROM audit_logs WHERE accion = 'LOGIN' AND resultado = 'OK' AND usuario_id IS NOT NULL AND created_at BETWEEN $__timeFrom() AND $__timeTo()",
+        "format": "table"
+      }]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Eventos por hora",
+      "gridPos": { "x": 0, "y": 4, "w": 16, "h": 8 },
+      "datasource": { "uid": "pos472_pg" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10 } }
+      },
+      "targets": [{
+        "rawSql": "SELECT date_trunc('hour', created_at) AS time, accion, COUNT(*) AS count FROM audit_logs WHERE created_at BETWEEN $__timeFrom() AND $__timeTo() GROUP BY 1, 2 ORDER BY 1",
+        "format": "time_series"
+      }]
+    },
+    {
+      "id": 6,
+      "type": "piechart",
+      "title": "Distribución por acción",
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 8 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "pieType": "donut", "legendDisplayMode": "table", "placement": "right" },
+      "targets": [{
+        "rawSql": "SELECT accion, COUNT(*) AS total FROM audit_logs WHERE created_at BETWEEN $__timeFrom() AND $__timeTo() GROUP BY accion ORDER BY total DESC",
+        "format": "table"
+      }]
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Últimos eventos",
+      "gridPos": { "x": 0, "y": 12, "w": 24, "h": 10 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "sortBy": [{ "displayName": "Fecha", "desc": true }] },
+      "fieldConfig": {
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "resultado" }, "properties": [{ "id": "custom.displayMode", "value": "color-background" }, { "id": "mappings", "value": [{ "type": "value", "options": { "OK": { "color": "green", "text": "OK" }, "ERROR": { "color": "red", "text": "ERROR" } } }] }] },
+          { "matcher": { "id": "byName", "options": "Fecha" }, "properties": [{ "id": "custom.width", "value": 180 }] }
+        ]
+      },
+      "targets": [{
+        "rawSql": "SELECT created_at AS \"Fecha\", u.nombre AS \"Usuario\", al.accion AS \"Acción\", al.entidad AS \"Entidad\", al.resultado, al.ip_origen AS \"IP\", al.error_msg AS \"Error\" FROM audit_logs al LEFT JOIN users u ON u.id::text = al.usuario_id::text WHERE al.created_at BETWEEN $__timeFrom() AND $__timeTo() ORDER BY al.created_at DESC LIMIT 100",
+        "format": "table"
+      }]
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Errores recientes",
+      "gridPos": { "x": 0, "y": 22, "w": 24, "h": 7 },
+      "datasource": { "uid": "pos472_pg" },
+      "targets": [{
+        "rawSql": "SELECT created_at AS \"Fecha\", u.nombre AS \"Usuario\", al.accion AS \"Acción\", al.entidad AS \"Entidad\", al.error_msg AS \"Mensaje de error\", al.ip_origen AS \"IP\" FROM audit_logs al LEFT JOIN users u ON u.id::text = al.usuario_id::text WHERE al.resultado = 'ERROR' AND al.created_at BETWEEN $__timeFrom() AND $__timeTo() ORDER BY al.created_at DESC LIMIT 50",
+        "format": "table"
+      }]
+    }
+  ]
+}

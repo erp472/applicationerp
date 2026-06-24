@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { AuditService } from '../../audit/audit.service.js';
 import { LoginDto } from '../dto/login.dto.js';
 import { JwtPayload, LoginResult } from '../domain/auth.types.js';
 
@@ -10,6 +11,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly audit: AuditService,
   ) {}
 
   async login(dto: LoginDto, macAddress?: string): Promise<LoginResult> {
@@ -29,7 +31,10 @@ export class AuthService {
     if (!usuario || !usuario.activo) throw new UnauthorizedException('Credenciales inválidas');
 
     const passwordOk = await bcrypt.compare(dto.password, usuario.passwordHash);
-    if (!passwordOk) throw new UnauthorizedException('Credenciales inválidas');
+    if (!passwordOk) {
+      void this.audit.log({ accion: 'LOGIN', entidad: 'auth', entidad_id: dto.email, resultado: 'ERROR', error_msg: 'Credenciales inválidas' });
+      throw new UnauthorizedException('Credenciales inválidas');
+    }
 
     await this.validateMac(macAddress, usuario.id);
 
@@ -37,6 +42,8 @@ export class AuthService {
       where: { id: usuario.id },
       data: { ultimoLogin: new Date() },
     });
+
+    void this.audit.log({ accion: 'LOGIN', entidad: 'auth', usuario_id: usuario.id, entidad_id: usuario.email, resultado: 'OK' });
 
     const payload: JwtPayload = {
       sub: usuario.id,
