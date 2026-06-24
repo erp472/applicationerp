@@ -8,7 +8,7 @@ export enum RolUsuario {
   ADMIN_SISTEMA = 'ADMIN_SISTEMA',
 }
 
-export class UsuarioEntity {
+export class UserEntity {
   id: string;
   nombre: string;
   email: string;

@@ -31,7 +31,7 @@ export class AuthService {
     const passwordOk = await bcrypt.compare(dto.password, usuario.passwordHash);
     if (!passwordOk) throw new UnauthorizedException('Credenciales inválidas');
 
-    await this.validateMac(macAddress, usuario.id, usuario.sucursalId);
+    await this.validateMac(macAddress, usuario.id);
 
     await this.prisma.usuario.update({
       where: { id: usuario.id },
@@ -72,25 +72,13 @@ export class AuthService {
     });
   }
 
-  private async validateMac(mac: string | undefined, usuarioId: string, sucursalId: string | null) {
+  private async validateMac(mac: string | undefined, usuarioId: string) {
     if (!mac) throw new UnauthorizedException('Este equipo no está autorizado. Contáctese con soporte: applicationerp472@gmail.com');
 
-    const macNorm = mac.toLowerCase();
-
-    // Busca primero un equipo vinculado específicamente a este usuario
-    const equipoUsuario = await this.prisma.equipoAutorizado.findFirst({
-      where: { macAddress: macNorm, usuarioId, activo: true },
+    const equipo = await this.prisma.equipoAutorizado.findFirst({
+      where: { macAddress: mac.toLowerCase(), usuarioId, activo: true },
     });
-    if (equipoUsuario) return;
 
-    // Si el usuario tiene sucursal, acepta también equipos autorizados a nivel de sucursal
-    if (sucursalId) {
-      const equipoSucursal = await this.prisma.equipoAutorizado.findFirst({
-        where: { macAddress: macNorm, sucursalId, usuarioId: null, activo: true },
-      });
-      if (equipoSucursal) return;
-    }
-
-    throw new UnauthorizedException('Este equipo no está autorizado para este usuario. Contáctese con soporte: applicationerp472@gmail.com');
+    if (!equipo) throw new UnauthorizedException('Este equipo no está autorizado para este usuario. Contáctese con soporte: applicationerp472@gmail.com');
   }
 }

@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { ISucursalesRepository } from '../domain/sucursales.repository.js';
+import { IBranchesRepository } from '../domain/branches.repository.js';
 
 @Injectable()
-export class PrismaSucursalesRepository implements ISucursalesRepository {
+export class PrismaBranchesRepository implements IBranchesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async existsById(id: string): Promise<boolean> {

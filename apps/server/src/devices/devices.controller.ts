@@ -11,7 +11,7 @@ import { Roles } from '../common/decorators/roles.decorator.js';
 
 const AuthorizeSchema = z.object({
   mac_address: z.string().regex(/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i),
-  usuario_id:  z.string().uuid().optional(),
+  usuario_id:  z.string().uuid(),
   sucursal_id: z.string().uuid(),
   nombre:      z.string().max(120).optional(),
 });
@@ -48,18 +48,17 @@ export class DevicesController {
   async authorize(@Body() body: unknown) {
     const data = AuthorizeSchema.parse(body);
     const macNorm    = data.mac_address.toLowerCase();
-    const usuarioId  = data.usuario_id ?? null;
+    const usuarioId  = data.usuario_id;
     const sucursalId = data.sucursal_id;
 
-    // upsert requires the unique composite key — null fields need manual find+create
     const existing = await this.prisma.equipoAutorizado.findFirst({
-      where: { macAddress: macNorm, sucursalId, usuarioId },
+      where: { macAddress: macNorm, usuarioId },
     });
 
     const equipo = existing
       ? await this.prisma.equipoAutorizado.update({
           where: { id: existing.id },
-          data:  { activo: true, nombre: data.nombre },
+          data:  { activo: true, nombre: data.nombre, sucursalId },
         })
       : await this.prisma.equipoAutorizado.create({
           data: { macAddress: macNorm, sucursalId, usuarioId, nombre: data.nombre },

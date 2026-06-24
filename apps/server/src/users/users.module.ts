@@ -1,17 +1,17 @@
 import { Module } from '@nestjs/common';
 import { UsersService } from './application/users.service.js';
 import { UsersController } from './infrastructure/users.controller.js';
-import { PrismaUsuariosRepository } from './infrastructure/prisma-usuarios.repository.js';
-import { PrismaSucursalesRepository } from './infrastructure/prisma-sucursales.repository.js';
-import { USUARIOS_REPOSITORY } from './domain/usuarios.repository.js';
-import { SUCURSALES_REPOSITORY } from './domain/sucursales.repository.js';
+import { PrismaUsersRepository } from './infrastructure/prisma-users.repository.js';
+import { PrismaBranchesRepository } from './infrastructure/prisma-branches.repository.js';
+import { USERS_REPOSITORY } from './domain/users.repository.js';
+import { BRANCHES_REPOSITORY } from './domain/branches.repository.js';
 
 @Module({
   controllers: [UsersController],
   providers: [
     UsersService,
-    { provide: USUARIOS_REPOSITORY, useClass: PrismaUsuariosRepository },
-    { provide: SUCURSALES_REPOSITORY, useClass: PrismaSucursalesRepository },
+    { provide: USERS_REPOSITORY,    useClass: PrismaUsersRepository },
+    { provide: BRANCHES_REPOSITORY, useClass: PrismaBranchesRepository },
   ],
   exports: [UsersService],
 })

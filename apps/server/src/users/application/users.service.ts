@@ -1,41 +1,41 @@
 import { Injectable, Inject } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
-import { USUARIOS_REPOSITORY } from '../domain/usuarios.repository.js';
-import type { IUsuariosRepository } from '../domain/usuarios.repository.js';
-import { SUCURSALES_REPOSITORY } from '../domain/sucursales.repository.js';
-import type { ISucursalesRepository } from '../domain/sucursales.repository.js';
+import { USERS_REPOSITORY } from '../domain/users.repository.js';
+import type { IUsersRepository } from '../domain/users.repository.js';
+import { BRANCHES_REPOSITORY } from '../domain/branches.repository.js';
+import type { IBranchesRepository } from '../domain/branches.repository.js';
 import {
-  EmailYaRegistradoError,
-  SucursalNoEncontradaError,
-  UsuarioNotFoundError,
-} from '../domain/usuario.errors.js';
-import { CreateUsuarioDto } from '../dto/create-usuario.dto.js';
-import { UpdateUsuarioDto } from '../dto/update-usuario.dto.js';
-import { QueryUsuarioDto } from '../dto/query-usuario.dto.js';
+  EmailAlreadyRegisteredError,
+  BranchNotFoundError,
+  UserNotFoundError,
+} from '../domain/user.errors.js';
+import { CreateUserDto } from '../dto/create-user.dto.js';
+import { UpdateUserDto } from '../dto/update-user.dto.js';
+import { QueryUserDto } from '../dto/query-user.dto.js';
 
 @Injectable()
 export class UsersService {
   constructor(
-    @Inject(USUARIOS_REPOSITORY)
-    private readonly repo: IUsuariosRepository,
-    @Inject(SUCURSALES_REPOSITORY)
-    private readonly sucursales: ISucursalesRepository,
+    @Inject(USERS_REPOSITORY)
+    private readonly repo: IUsersRepository,
+    @Inject(BRANCHES_REPOSITORY)
+    private readonly branches: IBranchesRepository,
   ) {}
 
-  async create(dto: CreateUsuarioDto) {
-    const existe = await this.repo.findByEmail(dto.email);
-    if (existe) throw new EmailYaRegistradoError(dto.email);
+  async create(dto: CreateUserDto) {
+    const exists = await this.repo.findByEmail(dto.email);
+    if (exists) throw new EmailAlreadyRegisteredError(dto.email);
 
     if (dto.sucursal_id) {
-      const sucursalExiste = await this.sucursales.existsById(dto.sucursal_id);
-      if (!sucursalExiste) throw new SucursalNoEncontradaError(dto.sucursal_id);
+      const branchExists = await this.branches.existsById(dto.sucursal_id);
+      if (!branchExists) throw new BranchNotFoundError(dto.sucursal_id);
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
     return this.repo.create(dto, passwordHash);
   }
 
-  async findAll(query: QueryUsuarioDto) {
+  async findAll(query: QueryUserDto) {
     const { datos, total } = await this.repo.findAll(query);
     const { pagina, limite } = query;
     return {
@@ -45,28 +45,28 @@ export class UsersService {
   }
 
   async findOne(id: string) {
-    const usuario = await this.repo.findById(id);
-    if (!usuario) throw new UsuarioNotFoundError(id);
-    return usuario;
+    const user = await this.repo.findById(id);
+    if (!user) throw new UserNotFoundError(id);
+    return user;
   }
 
-  async update(id: string, dto: UpdateUsuarioDto) {
+  async update(id: string, dto: UpdateUserDto) {
     await this.findOne(id);
 
     if (dto.email) {
-      const conflicto = await this.repo.findByEmailExcluding(dto.email, id);
-      if (conflicto) throw new EmailYaRegistradoError(dto.email);
+      const conflict = await this.repo.findByEmailExcluding(dto.email, id);
+      if (conflict) throw new EmailAlreadyRegisteredError(dto.email);
     }
 
     if (dto.sucursal_id) {
-      const sucursalExiste = await this.sucursales.existsById(dto.sucursal_id);
-      if (!sucursalExiste) throw new SucursalNoEncontradaError(dto.sucursal_id);
+      const branchExists = await this.branches.existsById(dto.sucursal_id);
+      if (!branchExists) throw new BranchNotFoundError(dto.sucursal_id);
     }
 
-    const data: Parameters<IUsuariosRepository['update']>[1] = {
-      ...(dto.nombre && { nombre: dto.nombre }),
-      ...(dto.email && { email: dto.email }),
-      ...(dto.rol && { rol: dto.rol }),
+    const data: Parameters<IUsersRepository['update']>[1] = {
+      ...(dto.nombre   && { nombre: dto.nombre }),
+      ...(dto.email    && { email: dto.email }),
+      ...(dto.rol      && { rol: dto.rol }),
       ...(dto.activo !== undefined && { activo: dto.activo }),
       ...(dto.sucursal_id !== undefined && { sucursalId: dto.sucursal_id }),
       ...(dto.password && { passwordHash: await bcrypt.hash(dto.password, 12) }),

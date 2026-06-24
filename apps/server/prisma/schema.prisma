@@ -34,7 +34,7 @@ model Sucursal {
   usuarios           Usuario[]
   equiposAutorizados EquipoAutorizado[]
 
-  @@map("sucursales")
+  @@map("branches")
 }
 
 model Usuario {
@@ -55,24 +55,24 @@ model Usuario {
   @@index([email])
   @@index([rol])
   @@index([sucursalId])
-  @@map("usuarios")
+  @@map("users")
 }
 
 model EquipoAutorizado {
   id         String   @id @default(uuid()) @db.Uuid
   macAddress String   @db.VarChar(17)
   sucursalId String   @db.Uuid
-  usuarioId  String?  @db.Uuid
+  usuarioId  String   @db.Uuid
   nombre     String?  @db.VarChar(120)
   activo     Boolean  @default(true)
   createdAt  DateTime @default(now())
 
-  sucursal Sucursal  @relation(fields: [sucursalId], references: [id])
-  usuario  Usuario?  @relation(fields: [usuarioId], references: [id])
+  sucursal Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  usuario  Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
 
-  @@unique([macAddress, sucursalId, usuarioId])
+  @@unique([macAddress, usuarioId])
   @@index([usuarioId])
-  @@map("equipos_autorizados")
+  @@map("authorized_devices")
 }
 
 enum AuditAccion {
@@ -110,5 +110,5 @@ model Auditoria {
   @@index([usuario_id, created_at])
   @@index([entidad, entidad_id])
   @@index([created_at])
-  @@map("auditorias")
+  @@map("audit_logs")
 }
