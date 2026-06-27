@@ -43,6 +43,7 @@ model Usuario {
   email        String     @unique @db.VarChar(120)
   passwordHash String     @db.VarChar(255)
   rol          RolUsuario
+  rolId        String?    @db.Uuid
   sucursalId   String?    @db.Uuid
   activo       Boolean    @default(true)
   ultimoLogin  DateTime?
@@ -51,11 +52,50 @@ model Usuario {
 
   sucursal           Sucursal?          @relation(fields: [sucursalId], references: [id])
   equiposAutorizados EquipoAutorizado[]
+  rolObj             Rol?               @relation(fields: [rolId], references: [id])
 
   @@index([email])
   @@index([rol])
   @@index([sucursalId])
+  @@index([rolId])
   @@map("users")
+}
+
+model Rol {
+  id        String   @id @default(uuid()) @db.Uuid
+  nombre    String   @unique @db.VarChar(80)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  permisos RolPermiso[]
+  usuarios Usuario[]
+
+  @@map("roles")
+}
+
+model Permiso {
+  id        String   @id @default(uuid()) @db.Uuid
+  nombre    String   @unique @db.VarChar(80)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  roles RolPermiso[]
+
+  @@map("permisos")
+}
+
+model RolPermiso {
+  id        String   @id @default(uuid()) @db.Uuid
+  rolId     String   @db.Uuid
+  permisoId String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  rol     Rol     @relation(fields: [rolId], references: [id], onDelete: Cascade)
+  permiso Permiso @relation(fields: [permisoId], references: [id], onDelete: Cascade)
+
+  @@unique([rolId, permisoId])
+  @@index([rolId])
+  @@map("roles_permisos")
 }
 
 model EquipoAutorizado {
