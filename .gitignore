@@ -34,3 +34,5 @@ __pycache__/
 *.pyc
 investigations/
 audio/
+/docs/BACKEND_PLAN.md
+/docs/nist.sp.800-218.pdf
