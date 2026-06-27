@@ -1,18 +1,24 @@
 import { SetMetadata } from '@nestjs/common';
 
 export interface CanOpciones {
-  /** Verifica que el rol del JWT coincida exactamente */
+  /** Verifica que el rol del JWT coincida exactamente (sin BD) */
   rol?: string;
-  /** Verifica que el usuario tenga el permiso en la tabla roles_permisos */
+  /** Verifica que el usuario tenga el permiso en roles_permisos (BD) */
   permiso?: string;
+  /**
+   * Puerta global AND: si el feature flag no está PRODUCCION o AB_TEST,
+   * bloquea a todos independientemente de rol o permiso.
+   */
+  feature?: string;
 }
 
 export const CAN_KEY = 'can_opciones';
 
 /**
- * Protege una ruta con lógica OR:
- *   @Can({ rol: 'ADMIN_SISTEMA' })           → solo ese rol
- *   @Can({ permiso: 'modo_pos' })             → quien tenga ese permiso
- *   @Can({ rol: 'ADMIN_SISTEMA', permiso: 'x' }) → tiene el rol O el permiso
+ * Ejemplos de uso:
+ *   @Can({ rol: 'ADMIN_SISTEMA' })
+ *   @Can({ permiso: 'modo_pos' })
+ *   @Can({ feature: 'modulo_pos', permiso: 'modo_pos' })
+ *   @Can({ feature: 'facturacion', rol: 'ADMIN_SISTEMA', permiso: 'facturacion' })
  */
 export const Can = (opciones: CanOpciones) => SetMetadata(CAN_KEY, opciones);
