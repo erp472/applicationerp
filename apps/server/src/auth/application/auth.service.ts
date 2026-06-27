@@ -22,6 +22,7 @@ export class AuthService {
         email: true,
         passwordHash: true,
         rol: true,
+        rolId: true,
         sucursalId: true,
         nombre: true,
         activo: true,
@@ -45,12 +46,15 @@ export class AuthService {
 
     void this.audit.log({ accion: 'LOGIN', entidad: 'auth', usuario_id: usuario.id, entidad_id: usuario.email, resultado: 'OK' });
 
+    const permisos = await this.obtenerPermisos(usuario.rolId);
+
     const payload: JwtPayload = {
       sub: usuario.id,
       email: usuario.email,
       rol: Buffer.from(usuario.rol).toString('base64'),
       sucursal_id: usuario.sucursalId,
       nombre: usuario.nombre,
+      permisos,
     };
 
     return {
@@ -60,6 +64,7 @@ export class AuthService {
         nombre: usuario.nombre,
         rol: usuario.rol,
         sucursal_id: usuario.sucursalId,
+        permisos,
       },
     };
   }
@@ -77,6 +82,15 @@ export class AuthService {
         sucursal: { select: { nombre: true, codigo: true } },
       },
     });
+  }
+
+  private async obtenerPermisos(rolId: string | null): Promise<string[]> {
+    if (!rolId) return [];
+    const rps = await this.prisma.rolPermiso.findMany({
+      where: { rolId },
+      select: { permiso: { select: { nombre: true } } },
+    });
+    return rps.map((rp) => rp.permiso.nombre);
   }
 
   private async validateMac(mac: string | undefined, usuarioId: string) {
