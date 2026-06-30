@@ -34,7 +34,7 @@ model Sucursal {
   usuarios           Usuario[]
   equiposAutorizados EquipoAutorizado[]
 
-  @@map("branches")
+  @@map("sucursales")
 }
 
 model Usuario {
@@ -55,7 +55,7 @@ model Usuario {
   @@index([email])
   @@index([rol])
   @@index([sucursalId])
-  @@map("users")
+  @@map("usuarios")
 }
 
 model EquipoAutorizado {
@@ -72,7 +72,65 @@ model EquipoAutorizado {
 
   @@unique([macAddress, usuarioId])
   @@index([usuarioId])
-  @@map("authorized_devices")
+  @@map("equipos_autorizados")
+}
+
+model Rol {
+  id          String   @id @default(uuid()) @db.Uuid
+  nombre      String   @unique @db.VarChar(80)
+  descripcion String?  @db.VarChar(200)
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permisos RolPermiso[]
+
+  @@map("roles")
+}
+
+model Modulo {
+  id          String   @id @default(uuid()) @db.Uuid
+  nombre      String   @unique @db.VarChar(80)
+  descripcion String?  @db.VarChar(200)
+  orden       Int      @default(0)
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permisos Permiso[]
+
+  @@map("modulos")
+}
+
+model Permiso {
+  id          String   @id @default(uuid()) @db.Uuid
+  nombre      String   @db.VarChar(80)
+  descripcion String?  @db.VarChar(200)
+  moduloId    String   @db.Uuid
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  modulo Modulo       @relation(fields: [moduloId], references: [id], onDelete: Cascade)
+  roles  RolPermiso[]
+
+  @@unique([moduloId, nombre])
+  @@index([moduloId])
+  @@map("permisos")
+}
+
+model RolPermiso {
+  id        String   @id @default(uuid()) @db.Uuid
+  rolId     String   @db.Uuid
+  permisoId String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  rol     Rol     @relation(fields: [rolId], references: [id], onDelete: Cascade)
+  permiso Permiso @relation(fields: [permisoId], references: [id], onDelete: Cascade)
+
+  @@unique([rolId, permisoId])
+  @@index([rolId])
+  @@map("roles_permisos")
 }
 
 enum AuditAccion {
@@ -110,5 +168,5 @@ model Auditoria {
   @@index([usuario_id, created_at])
   @@index([entidad, entidad_id])
   @@index([created_at])
-  @@map("audit_logs")
+  @@map("auditorias")
 }

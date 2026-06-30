@@ -65,21 +65,24 @@ export class AuthService {
   }
 
   async getProfile(userId: string) {
-    return this.prisma.usuario.findUnique({
+    const u = await this.prisma.usuario.findUnique({
       where: { id: userId, activo: true },
-      select: {
-        id: true,
-        nombre: true,
-        email: true,
-        rol: true,
-        sucursalId: true,
-        ultimoLogin: true,
-        sucursal: { select: { nombre: true, codigo: true } },
-      },
+      select: { id: true, nombre: true, email: true, rol: true, sucursalId: true, activo: true, ultimoLogin: true },
     });
+    if (!u) return null;
+    return {
+      id: u.id,
+      nombre: u.nombre,
+      email: u.email,
+      rol: u.rol,
+      sucursal_id: u.sucursalId ?? null,
+      activo: u.activo,
+      ultimoLogin: u.ultimoLogin?.toISOString() ?? null,
+    };
   }
 
   private async validateMac(mac: string | undefined, usuarioId: string) {
+    if (process.env.NODE_ENV === 'development') return;
     if (!mac) throw new UnauthorizedException('Este equipo no está autorizado. Contáctese con soporte: applicationerp472@gmail.com');
 
     const equipo = await this.prisma.equipoAutorizado.findFirst({

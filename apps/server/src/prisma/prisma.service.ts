@@ -15,6 +15,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get sucursal() { return this.client.sucursal; }
   get equipoAutorizado() { return this.client.equipoAutorizado; }
   get auditoria() { return this.client.auditoria; }
+  get rol() { return this.client.rol; }
+  get modulo() { return this.client.modulo; }
+  get permiso() { return this.client.permiso; }
+  get rolPermiso() { return this.client.rolPermiso; }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   get $transaction(): any { return this.client.$transaction.bind(this.client); }
 
