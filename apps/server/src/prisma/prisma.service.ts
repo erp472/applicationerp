@@ -18,7 +18,8 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get rol() { return this.client.rol; }
   get modulo() { return this.client.modulo; }
   get permiso() { return this.client.permiso; }
-  get rolPermiso() { return this.client.rolPermiso; }
+  get rolPermiso()  { return this.client.rolPermiso; }
+  get featureFlag() { return this.client.featureFlag; }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   get $transaction(): any { return this.client.$transaction.bind(this.client); }
 

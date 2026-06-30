@@ -36,7 +36,7 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    await this.validateMac(macAddress, usuario.id);
+    await this.validateMac(macAddress, usuario.id, usuario.rol);
 
     await this.prisma.usuario.update({
       where: { id: usuario.id },
@@ -81,8 +81,11 @@ export class AuthService {
     };
   }
 
-  private async validateMac(mac: string | undefined, usuarioId: string) {
+  private async validateMac(mac: string | undefined, usuarioId: string, rol: string) {
     if (process.env.NODE_ENV === 'development') return;
+    // Roles administrativos no están ligados a un terminal físico
+    if (rol === 'ADMIN_SISTEMA' || rol === 'ADMIN_NACIONAL') return;
+
     if (!mac) throw new UnauthorizedException('Este equipo no está autorizado. Contáctese con soporte: applicationerp472@gmail.com');
 
     const equipo = await this.prisma.equipoAutorizado.findFirst({

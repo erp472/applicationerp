@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { UsersModule } from './users/users.module.js';
 import { DevicesModule } from './devices/devices.module.js';
 import { PermisosModule } from './permisos/permisos.module.js';
+import { FeatureFlagsModule } from './feature-flags/feature-flags.module.js';
 
 @Module({
   imports: [PrismaModule, AuditModule, MetricsModule, AuthModule, UsersModule, DevicesModule, PermisosModule],

@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client"
   output   = "../generated/prisma"
@@ -22,14 +19,33 @@ enum RolUsuario {
   ADMIN_SISTEMA
 }
 
+enum AuditAccion {
+  CREATE
+  READ
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  PRINT
+  EXPORT
+}
+
+enum AuditResultado {
+  OK
+  ERROR
+}
+
+// ── Jerarquía comercial ───────────────────────────────────────────────────────
+
 model Sucursal {
-  id        String   @id @default(uuid()) @db.Uuid
-  codigo    String   @unique @db.VarChar(20)
-  nombre    String   @db.VarChar(120)
-  ciudad    String?  @db.VarChar(80)
-  activo    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id        String    @id @default(uuid()) @db.Uuid
+  codigo    String    @unique @db.VarChar(20)
+  nombre    String    @db.VarChar(120)
+  ciudad    String?   @db.VarChar(80)
+  activo    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   usuarios           Usuario[]
   equiposAutorizados EquipoAutorizado[]
@@ -37,43 +53,7 @@ model Sucursal {
   @@map("sucursales")
 }
 
-model Usuario {
-  id           String     @id @default(uuid()) @db.Uuid
-  nombre       String     @db.VarChar(120)
-  email        String     @unique @db.VarChar(120)
-  passwordHash String     @db.VarChar(255)
-  rol          RolUsuario
-  sucursalId   String?    @db.Uuid
-  activo       Boolean    @default(true)
-  ultimoLogin  DateTime?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-
-  sucursal           Sucursal?          @relation(fields: [sucursalId], references: [id])
-  equiposAutorizados EquipoAutorizado[]
-
-  @@index([email])
-  @@index([rol])
-  @@index([sucursalId])
-  @@map("usuarios")
-}
-
-model EquipoAutorizado {
-  id         String   @id @default(uuid()) @db.Uuid
-  macAddress String   @db.VarChar(17)
-  sucursalId String   @db.Uuid
-  usuarioId  String   @db.Uuid
-  nombre     String?  @db.VarChar(120)
-  activo     Boolean  @default(true)
-  createdAt  DateTime @default(now())
-
-  sucursal Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
-  usuario  Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-
-  @@unique([macAddress, usuarioId])
-  @@index([usuarioId])
-  @@map("equipos_autorizados")
-}
+// ── RBAC: Roles, Módulos, Permisos ────────────────────────────────────────────
 
 model Rol {
   id          String   @id @default(uuid()) @db.Uuid
@@ -106,12 +86,12 @@ model Permiso {
   id          String   @id @default(uuid()) @db.Uuid
   nombre      String   @db.VarChar(80)
   descripcion String?  @db.VarChar(200)
-  moduloId    String   @db.Uuid
   activo      Boolean  @default(true)
+  moduloId    String   @db.Uuid
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  modulo Modulo       @relation(fields: [moduloId], references: [id], onDelete: Cascade)
+  modulo Modulo     @relation(fields: [moduloId], references: [id], onDelete: Cascade)
   roles  RolPermiso[]
 
   @@unique([moduloId, nombre])
@@ -133,70 +113,7 @@ model RolPermiso {
   @@map("roles_permisos")
 }
 
-enum AuditAccion {
-  CREATE
-  READ
-  UPDATE
-  DELETE
-  LOGIN
-  LOGOUT
-  PRINT
-  EXPORT
-}
-
-enum AuditResultado {
-  OK
-  ERROR
-}
-
-enum FeatureFlagEntorno {
-  all
-  dev
-  staging
-  prod
-}
-
-// ── Jerarquía comercial ───────────────────────────────────────────────────────
-
-model Sucursal {
-  id        String    @id @default(uuid()) @db.Uuid
-  codigo    String    @unique @db.VarChar(20)
-  nombre    String    @db.VarChar(120)
-  ciudad    String?   @db.VarChar(80)
-  activo    Boolean   @default(true)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  usuarios           Usuario[]
-  equiposAutorizados EquipoAutorizado[]
-
-  @@map("branches")
-}
-
-// ── Seguridad ─────────────────────────────────────────────────────────────────
-
-model Permiso {
-  id          Int       @id @default(autoincrement())
-  codigo      String    @unique @db.VarChar(100)
-  descripcion String?   @db.VarChar(200)
-  modulo      String    @db.VarChar(50)
-  deletedAt   DateTime?
-
-  roles RolPermiso[]
-
-  @@map("permissions")
-}
-
-model RolPermiso {
-  rol       RolUsuario
-  permisoId Int
-
-  permiso Permiso @relation(fields: [permisoId], references: [id], onDelete: Cascade)
-
-  @@id([rol, permisoId])
-  @@map("role_permissions")
-}
+// ── Usuarios y dispositivos ───────────────────────────────────────────────────
 
 model Usuario {
   id           String     @id @default(uuid()) @db.Uuid
@@ -217,35 +134,42 @@ model Usuario {
   @@index([email])
   @@index([rol])
   @@index([sucursalId])
-  @@map("users")
+  @@map("usuarios")
 }
 
 model EquipoAutorizado {
   id         String    @id @default(uuid()) @db.Uuid
   macAddress String    @db.VarChar(17)
   sucursalId String    @db.Uuid
-  usuarioId  String    @db.Uuid
+  usuarioId  String?   @db.Uuid
   nombre     String?   @db.VarChar(120)
   activo     Boolean   @default(true)
   createdAt  DateTime  @default(now())
   deletedAt  DateTime?
 
-  sucursal Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
-  usuario  Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  sucursal Sucursal  @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  usuario  Usuario?  @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
 
-  @@unique([macAddress, usuarioId])
+  @@unique([macAddress, sucursalId, usuarioId])
   @@index([usuarioId])
-  @@map("authorized_devices")
+  @@map("equipos_autorizados")
 }
 
-// ── Feature flags ─────────────────────────────────────────────────────────────
+// ── Feature Flags ─────────────────────────────────────────────────────────────
+
+enum EntornoFeatureFlag {
+  all
+  dev
+  staging
+  prod
+}
 
 model FeatureFlag {
-  id          Int                @id @default(autoincrement())
+  id          String             @id @default(uuid()) @db.Uuid
   codigo      String             @unique @db.VarChar(100)
   descripcion String?            @db.VarChar(200)
   activo      Boolean            @default(false)
-  entorno     FeatureFlagEntorno @default(all)
+  entorno     EntornoFeatureFlag @default(all)
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
 

@@ -1,0 +1,17 @@
+services:
+  api:
+    build:
+      context: ./apps/server
+      dockerfile: Dockerfile
+    container_name: pos472_api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:123456@host.docker.internal:5432/pos_472?schema=public
+      JWT_SECRET: dev_secret_change_in_prod
+      JWT_EXPIRES_IN: 8h
+      PORT: 3000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
