@@ -1,8 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client"
   output   = "../generated/prisma"
@@ -11,6 +9,8 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+// ── Enums ─────────────────────────────────────────────────────────────────────
 
 enum RolUsuario {
   CAJERO
@@ -148,6 +148,111 @@ enum AuditResultado {
   OK
   ERROR
 }
+
+enum FeatureFlagEntorno {
+  all
+  dev
+  staging
+  prod
+}
+
+// ── Jerarquía comercial ───────────────────────────────────────────────────────
+
+model Sucursal {
+  id        String    @id @default(uuid()) @db.Uuid
+  codigo    String    @unique @db.VarChar(20)
+  nombre    String    @db.VarChar(120)
+  ciudad    String?   @db.VarChar(80)
+  activo    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  usuarios           Usuario[]
+  equiposAutorizados EquipoAutorizado[]
+
+  @@map("branches")
+}
+
+// ── Seguridad ─────────────────────────────────────────────────────────────────
+
+model Permiso {
+  id          Int       @id @default(autoincrement())
+  codigo      String    @unique @db.VarChar(100)
+  descripcion String?   @db.VarChar(200)
+  modulo      String    @db.VarChar(50)
+  deletedAt   DateTime?
+
+  roles RolPermiso[]
+
+  @@map("permissions")
+}
+
+model RolPermiso {
+  rol       RolUsuario
+  permisoId Int
+
+  permiso Permiso @relation(fields: [permisoId], references: [id], onDelete: Cascade)
+
+  @@id([rol, permisoId])
+  @@map("role_permissions")
+}
+
+model Usuario {
+  id           String     @id @default(uuid()) @db.Uuid
+  nombre       String     @db.VarChar(120)
+  email        String     @unique @db.VarChar(120)
+  passwordHash String     @db.VarChar(255)
+  rol          RolUsuario
+  sucursalId   String?    @db.Uuid
+  activo       Boolean    @default(true)
+  ultimoLogin  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?
+
+  sucursal           Sucursal?          @relation(fields: [sucursalId], references: [id])
+  equiposAutorizados EquipoAutorizado[]
+
+  @@index([email])
+  @@index([rol])
+  @@index([sucursalId])
+  @@map("users")
+}
+
+model EquipoAutorizado {
+  id         String    @id @default(uuid()) @db.Uuid
+  macAddress String    @db.VarChar(17)
+  sucursalId String    @db.Uuid
+  usuarioId  String    @db.Uuid
+  nombre     String?   @db.VarChar(120)
+  activo     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  deletedAt  DateTime?
+
+  sucursal Sucursal @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
+  usuario  Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([macAddress, usuarioId])
+  @@index([usuarioId])
+  @@map("authorized_devices")
+}
+
+// ── Feature flags ─────────────────────────────────────────────────────────────
+
+model FeatureFlag {
+  id          Int                @id @default(autoincrement())
+  codigo      String             @unique @db.VarChar(100)
+  descripcion String?            @db.VarChar(200)
+  activo      Boolean            @default(false)
+  entorno     FeatureFlagEntorno @default(all)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@map("feature_flags")
+}
+
+// ── Auditoría ─────────────────────────────────────────────────────────────────
 
 model Auditoria {
   id            String         @id @default(uuid()) @db.Uuid
