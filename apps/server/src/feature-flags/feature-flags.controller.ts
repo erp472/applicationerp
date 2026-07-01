@@ -1,7 +1,7 @@
 import {
   Controller, Get, Post, Patch, Delete,
   Body, Param, Query, UseGuards,
-  ParseUUIDPipe, BadRequestException,
+  ParseIntPipe, BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { FeatureFlagsService } from './feature-flags.service.js';
@@ -44,7 +44,7 @@ export class FeatureFlagsController {
   @Roles('ADMIN_SISTEMA')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Obtener un feature flag por ID' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
+  findOne(@Param('id', ParseIntPipe) id: number) {
     return this.service.findOne(id);
   }
 
@@ -64,7 +64,7 @@ export class FeatureFlagsController {
   @Roles('ADMIN_SISTEMA')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Actualizar feature flag' })
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
+  update(@Param('id', ParseIntPipe) id: number, @Body() body: unknown) {
     const parsed = UpdateFeatureFlagSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
     return this.service.update(id, parsed.data);
@@ -75,7 +75,7 @@ export class FeatureFlagsController {
   @Roles('ADMIN_SISTEMA')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Eliminar feature flag' })
-  remove(@Param('id', ParseUUIDPipe) id: string) {
+  remove(@Param('id', ParseIntPipe) id: number) {
     return this.service.remove(id);
   }
 }

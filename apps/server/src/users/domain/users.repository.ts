@@ -7,19 +7,19 @@ export const USERS_REPOSITORY = Symbol('USERS_REPOSITORY');
 export interface IUsersRepository {
   create(dto: CreateUserDto, passwordHash: string): Promise<UserEntity>;
   findAll(query: QueryUserDto): Promise<{ datos: UserEntity[]; total: number }>;
-  findById(id: string): Promise<UserEntity | null>;
+  findById(id: number): Promise<UserEntity | null>;
   findByEmail(email: string): Promise<UserEntity | null>;
-  findByEmailExcluding(email: string, excludeId: string): Promise<UserEntity | null>;
+  findByEmailExcluding(email: string, excludeId: number): Promise<UserEntity | null>;
   update(
-    id: string,
+    id: number,
     data: {
       nombre?: string;
       email?: string;
       rol?: string;
-      sucursalId?: string | null;
+      sucursalId?: number | null;
       activo?: boolean;
       passwordHash?: string;
     },
   ): Promise<UserEntity>;
-  softDelete(id: string): Promise<{ id: string; email: string; activo: boolean }>;
+  softDelete(id: number): Promise<{ id: number; email: string; activo: boolean }>;
 }

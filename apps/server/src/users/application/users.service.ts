@@ -26,9 +26,9 @@ export class UsersService {
     const exists = await this.repo.findByEmail(dto.email);
     if (exists) throw new EmailAlreadyRegisteredError(dto.email);
 
-    if (dto.sucursal_id) {
+    if (dto.sucursal_id != null) {
       const branchExists = await this.branches.existsById(dto.sucursal_id);
-      if (!branchExists) throw new BranchNotFoundError(dto.sucursal_id);
+      if (!branchExists) throw new BranchNotFoundError(String(dto.sucursal_id));
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
@@ -44,13 +44,13 @@ export class UsersService {
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: number) {
     const user = await this.repo.findById(id);
-    if (!user) throw new UserNotFoundError(id);
+    if (!user) throw new UserNotFoundError(String(id));
     return user;
   }
 
-  async update(id: string, dto: UpdateUserDto) {
+  async update(id: number, dto: UpdateUserDto) {
     await this.findOne(id);
 
     if (dto.email) {
@@ -58,9 +58,9 @@ export class UsersService {
       if (conflict) throw new EmailAlreadyRegisteredError(dto.email);
     }
 
-    if (dto.sucursal_id) {
+    if (dto.sucursal_id != null) {
       const branchExists = await this.branches.existsById(dto.sucursal_id);
-      if (!branchExists) throw new BranchNotFoundError(dto.sucursal_id);
+      if (!branchExists) throw new BranchNotFoundError(String(dto.sucursal_id));
     }
 
     const data: Parameters<IUsersRepository['update']>[1] = {
@@ -75,7 +75,7 @@ export class UsersService {
     return this.repo.update(id, data);
   }
 
-  async remove(id: string) {
+  async remove(id: number) {
     await this.findOne(id);
     return this.repo.softDelete(id);
   }

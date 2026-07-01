@@ -1,13 +1,12 @@
 import {
   Controller, Get, Post, Patch, Delete,
-  Body, Param, UseGuards,
-  ParseUUIDPipe, BadRequestException,
+  Body, Param, Query, UseGuards,
+  ParseIntPipe, BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { PermisosService } from './permisos.service.js';
 import {
   CreateRolSchema, UpdateRolSchema,
-  CreateModuloSchema, UpdateModuloSchema,
   CreatePermisoSchema, UpdatePermisoSchema,
   AssignPermisoSchema,
 } from './dto/permisos.dto.js';
@@ -24,7 +23,7 @@ const ADMINS = ['ADMIN_NACIONAL', 'ADMIN_SISTEMA'];
 export class PermisosController {
   constructor(private readonly service: PermisosService) {}
 
-  // ── MATRIX ──────────────────────────────────────────────────────────────────
+  // ── MATRIX ─────────────────────────────────────────────────────────────────
 
   @Get('matrix')
   @Roles(...ADMINS)
@@ -33,11 +32,11 @@ export class PermisosController {
     return this.service.getMatrix();
   }
 
-  // ── ROLES ────────────────────────────────────────────────────────────────────
+  // ── ROLES ───────────────────────────────────────────────────────────────────
 
   @Get('roles')
   @Roles(...ADMINS)
-  @ApiOperation({ summary: 'List all roles' })
+  @ApiOperation({ summary: 'List all active roles' })
   findAllRoles() {
     return this.service.findAllRoles();
   }
@@ -54,14 +53,14 @@ export class PermisosController {
   @Get('roles/:id')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'Get role by ID' })
-  findOneRol(@Param('id', ParseUUIDPipe) id: string) {
+  findOneRol(@Param('id', ParseIntPipe) id: number) {
     return this.service.findOneRol(id);
   }
 
   @Patch('roles/:id')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'Update role' })
-  updateRol(@Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
+  updateRol(@Param('id', ParseIntPipe) id: number, @Body() body: unknown) {
     const parsed = UpdateRolSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
     return this.service.updateRol(id, parsed.data);
@@ -70,94 +69,51 @@ export class PermisosController {
   @Delete('roles/:id')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'Delete role' })
-  deleteRol(@Param('id', ParseUUIDPipe) id: string) {
+  deleteRol(@Param('id', ParseIntPipe) id: number) {
     return this.service.deleteRol(id);
   }
 
-  // ── ROL ↔ PERMISO ────────────────────────────────────────────────────────────
+  // ── ROL ↔ PERMISO ───────────────────────────────────────────────────────────
 
   @Get('roles/:rolId/permisos')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'Get permissions assigned to a role' })
-  getPermisosDeRol(@Param('rolId', ParseUUIDPipe) rolId: string) {
+  getPermisosDeRol(@Param('rolId', ParseIntPipe) rolId: number) {
     return this.service.getPermisosDeRol(rolId);
   }
 
   @Post('roles/:rolId/permisos')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'Assign permission to role' })
-  asignarPermiso(
-    @Param('rolId', ParseUUIDPipe) rolId: string,
-    @Body() body: unknown,
-  ) {
+  asignarPermiso(@Param('rolId', ParseIntPipe) rolId: number, @Body() body: unknown) {
     const parsed = AssignPermisoSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
-    return this.service.asignarPermiso(rolId, parsed.data.permisoId);
+    return this.service.asignarPermiso(rolId, parsed.data.permisos_idpermisos);
   }
 
   @Delete('roles/:rolId/permisos/:permisoId')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'Revoke permission from role' })
   revocarPermiso(
-    @Param('rolId', ParseUUIDPipe) rolId: string,
-    @Param('permisoId', ParseUUIDPipe) permisoId: string,
+    @Param('rolId', ParseIntPipe) rolId: number,
+    @Param('permisoId', ParseIntPipe) permisoId: number,
   ) {
     return this.service.revocarPermiso(rolId, permisoId);
   }
 
-  // ── MÓDULOS ─────────────────────────────────────────────────────────────────
-
-  @Get('modulos')
-  @Roles(...ADMINS)
-  @ApiOperation({ summary: 'List all modules' })
-  findAllModulos() {
-    return this.service.findAllModulos();
-  }
-
-  @Post('modulos')
-  @Roles(...ADMINS)
-  @ApiOperation({ summary: 'Create module' })
-  createModulo(@Body() body: unknown) {
-    const parsed = CreateModuloSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
-    return this.service.createModulo(parsed.data);
-  }
-
-  @Get('modulos/:id')
-  @Roles(...ADMINS)
-  @ApiOperation({ summary: 'Get module by ID' })
-  findOneModulo(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.findOneModulo(id);
-  }
-
-  @Patch('modulos/:id')
-  @Roles(...ADMINS)
-  @ApiOperation({ summary: 'Update module' })
-  updateModulo(@Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
-    const parsed = UpdateModuloSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
-    return this.service.updateModulo(id, parsed.data);
-  }
-
-  @Delete('modulos/:id')
-  @Roles(...ADMINS)
-  @ApiOperation({ summary: 'Delete module' })
-  deleteModulo(@Param('id', ParseUUIDPipe) id: string) {
-    return this.service.deleteModulo(id);
-  }
-
-  // ── PERMISOS (acciones) ──────────────────────────────────────────────────────
+  // ── PERMISOS ────────────────────────────────────────────────────────────────
 
   @Get('permisos')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'List all permissions' })
-  findAllPermisos() {
-    return this.service.findAllPermisos();
+  @ApiQuery({ name: 'modulo', required: false, description: 'Filter by module code' })
+  findAllPermisos(@Query('modulo') modulo?: string) {
+    return this.service.findAllPermisos(modulo);
   }
 
   @Post('permisos')
   @Roles(...ADMINS)
-  @ApiOperation({ summary: 'Create permission within a module' })
+  @ApiOperation({ summary: 'Create permission' })
   createPermiso(@Body() body: unknown) {
     const parsed = CreatePermisoSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
@@ -167,7 +123,7 @@ export class PermisosController {
   @Patch('permisos/:id')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'Update permission' })
-  updatePermiso(@Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
+  updatePermiso(@Param('id', ParseIntPipe) id: number, @Body() body: unknown) {
     const parsed = UpdatePermisoSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
     return this.service.updatePermiso(id, parsed.data);
@@ -176,7 +132,7 @@ export class PermisosController {
   @Delete('permisos/:id')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'Delete permission' })
-  deletePermiso(@Param('id', ParseUUIDPipe) id: string) {
+  deletePermiso(@Param('id', ParseIntPipe) id: number) {
     return this.service.deletePermiso(id);
   }
 }

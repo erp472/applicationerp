@@ -16,81 +16,95 @@ export class AuthService {
 
   async login(dto: LoginDto, macAddress?: string): Promise<LoginResult> {
     const usuario = await this.prisma.usuario.findUnique({
-      where: { email: dto.email },
+      where: { emailusuarios: dto.email },
       select: {
-        id: true,
-        email: true,
-        passwordHash: true,
-        rol: true,
-        sucursalId: true,
-        nombre: true,
-        activo: true,
+        idusuarios:             true,
+        emailusuarios:          true,
+        password_hashusuarios:  true,
+        sucursales_idsucursales: true,
+        nombreusuarios:         true,
+        activousuarios:         true,
+        rol:                    { select: { codigoroles: true } },
       },
     });
 
-    if (!usuario || !usuario.activo) throw new UnauthorizedException('Credenciales inválidas');
+    if (!usuario || !usuario.activousuarios) throw new UnauthorizedException('Credenciales inválidas');
 
-    const passwordOk = await bcrypt.compare(dto.password, usuario.passwordHash);
+    const passwordOk = await bcrypt.compare(dto.password, usuario.password_hashusuarios);
     if (!passwordOk) {
       void this.audit.log({ accion: 'LOGIN', entidad: 'auth', entidad_id: dto.email, resultado: 'ERROR', error_msg: 'Credenciales inválidas' });
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    await this.validateMac(macAddress, usuario.id, usuario.rol);
+    await this.validateMac(macAddress, usuario.idusuarios, usuario.sucursales_idsucursales, usuario.rol.codigoroles);
 
     await this.prisma.usuario.update({
-      where: { id: usuario.id },
-      data: { ultimoLogin: new Date() },
+      where: { idusuarios: usuario.idusuarios },
+      data:  { ultimo_loginusuarios: new Date() },
     });
 
-    void this.audit.log({ accion: 'LOGIN', entidad: 'auth', usuario_id: usuario.id, entidad_id: usuario.email, resultado: 'OK' });
+    void this.audit.log({ accion: 'LOGIN', entidad: 'auth', usuario_id: usuario.idusuarios, entidad_id: usuario.idusuarios, resultado: 'OK' });
 
     const payload: JwtPayload = {
-      sub: usuario.id,
-      email: usuario.email,
-      rol: Buffer.from(usuario.rol).toString('base64'),
-      sucursal_id: usuario.sucursalId,
-      nombre: usuario.nombre,
+      sub:         usuario.idusuarios,
+      email:       usuario.emailusuarios,
+      rol:         Buffer.from(usuario.rol.codigoroles).toString('base64'),
+      sucursal_id: usuario.sucursales_idsucursales ?? null,
+      nombre:      usuario.nombreusuarios,
     };
 
     return {
       access_token: this.jwtService.sign(payload),
       usuario: {
-        id: usuario.id,
-        nombre: usuario.nombre,
-        rol: usuario.rol,
-        sucursal_id: usuario.sucursalId,
+        id:          usuario.idusuarios,
+        nombre:      usuario.nombreusuarios,
+        rol:         usuario.rol.codigoroles,
+        sucursal_id: usuario.sucursales_idsucursales ?? null,
       },
     };
   }
 
-  async getProfile(userId: string) {
+  async getProfile(userId: number) {
     const u = await this.prisma.usuario.findUnique({
-      where: { id: userId, activo: true },
-      select: { id: true, nombre: true, email: true, rol: true, sucursalId: true, activo: true, ultimoLogin: true },
+      where:  { idusuarios: userId, activousuarios: true },
+      select: {
+        idusuarios:              true,
+        nombreusuarios:          true,
+        emailusuarios:           true,
+        sucursales_idsucursales: true,
+        activousuarios:          true,
+        ultimo_loginusuarios:    true,
+        rol:                     { select: { codigoroles: true } },
+      },
     });
     if (!u) return null;
     return {
-      id: u.id,
-      nombre: u.nombre,
-      email: u.email,
-      rol: u.rol,
-      sucursal_id: u.sucursalId ?? null,
-      activo: u.activo,
-      ultimoLogin: u.ultimoLogin?.toISOString() ?? null,
+      id:          u.idusuarios,
+      nombre:      u.nombreusuarios,
+      email:       u.emailusuarios,
+      rol:         u.rol.codigoroles,
+      sucursal_id: u.sucursales_idsucursales ?? null,
+      activo:      u.activousuarios,
+      ultimoLogin: u.ultimo_loginusuarios?.toISOString() ?? null,
     };
   }
 
-  private async validateMac(mac: string | undefined, usuarioId: string, rol: string) {
+  private async validateMac(
+    mac: string | undefined,
+    usuarioId: number,
+    sucursalId: number | null,
+    rol: string,
+  ) {
     if (process.env.NODE_ENV === 'development') return;
-    // Roles administrativos no están ligados a un terminal físico
     if (rol === 'ADMIN_SISTEMA' || rol === 'ADMIN_NACIONAL') return;
 
     if (!mac) throw new UnauthorizedException('Este equipo no está autorizado. Contáctese con soporte: applicationerp472@gmail.com');
 
-    const equipo = await this.prisma.equipoAutorizado.findFirst({
-      where: { macAddress: mac.toLowerCase(), usuarioId, activo: true },
-    });
+    const where = sucursalId != null
+      ? { mac_addressequipos_autorizados: mac.toLowerCase(), sucursales_idsucursales: sucursalId, activoequipos_autorizados: true }
+      : { mac_addressequipos_autorizados: mac.toLowerCase(), activoequipos_autorizados: true };
+
+    const equipo = await this.prisma.equipoAutorizado.findFirst({ where });
 
     if (!equipo) throw new UnauthorizedException('Este equipo no está autorizado para este usuario. Contáctese con soporte: applicationerp472@gmail.com');
   }

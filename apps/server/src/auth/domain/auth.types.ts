@@ -1,17 +1,17 @@
 export interface JwtPayload {
-  sub: string;
+  sub: number;
   email: string;
   rol: string;
-  sucursal_id: string | null;
+  sucursal_id: number | null;
   nombre: string;
 }
 
 export interface LoginResult {
   access_token: string;
   usuario: {
-    id: string;
+    id: number;
     nombre: string;
     rol: string;
-    sucursal_id: string | null;
+    sucursal_id: number | null;
   };
 }

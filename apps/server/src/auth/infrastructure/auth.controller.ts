@@ -60,7 +60,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Perfil del token activo' })
   @ApiResponse({ status: 200, description: 'Datos del usuario autenticado' })
   @ApiResponse({ status: 401, description: 'Token inválido o expirado' })
-  me(@CurrentUser() user: { id: string }) {
+  me(@CurrentUser() user: { id: number }) {
     return this.authService.getProfile(user.id);
   }
 }

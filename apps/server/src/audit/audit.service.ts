@@ -1,29 +1,40 @@
 import { Injectable } from '@nestjs/common';
-import { trace } from '@opentelemetry/api';
+import type { operacion_auditoria } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateAuditLogDto } from './create-audit-log.dto.js';
+
+const ACCION_TO_OPERACION: Record<string, operacion_auditoria> = {
+  CREATE: 'INSERT', LOGIN: 'INSERT', LOGOUT: 'INSERT', PRINT: 'INSERT', EXPORT: 'INSERT', READ: 'INSERT',
+  UPDATE: 'UPDATE',
+  DELETE: 'DELETE',
+};
 
 @Injectable()
 export class AuditService {
   constructor(private readonly prisma: PrismaService) {}
 
   async log(dto: CreateAuditLogDto): Promise<void> {
-    const span = trace.getActiveSpan();
-    const ctx  = span?.spanContext();
+    const operacion = ACCION_TO_OPERACION[dto.accion] ?? 'INSERT';
+    const registroId = typeof dto.entidad_id === 'number'
+      ? dto.entidad_id
+      : parseInt(String(dto.entidad_id ?? '0'), 10) || 0;
 
-    await this.prisma.auditoria.create({
+    const despues: Record<string, unknown> = {
+      accion: dto.accion,
+      ...(dto.resultado && { resultado: dto.resultado }),
+      ...(dto.error_msg && { error: dto.error_msg }),
+      ...(dto.datos_despues ?? {}),
+    };
+
+    await this.prisma.eventoAuditoria.create({
       data: {
-        accion:       dto.accion,
-        entidad:      dto.entidad,
-        resultado:    dto.resultado ?? 'OK',
-        trace_id:     ctx?.traceId ?? null,
-        span_id:      ctx?.spanId  ?? null,
-        usuario_id:   dto.usuario_id   ?? null,
-        entidad_id:   dto.entidad_id   ?? null,
-        ip_origen:    dto.ip_origen    ?? null,
-        error_msg:    dto.error_msg    ?? null,
-        datos_antes:  (dto.datos_antes  ?? null) as object,
-        datos_despues:(dto.datos_despues ?? null) as object,
+        tablaeventos_auditoria:         dto.entidad,
+        operacioneventos_auditoria:     operacion,
+        registro_ideventos_auditoria:   registroId,
+        usuarios_idusuarios:            dto.usuario_id ?? null,
+        ip_origeneventos_auditoria:     dto.ip_origen ?? null,
+        datos_anteseventos_auditoria:   (dto.datos_antes ?? null) as object,
+        datos_despueseventos_auditoria: despues as object,
       },
     });
   }

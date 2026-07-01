@@ -1,201 +1,1358 @@
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider        = "prisma-client"
+  output          = "../generated/prisma"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
+  provider   = "postgresql"
+  extensions = [pg_trgm]
 }
 
-// ── Enums ─────────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// ENUMS  (nombres idénticos al SQL aprobado para que el tipo PG sea el mismo)
+// ══════════════════════════════════════════════════════════════════════════════
 
-enum RolUsuario {
-  CAJERO
-  ADMINISTRATIVO
-  TESORERIA
-  INVENTARIOS
-  SUPERVISOR_REGIONAL
-  ADMIN_NACIONAL
-  ADMIN_SISTEMA
+enum tipo_sucursal {
+  unipersonal
+  multipuesto
 }
 
-enum AuditAccion {
-  CREATE
-  READ
+enum sistema_operativo_equipo {
+  windows
+  linux
+  macos
+}
+
+enum tipo_documento_identidad {
+  cedula
+  pasaporte
+  tarjeta_identidad
+  nit
+  extranjeria
+}
+
+enum tipo_producto {
+  estampilla
+  filatelia
+  empaque
+  material_oficina
+  otro
+}
+
+enum tipo_servicio_envio {
+  nacional
+  internacional_ms
+  internacional_courier
+  apartado_postal
+}
+
+enum tipo_caja {
+  menor
+  general
+  pos
+}
+
+enum estado_sesion_caja {
+  abierta
+  cerrada
+  forzada
+}
+
+enum tipo_movimiento_caja {
+  apertura
+  cierre
+  venta_producto
+  venta_servicio
+  venta_estampilla
+  giro_pago
+  giro_emision_cobro
+  consignacion
+  reposicion
+  cambio_custodia_in
+  cambio_custodia_out
+  diferencia_faltante
+  diferencia_sobrante
+  anulacion
+  recaudo
+  moneda_circulante
+  apartado_postal
+}
+
+enum medio_pago {
+  efectivo
+  tarjeta_debito
+  tarjeta_credito
+  transferencia
+  consignacion
+  preporteado
+  mixto_preporteado
+}
+
+enum medio_consignacion {
+  banco
+  transportadora
+}
+
+enum tipo_cuenta_bancaria {
+  ahorros
+  corriente
+}
+
+enum estado_aprobacion {
+  pendiente
+  aprobada
+  rechazada
+}
+
+enum estado_venta {
+  activa
+  anulada
+}
+
+enum tipo_envio {
+  nacional
+  internacional_ms
+  internacional_courier
+}
+
+enum estado_envio {
+  facturado
+  en_saca
+  despachado
+  en_transito
+  entregado
+  anulado
+  novedad
+}
+
+enum tipo_factura {
+  recibo_venta
+  electronica
+}
+
+enum estado_factura {
+  emitida
+  anulada
+  rechazada_dian
+}
+
+enum tipo_movimiento_inventario {
+  entrada
+  salida
+  ajuste
+  devolucion
+}
+
+enum estado_orden_inventario {
+  pendiente
+  confirmada
+  rechazada
+  parcial
+}
+
+enum estado_orden_inventario_item {
+  pendiente
+  confirmado
+  rechazado
+  parcial
+}
+
+enum tipo_saca {
+  nacional
+  internacional
+}
+
+enum tipo_consolidacion_saca {
+  consolidada
+  directa
+}
+
+enum estado_saca {
+  abierta
+  cerrada
+}
+
+enum tamano_apartado_postal {
+  pequeno
+  mediano
+  grande
+}
+
+enum estado_apartado_postal {
+  disponible
+  ocupado
+  vencido
+  mantenimiento
+}
+
+enum tipo_giro {
+  nacional
+  moneygram
+  ria
+  ifs
+}
+
+enum operacion_giro {
+  emision
+  pago
+}
+
+enum flete_asumido_giro {
+  remitente
+  beneficiario
+}
+
+enum resultado_inspektor {
+  limpio
+  alerta
+  bloqueado
+}
+
+enum estado_giro {
+  pendiente
+  aprobado
+  pagado
+  anulado
+  rechazado
+}
+
+enum tipo_api_convenio {
+  rest
+  barcode
+  sftp
+}
+
+enum estado_recaudo {
+  exitoso
+  fallido
+  anulado
+}
+
+enum tipo_lista_restrictiva {
+  SAGRILAFT
+  OFAC
+  terrorismo
+  pep
+  interno
+}
+
+enum tipo_alerta {
+  consignacion_pendiente
+  anulacion_solicitada
+  diferencia_faltante
+  diferencia_sobrante
+  moneda_circulante
+  inventario_bajo
+  apartado_por_vencer
+  apartado_vencido
+  orden_inventario
+  reposicion_caja
+  limite_efectivo_caja
+  cierre_automatico
+}
+
+enum estado_alerta {
+  pendiente
+  aprobada
+  rechazada
+  vista
+}
+
+enum operacion_auditoria {
+  INSERT
   UPDATE
   DELETE
-  LOGIN
-  LOGOUT
-  PRINT
-  EXPORT
 }
 
-enum AuditResultado {
-  OK
-  ERROR
-}
-
-// ── Jerarquía comercial ───────────────────────────────────────────────────────
-
-model Sucursal {
-  id        String    @id @default(uuid()) @db.Uuid
-  codigo    String    @unique @db.VarChar(20)
-  nombre    String    @db.VarChar(120)
-  ciudad    String?   @db.VarChar(80)
-  activo    Boolean   @default(true)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  usuarios           Usuario[]
-  equiposAutorizados EquipoAutorizado[]
-
-  @@map("sucursales")
-}
-
-// ── RBAC: Roles, Módulos, Permisos ────────────────────────────────────────────
-
-model Rol {
-  id          String   @id @default(uuid()) @db.Uuid
-  nombre      String   @unique @db.VarChar(80)
-  descripcion String?  @db.VarChar(200)
-  activo      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  permisos RolPermiso[]
-
-  @@map("roles")
-}
-
-model Modulo {
-  id          String   @id @default(uuid()) @db.Uuid
-  nombre      String   @unique @db.VarChar(80)
-  descripcion String?  @db.VarChar(200)
-  orden       Int      @default(0)
-  activo      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  permisos Permiso[]
-
-  @@map("modulos")
-}
-
-model Permiso {
-  id          String   @id @default(uuid()) @db.Uuid
-  nombre      String   @db.VarChar(80)
-  descripcion String?  @db.VarChar(200)
-  activo      Boolean  @default(true)
-  moduloId    String   @db.Uuid
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  modulo Modulo     @relation(fields: [moduloId], references: [id], onDelete: Cascade)
-  roles  RolPermiso[]
-
-  @@unique([moduloId, nombre])
-  @@index([moduloId])
-  @@map("permisos")
-}
-
-model RolPermiso {
-  id        String   @id @default(uuid()) @db.Uuid
-  rolId     String   @db.Uuid
-  permisoId String   @db.Uuid
-  createdAt DateTime @default(now())
-
-  rol     Rol     @relation(fields: [rolId], references: [id], onDelete: Cascade)
-  permiso Permiso @relation(fields: [permisoId], references: [id], onDelete: Cascade)
-
-  @@unique([rolId, permisoId])
-  @@index([rolId])
-  @@map("roles_permisos")
-}
-
-// ── Usuarios y dispositivos ───────────────────────────────────────────────────
-
-model Usuario {
-  id           String     @id @default(uuid()) @db.Uuid
-  nombre       String     @db.VarChar(120)
-  email        String     @unique @db.VarChar(120)
-  passwordHash String     @db.VarChar(255)
-  rol          RolUsuario
-  sucursalId   String?    @db.Uuid
-  activo       Boolean    @default(true)
-  ultimoLogin  DateTime?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  deletedAt    DateTime?
-
-  sucursal           Sucursal?          @relation(fields: [sucursalId], references: [id])
-  equiposAutorizados EquipoAutorizado[]
-
-  @@index([email])
-  @@index([rol])
-  @@index([sucursalId])
-  @@map("usuarios")
-}
-
-model EquipoAutorizado {
-  id         String    @id @default(uuid()) @db.Uuid
-  macAddress String    @db.VarChar(17)
-  sucursalId String    @db.Uuid
-  usuarioId  String?   @db.Uuid
-  nombre     String?   @db.VarChar(120)
-  activo     Boolean   @default(true)
-  createdAt  DateTime  @default(now())
-  deletedAt  DateTime?
-
-  sucursal Sucursal  @relation(fields: [sucursalId], references: [id], onDelete: Restrict)
-  usuario  Usuario?  @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
-
-  @@unique([macAddress, sucursalId, usuarioId])
-  @@index([usuarioId])
-  @@map("equipos_autorizados")
-}
-
-// ── Feature Flags ─────────────────────────────────────────────────────────────
-
-enum EntornoFeatureFlag {
+enum entorno_feature_flag {
   all
   dev
   staging
   prod
 }
 
-model FeatureFlag {
-  id          String             @id @default(uuid()) @db.Uuid
-  codigo      String             @unique @db.VarChar(100)
-  descripcion String?            @db.VarChar(200)
-  activo      Boolean            @default(false)
-  entorno     EntornoFeatureFlag @default(all)
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+// ══════════════════════════════════════════════════════════════════════════════
+// 1. JERARQUÍA COMERCIAL
+// ══════════════════════════════════════════════════════════════════════════════
 
-  @@map("feature_flags")
+model Comercio {
+  idcomercios         Int       @id @default(autoincrement())
+  codigocomercios     String    @unique @db.VarChar(20)
+  nombrecomercios     String    @db.VarChar(200)
+  nitcomercios        String    @unique @db.VarChar(30)
+  activocomercios     Boolean   @default(true)
+  created_atcomercios DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_atcomercios DateTime? @db.Timestamptz(6)
+
+  regionales   Regional[]
+  tiposCliente TipoCliente[]
+  clientes     Cliente[]
+
+  @@map("comercios")
 }
 
-// ── Auditoría ─────────────────────────────────────────────────────────────────
+model Regional {
+  idregionales          Int       @id @default(autoincrement())
+  comercios_idcomercios Int
+  codigoregionales      String    @unique @db.VarChar(20)
+  nombreregionales      String    @db.VarChar(200)
+  activoregionales      Boolean   @default(true)
+  created_atregionales  DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_atregionales  DateTime? @db.Timestamptz(6)
 
-model Auditoria {
-  id            String         @id @default(uuid()) @db.Uuid
-  trace_id      String?        @db.VarChar(32)
-  span_id       String?        @db.VarChar(16)
-  usuario_id    String?        @db.Uuid
-  accion        AuditAccion
-  entidad       String         @db.VarChar(64)
-  entidad_id    String?        @db.VarChar(64)
-  datos_antes   Json?
-  datos_despues Json?
-  ip_origen     String?        @db.VarChar(45)
-  resultado     AuditResultado @default(OK)
-  error_msg     String?
-  created_at    DateTime       @default(now())
+  comercio   Comercio   @relation(fields: [comercios_idcomercios], references: [idcomercios])
+  sucursales Sucursal[]
 
-  @@index([trace_id])
-  @@index([usuario_id, created_at])
-  @@index([entidad, entidad_id])
-  @@index([created_at])
-  @@map("auditorias")
+  @@map("regionales")
+}
+
+model Sucursal {
+  idsucursales               Int           @id @default(autoincrement())
+  regionales_idregionales    Int
+  codigosucursales           String        @unique @db.VarChar(20)
+  nombresucursales           String        @db.VarChar(200)
+  ciudadsucursales           String?       @db.VarChar(100)
+  departamentosucursales     String?       @db.VarChar(100)
+  direccionsucursales        String?
+  tiposucursales             tipo_sucursal @default(unipersonal)
+  telefonosucursales         String?       @db.VarChar(20)
+  emailsucursales            String?       @db.VarChar(200)
+  horario_aperturasucursales DateTime?     @db.Time(6)
+  horario_cierresucursales   DateTime?     @db.Time(6)
+  activosucursales           Boolean       @default(true)
+  created_atsucursales       DateTime      @default(now()) @db.Timestamptz(6)
+  updated_atsucursales       DateTime      @default(now()) @db.Timestamptz(6)
+  deleted_atsucursales       DateTime?     @db.Timestamptz(6)
+
+  regional              Regional               @relation(fields: [regionales_idregionales], references: [idregionales])
+  equiposAutorizados    EquipoAutorizado[]
+  documentos            Documento[]
+  usuarios              Usuario[]
+  productosSucursal     ProductoSucursal[]
+  serviciosSucursal     ServicioSucursal[]
+  cajasPadres           CajaPadre[]
+  cajas                 Caja[]
+  inventarioSucursal    InventarioSucursal[]
+  movimientosInventario MovimientoInventario[]
+  ordenesInventario     OrdenInventario[]
+  sacas                 Saca[]
+  apartadosPostales     ApartadoPostal[]
+  giros                 Giro[]                 @relation("GiroSucursal")
+  girosBeneficiario     Giro[]                 @relation("GiroBeneficiario")
+  recaudos              Recaudo[]
+  conveniosSucursal     ConvenioSucursal[]
+  alertas               Alerta[]
+  envios                Envio[]
+  eventosAuditoria      EventoAuditoria[]
+
+  @@map("sucursales")
+}
+
+model EquipoAutorizado {
+  idequipos_autorizados                Int                       @id @default(autoincrement())
+  sucursales_idsucursales              Int
+  mac_addressequipos_autorizados       String                    @unique @db.VarChar(30)
+  nombreequipos_autorizados            String?                   @db.VarChar(100)
+  sistema_operativoequipos_autorizados sistema_operativo_equipo?
+  activoequipos_autorizados            Boolean                   @default(true)
+  created_atequipos_autorizados        DateTime                  @default(now()) @db.Timestamptz(6)
+  deleted_atequipos_autorizados        DateTime?                 @db.Timestamptz(6)
+
+  sucursal Sucursal @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+
+  @@map("equipos_autorizados")
+}
+
+model Documento {
+  iddocumentos            Int       @id @default(autoincrement())
+  sucursales_idsucursales Int
+  descripciondocumentos   String    @db.VarChar(100)
+  prefijodocumentos       String    @db.VarChar(10)
+  desdedocumentos         Int
+  hastadocumentos         Int
+  ultimodocumentos        Int       @default(0)
+  resoluciondocumentos    String?   @db.VarChar(80)
+  activodocumentos        Boolean   @default(true)
+  created_atdocumentos    DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_atdocumentos    DateTime? @db.Timestamptz(6)
+
+  sucursal Sucursal @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  ventas   Venta[]
+
+  @@map("documentos")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 2. ROLES Y PERMISOS
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Rol {
+  idroles         Int       @id @default(autoincrement())
+  codigoroles     String    @unique @db.VarChar(40)
+  nombreroles     String    @db.VarChar(100)
+  activoroles     Boolean   @default(true)
+  created_atroles DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_atroles DateTime? @db.Timestamptz(6)
+
+  usuarios      Usuario[]
+  rolesPermisos RolPermiso[]
+
+  @@map("roles")
+}
+
+model Permiso {
+  idpermisos          Int       @id @default(autoincrement())
+  codigopermisos      String    @unique @db.VarChar(100)
+  descripcionpermisos String?   @db.VarChar(200)
+  modulopermisos      String    @db.VarChar(50)
+  deleted_atpermisos  DateTime? @db.Timestamptz(6)
+
+  rolesPermisos RolPermiso[]
+
+  @@map("permisos")
+}
+
+model RolPermiso {
+  roles_idroles       Int
+  permisos_idpermisos Int
+
+  rol     Rol     @relation(fields: [roles_idroles], references: [idroles], onDelete: Cascade)
+  permiso Permiso @relation(fields: [permisos_idpermisos], references: [idpermisos], onDelete: Cascade)
+
+  @@id([roles_idroles, permisos_idpermisos])
+  @@map("roles_permisos")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 3. USUARIOS
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Usuario {
+  idusuarios              Int       @id @default(autoincrement())
+  sucursales_idsucursales Int?
+  roles_idroles           Int
+  nombreusuarios          String    @db.VarChar(200)
+  emailusuarios           String    @unique @db.VarChar(200)
+  password_hashusuarios   String    @db.VarChar(500)
+  activousuarios          Boolean   @default(true)
+  ultimo_loginusuarios    DateTime? @db.Timestamptz(6)
+  created_atusuarios      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_atusuarios      DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_atusuarios      DateTime? @db.Timestamptz(6)
+
+  sucursal Sucursal? @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  rol      Rol       @relation(fields: [roles_idroles], references: [idroles])
+
+  sesionesApertura        SesionCaja[]          @relation("SesionCajaApertura")
+  sesionesCierre          SesionCaja[]          @relation("SesionCajaCierre")
+  consignaciones          Consignacion[]        @relation("ConsignacionUsuario")
+  consignacionesAprobadas Consignacion[]        @relation("ConsignacionAprobador")
+  reposicionesCaja        ReposicionCaja[]
+  ventas                  Venta[]
+  envios                  Envio[]
+  sacas                   Saca[]
+  giros                   Giro[]
+  recaudos                Recaudo[]
+  movimientosInventario   MovimientoInventario[]
+  ordenesCreadas          OrdenInventario[]     @relation("OrdenInventarioCreador")
+  ordenesConfirmadas      OrdenInventario[]     @relation("OrdenInventarioConfirmador")
+  alertasCreadas          Alerta[]              @relation("AlertaCreador")
+  alertasResueltas        Alerta[]              @relation("AlertaResolutor")
+  anulacionesSolicitadas  Anulacion[]           @relation("AnulacionSolicitante")
+  anulacionesAprobadas    Anulacion[]           @relation("AnulacionAprobador")
+  eventosAuditoria        EventoAuditoria[]
+  consultasInspektor      ConsultaInspektor[]
+
+  @@index([sucursales_idsucursales])
+  @@map("usuarios")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 4. CATÁLOGO: TIPOS DE CLIENTE
+// ══════════════════════════════════════════════════════════════════════════════
+
+model TipoCliente {
+  idtipos_cliente                   Int       @id @default(autoincrement())
+  comercios_idcomercios             Int?
+  codigotipos_cliente               String    @unique @db.VarChar(30)
+  nombretipos_cliente               String    @db.VarChar(100)
+  descuento_porcentajetipos_cliente Decimal   @default(0) @db.Decimal(5, 2)
+  aplica_estampillastipos_cliente   Boolean   @default(false)
+  aplica_giros_sisbentipos_cliente  Boolean   @default(false)
+  activotipos_cliente               Boolean   @default(true)
+  vigencia_iniciotipos_cliente      DateTime? @db.Date
+  vigencia_fintipos_cliente         DateTime? @db.Date
+  created_attipos_cliente           DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_attipos_cliente           DateTime? @db.Timestamptz(6)
+
+  comercio        Comercio?        @relation(fields: [comercios_idcomercios], references: [idcomercios])
+  clientes        Cliente[]
+  tarifasProducto TarifaProducto[]
+  tarifasServicio TarifaServicio[]
+
+  @@map("tipos_cliente")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 5. CATÁLOGO: PRODUCTOS FÍSICOS
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Producto {
+  idproductos                 Int          @id @default(autoincrement())
+  codigoproductos             String       @unique @db.VarChar(50)
+  nombreproductos             String       @db.VarChar(200)
+  descripcionproductos        String?
+  tipoproductos               tipo_producto
+  precioproductos             Decimal      @db.Decimal(18, 2)
+  precio_sin_taxproductos     Decimal?     @db.Decimal(18, 2)
+  porcentaje_taxproductos     Decimal      @default(0) @db.Decimal(5, 2)
+  pesoproductos               Decimal?     @db.Decimal(8, 3)
+  factor_volumetricoproductos Decimal?     @db.Decimal(8, 4)
+  imagen_urlproductos         String?      @db.VarChar(500)
+  activoproductos             Boolean      @default(true)
+  created_atproductos         DateTime     @default(now()) @db.Timestamptz(6)
+  updated_atproductos         DateTime     @default(now()) @db.Timestamptz(6)
+  deleted_atproductos         DateTime?    @db.Timestamptz(6)
+
+  productosSucursal     ProductoSucursal[]
+  tarifasProducto       TarifaProducto[]
+  ventasDetalle         VentaDetalle[]
+  enviosItems           EnvioItem[]
+  inventarioSucursal    InventarioSucursal[]
+  movimientosInventario MovimientoInventario[]
+  ordenesItems          OrdenInventarioItem[]
+
+  @@map("productos")
+}
+
+model ProductoSucursal {
+  sucursales_idsucursales  Int
+  productos_idproductos    Int
+  activoproductos_sucursal Boolean @default(true)
+
+  sucursal Sucursal @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  producto Producto @relation(fields: [productos_idproductos], references: [idproductos])
+
+  @@id([sucursales_idsucursales, productos_idproductos])
+  @@map("productos_sucursal")
+}
+
+model TarifaProducto {
+  idtarifas_producto              Int       @id @default(autoincrement())
+  productos_idproductos           Int
+  tipos_cliente_idtipos_cliente   Int
+  preciotarifas_producto          Decimal   @db.Decimal(18, 2)
+  activotarifas_producto          Boolean   @default(true)
+  vigencia_iniciotarifas_producto DateTime? @db.Date
+  vigencia_fintarifas_producto    DateTime? @db.Date
+  created_attarifas_producto      DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_attarifas_producto      DateTime? @db.Timestamptz(6)
+
+  producto    Producto    @relation(fields: [productos_idproductos], references: [idproductos])
+  tipoCliente TipoCliente @relation(fields: [tipos_cliente_idtipos_cliente], references: [idtipos_cliente])
+
+  @@unique([productos_idproductos, tipos_cliente_idtipos_cliente, vigencia_iniciotarifas_producto])
+  @@map("tarifas_producto")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 6. CATÁLOGO: SERVICIOS DE ENVÍO
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Servicio {
+  idservicios                       Int                 @id @default(autoincrement())
+  codigoservicios                   String              @unique @db.VarChar(50)
+  nombreservicios                   String              @db.VarChar(200)
+  descripcionservicios              String?
+  tiposervicios                     tipo_servicio_envio
+  requiere_estampillaservicios      Boolean             @default(false)
+  requiere_dimensionesservicios     Boolean             @default(false)
+  requiere_valor_declaradoservicios Boolean             @default(false)
+  peso_maximo_kgservicios           Decimal?            @db.Decimal(8, 3)
+  factor_volumetricoservicios       Int                 @default(2500)
+  tiempo_entrega_diasservicios      Int?
+  codigo_sigmaservicios             String?             @db.VarChar(50)
+  activoservicios                   Boolean             @default(true)
+  created_atservicios               DateTime            @default(now()) @db.Timestamptz(6)
+  deleted_atservicios               DateTime?           @db.Timestamptz(6)
+
+  serviciosSucursal ServicioSucursal[]
+  tarifasServicio   TarifaServicio[]
+  envios            Envio[]
+
+  @@map("servicios")
+}
+
+model ServicioSucursal {
+  sucursales_idsucursales  Int
+  servicios_idservicios    Int
+  activoservicios_sucursal Boolean @default(true)
+
+  sucursal Sucursal @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  servicio Servicio @relation(fields: [servicios_idservicios], references: [idservicios])
+
+  @@id([sucursales_idsucursales, servicios_idservicios])
+  @@map("servicios_sucursal")
+}
+
+model TarifaServicio {
+  idtarifas_servicio                    Int       @id @default(autoincrement())
+  servicios_idservicios                 Int
+  tipos_cliente_idtipos_cliente         Int?
+  pais_destinotarifas_servicio          String    @default("CO") @db.VarChar(5)
+  ciudad_destinotarifas_servicio        String?   @db.VarChar(100)
+  peso_min_kgtarifas_servicio           Decimal   @default(0) @db.Decimal(8, 3)
+  peso_max_kgtarifas_servicio           Decimal?  @db.Decimal(8, 3)
+  tarifatarifas_servicio                Decimal   @db.Decimal(18, 2)
+  tarifa_kg_adicionaltarifas_servicio   Decimal?  @db.Decimal(18, 2)
+  activatarifas_servicio                Boolean   @default(true)
+  fecha_vigencia_iniciotarifas_servicio DateTime? @db.Date
+  fecha_vigencia_fintarifas_servicio    DateTime? @db.Date
+  created_attarifas_servicio            DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_attarifas_servicio            DateTime? @db.Timestamptz(6)
+
+  servicio    Servicio     @relation(fields: [servicios_idservicios], references: [idservicios])
+  tipoCliente TipoCliente? @relation(fields: [tipos_cliente_idtipos_cliente], references: [idtipos_cliente])
+
+  @@index([servicios_idservicios, activatarifas_servicio], map: "idx_tarifas_servicio_lookup")
+  @@map("tarifas_servicio")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 7. CLIENTES
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Cliente {
+  idclientes                    Int                      @id @default(autoincrement())
+  comercios_idcomercios         Int?
+  tipo_documentoclientes        tipo_documento_identidad
+  numero_documentoclientes      String                   @db.VarChar(30)
+  nombreclientes                String                   @db.VarChar(150)
+  apellidoclientes              String?                  @db.VarChar(150)
+  emailclientes                 String?                  @db.VarChar(200)
+  telefonoclientes              String?                  @db.VarChar(20)
+  direccionclientes             String?
+  ciudadclientes                String?                  @db.VarChar(100)
+  codigo_postalclientes         String?                  @db.VarChar(20)
+  tipos_cliente_idtipos_cliente Int?
+  nivel_sisbenclientes          Int?
+  envios_sisben_anoclientes     Int                      @default(0)
+  activoclientes                Boolean                  @default(true)
+  created_atclientes            DateTime                 @default(now()) @db.Timestamptz(6)
+  updated_atclientes            DateTime                 @default(now()) @db.Timestamptz(6)
+  deleted_atclientes            DateTime?                @db.Timestamptz(6)
+
+  comercio    Comercio?    @relation(fields: [comercios_idcomercios], references: [idcomercios])
+  tipoCliente TipoCliente? @relation(fields: [tipos_cliente_idtipos_cliente], references: [idtipos_cliente])
+
+  ventas            Venta[]
+  envios            Envio[]
+  apartadosPostales ApartadoPostal[]
+  giros             Giro[]
+  recaudos          Recaudo[]
+  facturas          Factura[]
+
+  @@unique([tipo_documentoclientes, numero_documentoclientes])
+  @@index([tipo_documentoclientes, numero_documentoclientes], map: "idx_clientes_doc")
+  @@map("clientes")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 8. CAJAS
+// ══════════════════════════════════════════════════════════════════════════════
+
+model CajaPadre {
+  idcajas_padres           Int       @id @default(autoincrement())
+  sucursales_idsucursales  Int
+  nombrecajas_padres       String    @db.VarChar(100)
+  base_generalcajas_padres Decimal   @default(0) @db.Decimal(18, 2)
+  hora_resetcajas_padres   DateTime? @db.Time(6)
+  created_atcajas_padres   DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_atcajas_padres   DateTime? @db.Timestamptz(6)
+
+  sucursal Sucursal @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  cajas    Caja[]
+
+  @@map("cajas_padres")
+}
+
+model Caja {
+  idcajas                     Int       @id @default(autoincrement())
+  sucursales_idsucursales     Int
+  cajas_padres_idcajas_padres Int?
+  codigocajas                 String    @db.VarChar(20)
+  nombrecajas                 String    @db.VarChar(100)
+  tipocajas                   tipo_caja
+  base_diacajas               Decimal   @default(0) @db.Decimal(18, 2)
+  limite_alertacajas          Decimal?  @db.Decimal(18, 2)
+  activocajas                 Boolean   @default(true)
+  created_atcajas             DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_atcajas             DateTime? @db.Timestamptz(6)
+
+  sucursal   Sucursal   @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  cajaPadre  CajaPadre? @relation(fields: [cajas_padres_idcajas_padres], references: [idcajas_padres])
+  sesiones   SesionCaja[]
+
+  @@unique([codigocajas, sucursales_idsucursales])
+  @@map("cajas")
+}
+
+model SesionCaja {
+  idsesiones_caja              Int                @id @default(autoincrement())
+  cajas_idcajas                Int
+  usuarios_idusuarios_apertura Int
+  usuarios_idusuarios_cierre   Int?
+  equipo_macsesiones_caja      String?            @db.VarChar(30)
+  monto_aperturasesiones_caja  Decimal            @default(0) @db.Decimal(18, 2)
+  monto_cierrasesiones_caja    Decimal?           @db.Decimal(18, 2)
+  fecha_aperturasesiones_caja  DateTime           @default(now()) @db.Timestamptz(6)
+  fecha_cierrasesiones_caja    DateTime?          @db.Timestamptz(6)
+  cierre_forzadosesiones_caja  Boolean            @default(false)
+  estadosesiones_caja          estado_sesion_caja @default(abierta)
+  observacionessesiones_caja   String?
+
+  caja           Caja    @relation(fields: [cajas_idcajas], references: [idcajas])
+  usuarioApertura Usuario @relation("SesionCajaApertura", fields: [usuarios_idusuarios_apertura], references: [idusuarios])
+  usuarioCierre   Usuario? @relation("SesionCajaCierre", fields: [usuarios_idusuarios_cierre], references: [idusuarios])
+
+  movimientosCaja  MovimientoCaja[]
+  consignaciones   Consignacion[]
+  reposicionesOrigen  ReposicionCaja[] @relation("ReposicionOrigen")
+  reposicionesDestino ReposicionCaja[] @relation("ReposicionDestino")
+  ventas           Venta[]
+  envios           Envio[]
+  sacas            Saca[]
+  apartadosPostales ApartadoPostal[]
+  giros            Giro[]
+  recaudos         Recaudo[]
+  facturas         Factura[]
+
+  @@index([cajas_idcajas, estadosesiones_caja], map: "idx_sesiones_caja_estado")
+  @@map("sesiones_caja")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 9. MOVIMIENTOS DE CAJA
+// ══════════════════════════════════════════════════════════════════════════════
+
+model MovimientoCaja {
+  idmovimientos_caja              Int                  @id @default(autoincrement())
+  sesiones_caja_idsesiones_caja   Int
+  tipomovimientos_caja            tipo_movimiento_caja
+  montomovimientos_caja           Decimal              @db.Decimal(18, 2)
+  medio_pagomovimientos_caja      medio_pago?
+  referencia_idmovimientos_caja   Int?
+  referencia_tipomovimientos_caja String?              @db.VarChar(50)
+  descripcionmovimientos_caja     String?
+  created_atmovimientos_caja      DateTime             @default(now()) @db.Timestamptz(6)
+
+  sesionCaja SesionCaja @relation(fields: [sesiones_caja_idsesiones_caja], references: [idsesiones_caja])
+
+  @@index([sesiones_caja_idsesiones_caja], map: "idx_mov_caja_sesion")
+  @@map("movimientos_caja")
+}
+
+model Consignacion {
+  idconsignaciones               Int                @id @default(autoincrement())
+  sesiones_caja_idsesiones_caja  Int
+  usuarios_idusuarios            Int
+  medioconsignaciones            medio_consignacion
+  banco_nombreconsignaciones     String?            @db.VarChar(100)
+  tipo_cuentaconsignaciones      tipo_cuenta_bancaria?
+  numero_cuentaconsignaciones    String?            @db.VarChar(30)
+  montoconsignaciones            Decimal            @db.Decimal(18, 2)
+  propositoconsignaciones        String?
+  soporte_urlconsignaciones      String?            @db.VarChar(500)
+  estadoconsignaciones           estado_aprobacion  @default(pendiente)
+  usuarios_idusuarios_aprobador  Int?
+  fecha_aprobacionconsignaciones DateTime?          @db.Timestamptz(6)
+  created_atconsignaciones       DateTime           @default(now()) @db.Timestamptz(6)
+
+  sesionCaja SesionCaja @relation(fields: [sesiones_caja_idsesiones_caja], references: [idsesiones_caja])
+  usuario    Usuario    @relation("ConsignacionUsuario", fields: [usuarios_idusuarios], references: [idusuarios])
+  aprobador  Usuario?   @relation("ConsignacionAprobador", fields: [usuarios_idusuarios_aprobador], references: [idusuarios])
+
+  @@map("consignaciones")
+}
+
+model ReposicionCaja {
+  idreposiciones_caja                   Int               @id @default(autoincrement())
+  sesiones_caja_idsesiones_caja_origen  Int
+  sesiones_caja_idsesiones_caja_destino Int
+  montoreposiciones_caja                Decimal           @db.Decimal(18, 2)
+  usuarios_idusuarios                   Int?
+  estadoreposiciones_caja               estado_aprobacion @default(pendiente)
+  motivoreposiciones_caja               String?
+  created_atreposiciones_caja           DateTime          @default(now()) @db.Timestamptz(6)
+
+  sesionOrigen  SesionCaja @relation("ReposicionOrigen", fields: [sesiones_caja_idsesiones_caja_origen], references: [idsesiones_caja])
+  sesionDestino SesionCaja @relation("ReposicionDestino", fields: [sesiones_caja_idsesiones_caja_destino], references: [idsesiones_caja])
+  usuario       Usuario?   @relation(fields: [usuarios_idusuarios], references: [idusuarios])
+
+  @@map("reposiciones_caja")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 10. VENTAS DE PRODUCTOS FÍSICOS
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Venta {
+  idventas                      Int          @id @default(autoincrement())
+  sesiones_caja_idsesiones_caja Int
+  usuarios_idusuarios           Int
+  clientes_idclientes           Int?
+  documentos_iddocumentos       Int?
+  numero_docventas              String?      @db.VarChar(30)
+  subtotalventas                Decimal      @default(0) @db.Decimal(18, 2)
+  descuentoventas               Decimal      @default(0) @db.Decimal(18, 2)
+  ivaventas                     Decimal      @default(0) @db.Decimal(18, 2)
+  totalventas                   Decimal      @db.Decimal(18, 2)
+  medio_pagoventas              medio_pago
+  estadoventas                  estado_venta @default(activa)
+  created_atventas              DateTime     @default(now()) @db.Timestamptz(6)
+  updated_atventas              DateTime     @default(now()) @db.Timestamptz(6)
+
+  sesionCaja SesionCaja @relation(fields: [sesiones_caja_idsesiones_caja], references: [idsesiones_caja])
+  usuario    Usuario    @relation(fields: [usuarios_idusuarios], references: [idusuarios])
+  cliente    Cliente?   @relation(fields: [clientes_idclientes], references: [idclientes])
+  documento  Documento? @relation(fields: [documentos_iddocumentos], references: [iddocumentos])
+
+  detalle VentaDetalle[]
+
+  @@index([sesiones_caja_idsesiones_caja], map: "idx_ventas_sesion")
+  @@index([created_atventas], map: "idx_ventas_fecha")
+  @@map("ventas")
+}
+
+model VentaDetalle {
+  idventas_detalle              Int     @id @default(autoincrement())
+  ventas_idventas               Int
+  productos_idproductos         Int
+  cantidadventas_detalle        Int
+  precio_unitarioventas_detalle Decimal @db.Decimal(18, 2)
+  descuentoventas_detalle       Decimal @default(0) @db.Decimal(18, 2)
+  subtotalventas_detalle        Decimal @db.Decimal(18, 2)
+
+  venta    Venta    @relation(fields: [ventas_idventas], references: [idventas], onDelete: Cascade)
+  producto Producto @relation(fields: [productos_idproductos], references: [idproductos])
+
+  @@index([ventas_idventas], map: "idx_ventas_detalle_venta")
+  @@map("ventas_detalle")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 11. VENTAS DE ENVÍOS
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Envio {
+  idenvios                           Int         @id @default(autoincrement())
+  numero_guiaenvios                  String      @unique @db.VarChar(50)
+  tipoenvios                         tipo_envio
+  es_correspondenciaenvios           Boolean     @default(false)
+  sucursales_idsucursales            Int
+  sesiones_caja_idsesiones_caja      Int?
+  usuarios_idusuarios                Int
+  clientes_idclientes                Int?
+  servicios_idservicios              Int
+  remitente_nombreenvios             String?     @db.VarChar(300)
+  remitente_documentoenvios          String?     @db.VarChar(30)
+  remitente_emailenvios              String?     @db.VarChar(200)
+  remitente_telefonoenvios           String?     @db.VarChar(20)
+  remitente_direccionenvios          String?
+  remitente_ciudadenvios             String?     @db.VarChar(100)
+  remitente_codigo_postalenvios      String?     @db.VarChar(20)
+  destinatario_nombreenvios          String?     @db.VarChar(300)
+  destinatario_documentoenvios       String?     @db.VarChar(30)
+  destinatario_tiene_docenvios       Boolean     @default(true)
+  destinatario_emailenvios           String?     @db.VarChar(200)
+  destinatario_telefonoenvios        String?     @db.VarChar(20)
+  destinatario_direccionenvios       String?
+  destinatario_ciudadenvios          String?     @db.VarChar(100)
+  destinatario_paisenvios            String      @default("CO") @db.VarChar(5)
+  destinatario_codigo_postalenvios   String?     @db.VarChar(20)
+  peso_fisico_kgenvios               Decimal     @db.Decimal(8, 3)
+  alto_cmenvios                      Decimal?    @db.Decimal(8, 2)
+  ancho_cmenvios                     Decimal?    @db.Decimal(8, 2)
+  largo_cmenvios                     Decimal?    @db.Decimal(8, 2)
+  peso_volumetrico_kgenvios          Decimal?    @db.Decimal(8, 3)
+  peso_tarificado_kgenvios           Decimal     @db.Decimal(8, 3)
+  valor_declaradoenvios              Decimal?    @db.Decimal(18, 2)
+  observacionesenvios                String?
+  valor_servicioenvios               Decimal     @db.Decimal(18, 2)
+  valor_estampillasenvios            Decimal     @default(0) @db.Decimal(18, 2)
+  valor_seguroenvios                 Decimal     @default(0) @db.Decimal(18, 2)
+  valor_totalenvios                  Decimal     @db.Decimal(18, 2)
+  medio_pagoenvios                   medio_pago?
+  estadoenvios                       estado_envio @default(facturado)
+  numero_guia_fisicaenvios           String?     @db.VarChar(50)
+  proveedor_externeenvios            String?     @db.VarChar(50)
+  referencia_proveedorenvios         String?     @db.VarChar(100)
+  referencia_sigmaenvios             String?     @db.VarChar(100)
+  documentos_generadosenvios         Json        @default("[]") @db.JsonB
+  sincronizado_sigmaenvios           Boolean     @default(false)
+  created_atenvios                   DateTime    @default(now()) @db.Timestamptz(6)
+  updated_atenvios                   DateTime    @default(now()) @db.Timestamptz(6)
+
+  sucursal   Sucursal    @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  sesionCaja SesionCaja? @relation(fields: [sesiones_caja_idsesiones_caja], references: [idsesiones_caja])
+  usuario    Usuario     @relation(fields: [usuarios_idusuarios], references: [idusuarios])
+  cliente    Cliente?    @relation(fields: [clientes_idclientes], references: [idclientes])
+  servicio   Servicio    @relation(fields: [servicios_idservicios], references: [idservicios])
+
+  items  EnvioItem[]
+  sacas  EnvioSaca[]
+
+  @@index([sucursales_idsucursales, created_atenvios], map: "idx_envios_sucursal_fecha")
+  @@index([numero_guiaenvios], map: "idx_envios_guia")
+  @@index([estadoenvios], map: "idx_envios_estado")
+  @@map("envios")
+}
+
+model EnvioItem {
+  idenvios_items              Int     @id @default(autoincrement())
+  envios_idenvios             Int
+  productos_idproductos       Int
+  cantidadenvios_items        Int
+  precio_unitarioenvios_items Decimal @db.Decimal(18, 2)
+  subtotalenvios_items        Decimal @db.Decimal(18, 2)
+
+  envio    Envio    @relation(fields: [envios_idenvios], references: [idenvios], onDelete: Cascade)
+  producto Producto @relation(fields: [productos_idproductos], references: [idproductos])
+
+  @@map("envios_items")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 12. FACTURACIÓN
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Factura {
+  idfacturas              Int            @id @default(autoincrement())
+  tipofacturas            tipo_factura
+  numerofacturas          String         @unique @db.VarChar(50)
+  prefijofacturas         String?        @db.VarChar(10)
+  referencia_idfacturas   Int
+  referencia_tipofacturas String         @db.VarChar(50)
+  sesiones_caja_idsesiones_caja Int?
+  clientes_idclientes     Int?
+  subtotalfacturas        Decimal        @db.Decimal(18, 2)
+  impuestosfacturas       Decimal        @default(0) @db.Decimal(18, 2)
+  totalfacturas           Decimal        @db.Decimal(18, 2)
+  cufefacturas            String?        @db.VarChar(500)
+  estadofacturas          estado_factura @default(emitida)
+  enviada_dianfacturas    Boolean        @default(false)
+  cola_dian_idfacturas    String?        @db.VarChar(100)
+  created_atfacturas      DateTime       @default(now()) @db.Timestamptz(6)
+
+  sesionCaja SesionCaja? @relation(fields: [sesiones_caja_idsesiones_caja], references: [idsesiones_caja])
+  cliente    Cliente?    @relation(fields: [clientes_idclientes], references: [idclientes])
+
+  items FacturaItem[]
+
+  @@index([created_atfacturas], map: "idx_facturas_fecha")
+  @@index([referencia_idfacturas, referencia_tipofacturas], map: "idx_facturas_ref")
+  @@map("facturas")
+}
+
+model FacturaItem {
+  idfacturas_items             Int     @id @default(autoincrement())
+  facturas_idfacturas          Int
+  descripcionfacturas_items    String  @db.VarChar(300)
+  cantidadfacturas_items       Int     @default(1)
+  valor_unitariofacturas_items Decimal @db.Decimal(18, 2)
+  valor_totalfacturas_items    Decimal @db.Decimal(18, 2)
+
+  factura Factura @relation(fields: [facturas_idfacturas], references: [idfacturas], onDelete: Cascade)
+
+  @@map("facturas_items")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 13. INVENTARIO
+// ══════════════════════════════════════════════════════════════════════════════
+
+model InventarioSucursal {
+  idinventario_sucursal              Int      @id @default(autoincrement())
+  sucursales_idsucursales            Int
+  productos_idproductos              Int
+  cantidad_actualinventario_sucursal Int      @default(0)
+  cantidad_minimainventario_sucursal Int      @default(5)
+  updated_atinventario_sucursal      DateTime @default(now()) @db.Timestamptz(6)
+
+  sucursal Sucursal @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  producto Producto @relation(fields: [productos_idproductos], references: [idproductos])
+
+  @@unique([sucursales_idsucursales, productos_idproductos])
+  @@index([sucursales_idsucursales], map: "idx_inventario_sucursal")
+  @@map("inventario_sucursal")
+}
+
+model MovimientoInventario {
+  idmovimientos_inventario                Int                        @id @default(autoincrement())
+  sucursales_idsucursales                 Int
+  productos_idproductos                   Int
+  tipomovimientos_inventario              tipo_movimiento_inventario
+  cantidadmovimientos_inventario          Int
+  cantidad_anteriormovimientos_inventario Int
+  cantidad_posteriormovimientos_inventario Int
+  referencia_idmovimientos_inventario     Int?
+  referencia_tipomovimientos_inventario   String?                    @db.VarChar(50)
+  usuarios_idusuarios                     Int?
+  observacionmovimientos_inventario       String?
+  created_atmovimientos_inventario        DateTime                   @default(now()) @db.Timestamptz(6)
+
+  sucursal Sucursal @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  producto Producto @relation(fields: [productos_idproductos], references: [idproductos])
+  usuario  Usuario? @relation(fields: [usuarios_idusuarios], references: [idusuarios])
+
+  @@index([sucursales_idsucursales, created_atmovimientos_inventario], map: "idx_mov_inv_sucursal_fecha")
+  @@map("movimientos_inventario")
+}
+
+model OrdenInventario {
+  idordenes_inventario                 Int                     @id @default(autoincrement())
+  sucursales_idsucursales              Int
+  estadoordenes_inventario             estado_orden_inventario @default(pendiente)
+  usuarios_idusuarios_creador          Int?
+  usuarios_idusuarios_confirmador      Int?
+  fecha_confirmacionordenes_inventario DateTime?               @db.Timestamptz(6)
+  observacionesordenes_inventario      String?
+  created_atordenes_inventario         DateTime                @default(now()) @db.Timestamptz(6)
+
+  sucursal    Sucursal @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  creador     Usuario? @relation("OrdenInventarioCreador", fields: [usuarios_idusuarios_creador], references: [idusuarios])
+  confirmador Usuario? @relation("OrdenInventarioConfirmador", fields: [usuarios_idusuarios_confirmador], references: [idusuarios])
+
+  items OrdenInventarioItem[]
+
+  @@map("ordenes_inventario")
+}
+
+model OrdenInventarioItem {
+  idordenes_inventario_items               Int                          @id @default(autoincrement())
+  ordenes_inventario_idordenes_inventario  Int
+  productos_idproductos                    Int
+  cantidad_enviadaordenes_inventario_items Int
+  cantidad_recibidaordenes_inventario_items Int?
+  estadoordenes_inventario_items           estado_orden_inventario_item @default(pendiente)
+
+  ordenInventario OrdenInventario @relation(fields: [ordenes_inventario_idordenes_inventario], references: [idordenes_inventario], onDelete: Cascade)
+  producto        Producto        @relation(fields: [productos_idproductos], references: [idproductos])
+
+  @@map("ordenes_inventario_items")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 14. DESPACHO (SACAS)
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Saca {
+  idsacas                       Int                     @id @default(autoincrement())
+  numero_precintosacas          String                  @db.VarChar(50)
+  sucursales_idsucursales       Int
+  sesiones_caja_idsesiones_caja Int?
+  usuarios_idusuarios           Int
+  tiposacas                     tipo_saca
+  tipo_sacasacas                tipo_consolidacion_saca @default(consolidada)
+  centro_operativo_destinosacas String?                 @db.VarChar(100)
+  estadosacas                   estado_saca             @default(abierta)
+  peso_kgsacas                  Decimal?                @db.Decimal(8, 3)
+  total_enviossacas             Int                     @default(0)
+  transportista_nombresacas     String?                 @db.VarChar(200)
+  transportista_firmasacas      Boolean                 @default(false)
+  fecha_despachosacas           DateTime?               @db.Timestamptz(6)
+  created_atsacas               DateTime                @default(now()) @db.Timestamptz(6)
+  cerrada_atsacas               DateTime?               @db.Timestamptz(6)
+
+  sucursal   Sucursal    @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  sesionCaja SesionCaja? @relation(fields: [sesiones_caja_idsesiones_caja], references: [idsesiones_caja])
+  usuario    Usuario     @relation(fields: [usuarios_idusuarios], references: [idusuarios])
+
+  enviosSaca EnvioSaca[]
+
+  @@index([sucursales_idsucursales, estadosacas], map: "idx_sacas_sucursal_estado")
+  @@map("sacas")
+}
+
+model EnvioSaca {
+  idenvios_saca         Int      @id @default(autoincrement())
+  sacas_idsacas         Int
+  envios_idenvios       Int
+  created_atenvios_saca DateTime @default(now()) @db.Timestamptz(6)
+
+  saca  Saca  @relation(fields: [sacas_idsacas], references: [idsacas])
+  envio Envio @relation(fields: [envios_idenvios], references: [idenvios])
+
+  @@unique([sacas_idsacas, envios_idenvios])
+  @@map("envios_saca")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 15. APARTADOS POSTALES
+// ══════════════════════════════════════════════════════════════════════════════
+
+model ApartadoPostal {
+  idapartados_postales                      Int                    @id @default(autoincrement())
+  sucursales_idsucursales                   Int
+  numeroapartados_postales                  String                 @db.VarChar(20)
+  tamanoapartados_postales                  tamano_apartado_postal @default(pequeno)
+  estadoapartados_postales                  estado_apartado_postal @default(disponible)
+  clientes_idclientes                       Int?
+  fecha_inicioapartados_postales            DateTime?              @db.Date
+  fecha_finapartados_postales               DateTime?              @db.Date
+  valorapartados_postales                   Decimal?               @db.Decimal(18, 2)
+  incluye_ivaapartados_postales             Boolean                @default(true)
+  dias_alerta_vencimientoapartados_postales Int                    @default(30)
+  sesiones_caja_idsesiones_caja             Int?
+  created_atapartados_postales              DateTime               @default(now()) @db.Timestamptz(6)
+  deleted_atapartados_postales              DateTime?              @db.Timestamptz(6)
+
+  sucursal   Sucursal    @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  cliente    Cliente?    @relation(fields: [clientes_idclientes], references: [idclientes])
+  sesionCaja SesionCaja? @relation(fields: [sesiones_caja_idsesiones_caja], references: [idsesiones_caja])
+
+  @@unique([sucursales_idsucursales, numeroapartados_postales])
+  @@map("apartados_postales")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 16. GIROS
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Giro {
+  idgiros                              Int                 @id @default(autoincrement())
+  tipogiros                            tipo_giro
+  operaciongiros                       operacion_giro
+  sucursales_idsucursales              Int
+  sesiones_caja_idsesiones_caja        Int?
+  usuarios_idusuarios                  Int
+  clientes_idclientes_remitente        Int?
+  remitente_tipo_docgiros              String?             @db.VarChar(20)
+  remitente_numero_docgiros            String?             @db.VarChar(30)
+  remitente_nombregiros                String?             @db.VarChar(300)
+  remitente_fecha_exp_docgiros         DateTime?           @db.Date
+  remitente_ciudadgiros                String?             @db.VarChar(100)
+  remitente_direcciongiros             String?
+  remitente_emailgiros                 String?             @db.VarChar(200)
+  remitente_huellagiros                Boolean             @default(false)
+  beneficiario_tipo_docgiros           String?             @db.VarChar(20)
+  beneficiario_numero_docgiros         String?             @db.VarChar(30)
+  beneficiario_nombregiros             String?             @db.VarChar(300)
+  beneficiario_fecha_nacgiros          DateTime?           @db.Date
+  beneficiario_paisgiros               String              @default("CO") @db.VarChar(5)
+  beneficiario_estadogiros             String?             @db.VarChar(100)
+  beneficiario_ciudadgiros             String?             @db.VarChar(100)
+  sucursales_idsucursales_beneficiario Int?
+  beneficiario_direcciongiros          String?
+  beneficiario_telefonogiros           String?             @db.VarChar(20)
+  beneficiario_mensajegiros            String?
+  monto_copgiros                       Decimal             @db.Decimal(18, 2)
+  flete_copgiros                       Decimal             @default(4700) @db.Decimal(18, 2)
+  flete_asumido_porgiros               flete_asumido_giro?
+  monto_total_copgiros                 Decimal             @db.Decimal(18, 2)
+  monto_destinogiros                   Decimal?            @db.Decimal(18, 2)
+  moneda_destinogiros                  String              @default("COP") @db.VarChar(5)
+  tasa_cambiogiros                     Decimal?            @db.Decimal(18, 6)
+  pingiros                             String?             @db.VarChar(20)
+  numero_referenciagiros               String?             @db.VarChar(50)
+  referencia_proveedorgiros            String?             @db.VarChar(100)
+  consulta_inspektorgiros              Boolean             @default(false)
+  resultado_inspektorgiros             resultado_inspektor?
+  inspektor_referenciagiros            String?             @db.VarChar(100)
+  estadogiros                          estado_giro         @default(pendiente)
+  formulario_5giros                    Boolean             @default(false)
+  declaracion_origengiros              Boolean             @default(false)
+  fotocopia_cedulagiros                Boolean             @default(false)
+  reportado_minticgiros                Boolean             @default(false)
+  created_atgiros                      DateTime            @default(now()) @db.Timestamptz(6)
+  updated_atgiros                      DateTime            @default(now()) @db.Timestamptz(6)
+
+  sucursal             Sucursal    @relation("GiroSucursal", fields: [sucursales_idsucursales], references: [idsucursales])
+  sucursalBeneficiario Sucursal?   @relation("GiroBeneficiario", fields: [sucursales_idsucursales_beneficiario], references: [idsucursales])
+  sesionCaja           SesionCaja? @relation(fields: [sesiones_caja_idsesiones_caja], references: [idsesiones_caja])
+  usuario              Usuario     @relation(fields: [usuarios_idusuarios], references: [idusuarios])
+  clienteRemitente     Cliente?    @relation(fields: [clientes_idclientes_remitente], references: [idclientes])
+
+  consultasInspektor ConsultaInspektor[]
+
+  @@index([sucursales_idsucursales, created_atgiros], map: "idx_giros_sucursal_fecha")
+  @@index([pingiros], map: "idx_giros_pin")
+  @@map("giros")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 17. RECAUDOS Y CONVENIOS
+// ══════════════════════════════════════════════════════════════════════════════
+
+model ConvenioRecaudo {
+  idconvenios_recaudo          Int                @id @default(autoincrement())
+  codigoconvenios_recaudo      String             @unique @db.VarChar(50)
+  nombreconvenios_recaudo      String             @db.VarChar(200)
+  descripcionconvenios_recaudo String?
+  tipo_apiconvenios_recaudo    tipo_api_convenio?
+  activoconvenios_recaudo      Boolean            @default(true)
+  created_atconvenios_recaudo  DateTime           @default(now()) @db.Timestamptz(6)
+  deleted_atconvenios_recaudo  DateTime?          @db.Timestamptz(6)
+
+  conveniosSucursal ConvenioSucursal[]
+  recaudos          Recaudo[]
+
+  @@map("convenios_recaudo")
+}
+
+model ConvenioSucursal {
+  sucursales_idsucursales               Int
+  convenios_recaudo_idconvenios_recaudo Int
+  activoconvenios_sucursal              Boolean @default(true)
+
+  sucursal         Sucursal        @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  convenioRecaudo  ConvenioRecaudo @relation(fields: [convenios_recaudo_idconvenios_recaudo], references: [idconvenios_recaudo])
+
+  @@id([sucursales_idsucursales, convenios_recaudo_idconvenios_recaudo])
+  @@map("convenios_sucursal")
+}
+
+model Recaudo {
+  idrecaudos                            Int            @id @default(autoincrement())
+  convenios_recaudo_idconvenios_recaudo Int
+  sucursales_idsucursales               Int
+  sesiones_caja_idsesiones_caja         Int?
+  usuarios_idusuarios                   Int
+  clientes_idclientes                   Int?
+  referencia_pagorecaudos               String         @db.VarChar(100)
+  codigo_barrasrecaudos                 String?        @db.VarChar(200)
+  montorecaudos                         Decimal        @db.Decimal(18, 2)
+  estadorecaudos                        estado_recaudo @default(exitoso)
+  created_atrecaudos                    DateTime       @default(now()) @db.Timestamptz(6)
+
+  convenioRecaudo ConvenioRecaudo @relation(fields: [convenios_recaudo_idconvenios_recaudo], references: [idconvenios_recaudo])
+  sucursal        Sucursal        @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  sesionCaja      SesionCaja?     @relation(fields: [sesiones_caja_idsesiones_caja], references: [idsesiones_caja])
+  usuario         Usuario         @relation(fields: [usuarios_idusuarios], references: [idusuarios])
+  cliente         Cliente?        @relation(fields: [clientes_idclientes], references: [idclientes])
+
+  @@index([sucursales_idsucursales, created_atrecaudos], map: "idx_recaudos_sucursal_fecha")
+  @@map("recaudos")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 18. LISTAS RESTRICTIVAS E INSPEKTOR
+// ══════════════════════════════════════════════════════════════════════════════
+
+model ListaRestrictiva {
+  idlistas_restrictivas               Int                    @id @default(autoincrement())
+  tipo_documentolistas_restrictivas   String                 @db.VarChar(20)
+  numero_documentolistas_restrictivas String                 @db.VarChar(30)
+  nombrelistas_restrictivas           String?                @db.VarChar(300)
+  tipo_listalistas_restrictivas       tipo_lista_restrictiva
+  motivolistas_restrictivas           String?
+  activolistas_restrictivas           Boolean                @default(true)
+  fuentelistas_restrictivas           String?                @db.VarChar(100)
+  created_atlistas_restrictivas       DateTime               @default(now()) @db.Timestamptz(6)
+  updated_atlistas_restrictivas       DateTime               @default(now()) @db.Timestamptz(6)
+  deleted_atlistas_restrictivas       DateTime?              @db.Timestamptz(6)
+
+  @@index([tipo_documentolistas_restrictivas, numero_documentolistas_restrictivas], map: "idx_listas_doc")
+  @@map("listas_restrictivas")
+}
+
+model ConsultaInspektor {
+  idconsultas_inspektor               Int                 @id @default(autoincrement())
+  tipo_documentoconsultas_inspektor   String              @db.VarChar(20)
+  numero_documentoconsultas_inspektor String              @db.VarChar(30)
+  resultadoconsultas_inspektor        resultado_inspektor
+  giros_idgiros                       Int?
+  usuarios_idusuarios                 Int?
+  respuesta_rawconsultas_inspektor    Json?               @db.JsonB
+  created_atconsultas_inspektor       DateTime            @default(now()) @db.Timestamptz(6)
+
+  giro    Giro?    @relation(fields: [giros_idgiros], references: [idgiros])
+  usuario Usuario? @relation(fields: [usuarios_idusuarios], references: [idusuarios])
+
+  @@map("consultas_inspektor")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 19. ALERTAS Y ANULACIONES
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Alerta {
+  idalertas                     Int           @id @default(autoincrement())
+  tipoalertas                   tipo_alerta
+  sucursales_idsucursales       Int?
+  referencia_idalertas          Int
+  referencia_tipoalertas        String        @db.VarChar(50)
+  mensajealertas                String
+  datos_adicionalesalertas      Json          @default("{}") @db.JsonB
+  estadoalertas                 estado_alerta @default(pendiente)
+  usuarios_idusuarios_creador   Int?
+  usuarios_idusuarios_resolutor Int?
+  fecha_resolucionalertas       DateTime?     @db.Timestamptz(6)
+  created_atalertas             DateTime      @default(now()) @db.Timestamptz(6)
+
+  sucursal  Sucursal? @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  creador   Usuario?  @relation("AlertaCreador", fields: [usuarios_idusuarios_creador], references: [idusuarios])
+  resolutor Usuario?  @relation("AlertaResolutor", fields: [usuarios_idusuarios_resolutor], references: [idusuarios])
+
+  @@index([sucursales_idsucursales, estadoalertas], map: "idx_alertas_sucursal_estado")
+  @@map("alertas")
+}
+
+model Anulacion {
+  idanulaciones                   Int               @id @default(autoincrement())
+  referencia_idanulaciones        Int
+  referencia_tipoanulaciones      String            @db.VarChar(50)
+  motivoanulaciones               String
+  usuarios_idusuarios_solicitante Int?
+  usuarios_idusuarios_aprobador   Int?
+  estadoanulaciones               estado_aprobacion @default(pendiente)
+  created_atanulaciones           DateTime          @default(now()) @db.Timestamptz(6)
+  resuelta_atanulaciones          DateTime?         @db.Timestamptz(6)
+
+  solicitante Usuario? @relation("AnulacionSolicitante", fields: [usuarios_idusuarios_solicitante], references: [idusuarios])
+  aprobador   Usuario? @relation("AnulacionAprobador", fields: [usuarios_idusuarios_aprobador], references: [idusuarios])
+
+  @@map("anulaciones")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 20. AUDITORÍA
+// ══════════════════════════════════════════════════════════════════════════════
+
+model EventoAuditoria {
+  ideventos_auditoria            Int                 @id @default(autoincrement())
+  usuarios_idusuarios            Int?
+  sucursales_idsucursales        Int?
+  tablaeventos_auditoria         String              @db.VarChar(100)
+  operacioneventos_auditoria     operacion_auditoria
+  registro_ideventos_auditoria   Int
+  datos_anteseventos_auditoria   Json?               @db.JsonB
+  datos_despueseventos_auditoria Json?               @db.JsonB
+  ip_origeneventos_auditoria     String?             @db.Inet
+  mac_origeneventos_auditoria    String?             @db.VarChar(30)
+  created_ateventos_auditoria    DateTime            @default(now()) @db.Timestamptz(6)
+
+  usuario  Usuario?  @relation(fields: [usuarios_idusuarios], references: [idusuarios])
+  sucursal Sucursal? @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+
+  @@index([tablaeventos_auditoria, created_ateventos_auditoria], map: "idx_auditoria_tabla_fecha")
+  @@index([usuarios_idusuarios, created_ateventos_auditoria], map: "idx_auditoria_usuario")
+  @@map("eventos_auditoria")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 21. FEATURE FLAGS
+// ══════════════════════════════════════════════════════════════════════════════
+
+model FeatureFlag {
+  idfeature_flags          Int                  @id @default(autoincrement())
+  codigofeature_flags      String               @unique @db.VarChar(100)
+  descripcionfeature_flags String?              @db.VarChar(200)
+  activofeature_flags      Boolean              @default(false)
+  entornofeature_flags     entorno_feature_flag @default(all)
+  created_atfeature_flags  DateTime             @default(now()) @db.Timestamptz(6)
+  updated_atfeature_flags  DateTime             @default(now()) @db.Timestamptz(6)
+
+  @@map("feature_flags")
 }

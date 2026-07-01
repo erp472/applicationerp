@@ -1,264 +1,177 @@
-import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
-import type {
-  CreateRolDto,
-  UpdateRolDto,
-  CreateModuloDto,
-  UpdateModuloDto,
-  CreatePermisoDto,
-  UpdatePermisoDto,
-} from './dto/permisos.dto.js';
+import type { CreateRolDto, UpdateRolDto, CreatePermisoDto, UpdatePermisoDto } from './dto/permisos.dto.js';
 
 const ROL_SELECT = {
-  id: true,
-  nombre: true,
-  descripcion: true,
-  activo: true,
-  createdAt: true,
-  updatedAt: true,
-  permisos: {
+  idroles:      true,
+  codigoroles:  true,
+  nombreroles:  true,
+  activoroles:  true,
+  created_atroles: true,
+  rolesPermisos: {
     select: {
-      id: true,
-      permisoId: true,
+      permisos_idpermisos: true,
       permiso: {
         select: {
-          id: true,
-          nombre: true,
-          descripcion: true,
-          modulo: { select: { id: true, nombre: true, orden: true } },
+          idpermisos:          true,
+          codigopermisos:      true,
+          descripcionpermisos: true,
+          modulopermisos:      true,
         },
       },
     },
   },
 } as const;
 
-const MODULO_SELECT = {
-  id: true,
-  nombre: true,
-  descripcion: true,
-  orden: true,
-  activo: true,
-  createdAt: true,
-  updatedAt: true,
-  permisos: {
-    where: { activo: true },
-    select: { id: true, nombre: true, descripcion: true },
-    orderBy: { nombre: 'asc' as const },
-  },
+const PERMISO_SELECT = {
+  idpermisos:          true,
+  codigopermisos:      true,
+  descripcionpermisos: true,
+  modulopermisos:      true,
 } as const;
 
 @Injectable()
 export class PermisosService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ── ROLES ────────────────────────────────────────────────────────────────────
+  // ── ROLES ──────────────────────────────────────────────────────────────────
 
   async findAllRoles() {
     return this.prisma.rol.findMany({
-      select: ROL_SELECT,
-      orderBy: { nombre: 'asc' },
+      where:   { activoroles: true },
+      select:  ROL_SELECT,
+      orderBy: { nombreroles: 'asc' },
     });
   }
 
-  async findOneRol(id: string) {
-    const rol = await this.prisma.rol.findUnique({ where: { id }, select: ROL_SELECT });
+  async findOneRol(id: number) {
+    const rol = await this.prisma.rol.findUnique({ where: { idroles: id }, select: ROL_SELECT });
     if (!rol) throw new NotFoundException(`Rol ${id} no encontrado`);
     return rol;
   }
 
   async createRol(dto: CreateRolDto) {
-    const exists = await this.prisma.rol.findUnique({ where: { nombre: dto.nombre } });
-    if (exists) throw new ConflictException(`El rol "${dto.nombre}" ya existe`);
+    const exists = await this.prisma.rol.findUnique({ where: { codigoroles: dto.codigoroles } });
+    if (exists) throw new ConflictException(`El rol "${dto.codigoroles}" ya existe`);
     return this.prisma.rol.create({ data: dto, select: ROL_SELECT });
   }
 
-  async updateRol(id: string, dto: UpdateRolDto) {
+  async updateRol(id: number, dto: UpdateRolDto) {
     await this.findOneRol(id);
-    if (dto.nombre) {
-      const conflict = await this.prisma.rol.findFirst({
-        where: { nombre: dto.nombre, id: { not: id } },
-      });
-      if (conflict) throw new ConflictException(`El rol "${dto.nombre}" ya existe`);
-    }
-    return this.prisma.rol.update({ where: { id }, data: dto, select: ROL_SELECT });
+    return this.prisma.rol.update({ where: { idroles: id }, data: dto, select: ROL_SELECT });
   }
 
-  async deleteRol(id: string) {
+  async deleteRol(id: number) {
     await this.findOneRol(id);
-    await this.prisma.rol.delete({ where: { id } });
+    await this.prisma.rol.delete({ where: { idroles: id } });
     return { id, eliminado: true };
   }
 
-  // ── MÓDULOS ─────────────────────────────────────────────────────────────────
+  // ── PERMISOS ───────────────────────────────────────────────────────────────
 
-  async findAllModulos() {
-    return this.prisma.modulo.findMany({
-      select: MODULO_SELECT,
-      orderBy: [{ orden: 'asc' }, { nombre: 'asc' }],
-    });
-  }
-
-  async findOneModulo(id: string) {
-    const m = await this.prisma.modulo.findUnique({ where: { id }, select: MODULO_SELECT });
-    if (!m) throw new NotFoundException(`Módulo ${id} no encontrado`);
-    return m;
-  }
-
-  async createModulo(dto: CreateModuloDto) {
-    const exists = await this.prisma.modulo.findUnique({ where: { nombre: dto.nombre } });
-    if (exists) throw new ConflictException(`El módulo "${dto.nombre}" ya existe`);
-    return this.prisma.modulo.create({ data: dto, select: MODULO_SELECT });
-  }
-
-  async updateModulo(id: string, dto: UpdateModuloDto) {
-    await this.findOneModulo(id);
-    if (dto.nombre) {
-      const conflict = await this.prisma.modulo.findFirst({
-        where: { nombre: dto.nombre, id: { not: id } },
-      });
-      if (conflict) throw new ConflictException(`El módulo "${dto.nombre}" ya existe`);
-    }
-    return this.prisma.modulo.update({ where: { id }, data: dto, select: MODULO_SELECT });
-  }
-
-  async deleteModulo(id: string) {
-    await this.findOneModulo(id);
-    await this.prisma.modulo.delete({ where: { id } });
-    return { id, eliminado: true };
-  }
-
-  // ── PERMISOS ─────────────────────────────────────────────────────────────────
-
-  async findAllPermisos() {
+  async findAllPermisos(modulo?: string) {
     return this.prisma.permiso.findMany({
-      select: {
-        id: true, nombre: true, descripcion: true, activo: true,
-        moduloId: true,
-        modulo: { select: { id: true, nombre: true, orden: true } },
-        createdAt: true, updatedAt: true,
-      },
-      orderBy: [{ modulo: { orden: 'asc' } }, { nombre: 'asc' }],
+      where:   modulo ? { modulopermisos: modulo } : undefined,
+      select:  PERMISO_SELECT,
+      orderBy: [{ modulopermisos: 'asc' }, { codigopermisos: 'asc' }],
     });
   }
 
   async createPermiso(dto: CreatePermisoDto) {
-    const moduloExists = await this.prisma.modulo.findUnique({ where: { id: dto.moduloId } });
-    if (!moduloExists) throw new NotFoundException(`Módulo ${dto.moduloId} no encontrado`);
-
-    const exists = await this.prisma.permiso.findUnique({
-      where: { moduloId_nombre: { moduloId: dto.moduloId, nombre: dto.nombre } },
-    });
-    if (exists) throw new ConflictException(`El permiso "${dto.nombre}" ya existe en este módulo`);
-
-    return this.prisma.permiso.create({
-      data: dto,
-      select: {
-        id: true, nombre: true, descripcion: true, activo: true, moduloId: true,
-        modulo: { select: { id: true, nombre: true } },
-        createdAt: true, updatedAt: true,
-      },
-    });
+    const exists = await this.prisma.permiso.findUnique({ where: { codigopermisos: dto.codigopermisos } });
+    if (exists) throw new ConflictException(`El permiso "${dto.codigopermisos}" ya existe`);
+    return this.prisma.permiso.create({ data: dto, select: PERMISO_SELECT });
   }
 
-  async updatePermiso(id: string, dto: UpdatePermisoDto) {
-    const p = await this.prisma.permiso.findUnique({ where: { id } });
+  async updatePermiso(id: number, dto: UpdatePermisoDto) {
+    const p = await this.prisma.permiso.findUnique({ where: { idpermisos: id } });
     if (!p) throw new NotFoundException(`Permiso ${id} no encontrado`);
-    return this.prisma.permiso.update({
-      where: { id },
-      data: dto,
-      select: {
-        id: true, nombre: true, descripcion: true, activo: true, moduloId: true,
-        modulo: { select: { id: true, nombre: true } },
-        createdAt: true, updatedAt: true,
-      },
-    });
+    return this.prisma.permiso.update({ where: { idpermisos: id }, data: dto, select: PERMISO_SELECT });
   }
 
-  async deletePermiso(id: string) {
-    const p = await this.prisma.permiso.findUnique({ where: { id } });
+  async deletePermiso(id: number) {
+    const p = await this.prisma.permiso.findUnique({ where: { idpermisos: id } });
     if (!p) throw new NotFoundException(`Permiso ${id} no encontrado`);
-    await this.prisma.permiso.delete({ where: { id } });
+    await this.prisma.permiso.delete({ where: { idpermisos: id } });
     return { id, eliminado: true };
   }
 
-  // ── ASIGNACIONES ─────────────────────────────────────────────────────────────
+  // ── ASIGNACIONES ───────────────────────────────────────────────────────────
 
-  async getPermisosDeRol(rolId: string) {
+  async getPermisosDeRol(rolId: number) {
     await this.findOneRol(rolId);
     return this.prisma.rolPermiso.findMany({
-      where: { rolId },
+      where:  { roles_idroles: rolId },
       select: {
-        id: true,
-        permisoId: true,
-        permiso: {
-          select: {
-            id: true, nombre: true, descripcion: true,
-            modulo: { select: { id: true, nombre: true, orden: true } },
-          },
-        },
+        permisos_idpermisos: true,
+        permiso: { select: PERMISO_SELECT },
       },
     });
   }
 
-  async asignarPermiso(rolId: string, permisoId: string) {
+  async asignarPermiso(rolId: number, permisoId: number) {
     await this.findOneRol(rolId);
-    const p = await this.prisma.permiso.findUnique({ where: { id: permisoId } });
+    const p = await this.prisma.permiso.findUnique({ where: { idpermisos: permisoId } });
     if (!p) throw new NotFoundException(`Permiso ${permisoId} no encontrado`);
 
     const exists = await this.prisma.rolPermiso.findUnique({
-      where: { rolId_permisoId: { rolId, permisoId } },
+      where: { roles_idroles_permisos_idpermisos: { roles_idroles: rolId, permisos_idpermisos: permisoId } },
     });
     if (exists) return exists;
 
-    return this.prisma.rolPermiso.create({ data: { rolId, permisoId } });
+    return this.prisma.rolPermiso.create({
+      data: { roles_idroles: rolId, permisos_idpermisos: permisoId },
+    });
   }
 
-  async revocarPermiso(rolId: string, permisoId: string) {
+  async revocarPermiso(rolId: number, permisoId: number) {
     const entry = await this.prisma.rolPermiso.findUnique({
-      where: { rolId_permisoId: { rolId, permisoId } },
+      where: { roles_idroles_permisos_idpermisos: { roles_idroles: rolId, permisos_idpermisos: permisoId } },
     });
     if (!entry) throw new NotFoundException('Asignación no encontrada');
-    await this.prisma.rolPermiso.delete({ where: { rolId_permisoId: { rolId, permisoId } } });
+    await this.prisma.rolPermiso.delete({
+      where: { roles_idroles_permisos_idpermisos: { roles_idroles: rolId, permisos_idpermisos: permisoId } },
+    });
     return { rolId, permisoId, revocado: true };
   }
 
-  // ── MATRIX ──────────────────────────────────────────────────────────────────
+  // ── MATRIX ─────────────────────────────────────────────────────────────────
 
   async getMatrix() {
-    const [modulos, roles] = await Promise.all([
-      this.prisma.modulo.findMany({
-        where: { activo: true },
-        select: {
-          id: true, nombre: true, descripcion: true, orden: true,
-          permisos: {
-            where: { activo: true },
-            select: { id: true, nombre: true, descripcion: true },
-            orderBy: { nombre: 'asc' },
-          },
-        },
-        orderBy: [{ orden: 'asc' }, { nombre: 'asc' }],
+    const [permisosByModulo, roles] = await Promise.all([
+      this.prisma.permiso.findMany({
+        select:  PERMISO_SELECT,
+        orderBy: [{ modulopermisos: 'asc' }, { codigopermisos: 'asc' }],
       }),
       this.prisma.rol.findMany({
-        where: { activo: true },
+        where:   { activoroles: true },
         select: {
-          id: true, nombre: true, descripcion: true,
-          permisos: { select: { permisoId: true } },
+          idroles:  true,
+          codigoroles: true,
+          nombreroles: true,
+          rolesPermisos: { select: { permisos_idpermisos: true } },
         },
-        orderBy: { nombre: 'asc' },
+        orderBy: { nombreroles: 'asc' },
       }),
     ]);
+
+    const modulosMap = new Map<string, typeof permisosByModulo>();
+    for (const p of permisosByModulo) {
+      if (!modulosMap.has(p.modulopermisos)) modulosMap.set(p.modulopermisos, []);
+      modulosMap.get(p.modulopermisos)!.push(p);
+    }
+
+    const modulos = Array.from(modulosMap.entries()).map(([nombre, permisos]) => ({
+      nombre, permisos,
+    }));
 
     return {
       modulos,
       roles: roles.map((r) => ({
-        id: r.id,
-        nombre: r.nombre,
-        descripcion: r.descripcion,
-        permisoIds: r.permisos.map((p) => p.permisoId),
+        id:          r.idroles,
+        codigoroles: r.codigoroles,
+        nombreroles: r.nombreroles,
+        permisoIds:  r.rolesPermisos.map((rp) => rp.permisos_idpermisos),
       })),
     };
   }
