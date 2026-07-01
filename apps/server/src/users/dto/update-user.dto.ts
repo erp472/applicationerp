@@ -6,7 +6,7 @@ export const UpdateUserSchema = z.object({
   email:       z.string().email().optional(),
   password:    z.string().min(8).max(100).optional(),
   rol:         RolEnum.optional(),
-  sucursal_id: z.string().uuid().nullable().optional(),
+  sucursal_id: z.coerce.number().int().positive().nullable().optional(),
   activo:      z.boolean().optional(),
 });
 

@@ -6,8 +6,8 @@ import { IBranchesRepository } from '../domain/branches.repository.js';
 export class PrismaBranchesRepository implements IBranchesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async existsById(id: string): Promise<boolean> {
-    const count = await this.prisma.sucursal.count({ where: { id, activo: true } });
+  async existsById(id: number): Promise<boolean> {
+    const count = await this.prisma.sucursal.count({ where: { idsucursales: id, activosucursales: true } });
     return count > 0;
   }
 }

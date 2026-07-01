@@ -1,6 +1,6 @@
 import {
   Body, Controller, Delete, Get, HttpCode, HttpStatus,
-  Param, ParseUUIDPipe, Post, UseGuards,
+  Param, ParseIntPipe, Post, UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiBody } from '@nestjs/swagger';
 import { z } from 'zod';
@@ -11,8 +11,7 @@ import { Roles } from '../common/decorators/roles.decorator.js';
 
 const AuthorizeSchema = z.object({
   mac_address: z.string().regex(/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i),
-  usuario_id:  z.string().uuid(),
-  sucursal_id: z.string().uuid(),
+  sucursal_id: z.coerce.number().int().positive(),
   nombre:      z.string().max(120).optional(),
 });
 
@@ -32,36 +31,37 @@ export class DevicesController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN_SISTEMA', 'ADMIN_NACIONAL')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Autorizar un equipo (MAC) para un usuario o sucursal' })
+  @ApiOperation({ summary: 'Autorizar un equipo (MAC) para una sucursal' })
   @ApiBody({
     schema: {
       type: 'object',
       required: ['mac_address', 'sucursal_id'],
       properties: {
         mac_address: { type: 'string', example: 'aa:bb:cc:dd:ee:ff' },
-        usuario_id:  { type: 'string', format: 'uuid', nullable: true, description: 'Si se omite, el equipo queda autorizado para toda la sucursal' },
-        sucursal_id: { type: 'string', format: 'uuid' },
+        sucursal_id: { type: 'integer', example: 1 },
         nombre:      { type: 'string', example: 'Caja 1 - Chapinero' },
       },
     },
   })
   async authorize(@Body() body: unknown) {
     const data = AuthorizeSchema.parse(body);
-    const macNorm    = data.mac_address.toLowerCase();
-    const usuarioId  = data.usuario_id;
-    const sucursalId = data.sucursal_id;
+    const macNorm = data.mac_address.toLowerCase();
 
     const existing = await this.prisma.equipoAutorizado.findFirst({
-      where: { macAddress: macNorm, usuarioId },
+      where: { mac_addressequipos_autorizados: macNorm, sucursales_idsucursales: data.sucursal_id },
     });
 
     const equipo = existing
       ? await this.prisma.equipoAutorizado.update({
-          where: { id: existing.id },
-          data:  { activo: true, nombre: data.nombre, sucursalId },
+          where: { idequipos_autorizados: existing.idequipos_autorizados },
+          data:  { activoequipos_autorizados: true, nombreequipos_autorizados: data.nombre },
         })
       : await this.prisma.equipoAutorizado.create({
-          data: { macAddress: macNorm, sucursalId, usuarioId, nombre: data.nombre },
+          data: {
+            mac_addressequipos_autorizados: macNorm,
+            sucursal: { connect: { idsucursales: data.sucursal_id } },
+            nombreequipos_autorizados: data.nombre,
+          },
         });
     return equipo;
   }
@@ -71,10 +71,10 @@ export class DevicesController {
   @Roles('ADMIN_SISTEMA', 'ADMIN_NACIONAL')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Revocar autorización de un equipo' })
-  async revoke(@Param('id', ParseUUIDPipe) id: string) {
+  async revoke(@Param('id', ParseIntPipe) id: number) {
     await this.prisma.equipoAutorizado.update({
-      where: { id },
-      data: { activo: false },
+      where: { idequipos_autorizados: id },
+      data:  { activoequipos_autorizados: false },
     });
     return { ok: true };
   }
@@ -86,12 +86,9 @@ export class DevicesController {
   @ApiOperation({ summary: 'Listar equipos autorizados' })
   async list() {
     return this.prisma.equipoAutorizado.findMany({
-      where: { activo: true },
-      include: {
-        sucursal: { select: { codigo: true, nombre: true } },
-        usuario:  { select: { nombre: true, email: true } },
-      },
-      orderBy: { createdAt: 'desc' },
+      where:   { activoequipos_autorizados: true },
+      include: { sucursal: { select: { codigosucursales: true, nombresucursales: true } } },
+      orderBy: { created_atequipos_autorizados: 'desc' },
     });
   }
 }

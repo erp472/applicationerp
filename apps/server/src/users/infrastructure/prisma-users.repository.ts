@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '../../../generated/prisma/client.js';
-import { RolUsuario } from '../../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { IUsersRepository } from '../domain/users.repository.js';
 import { UserEntity } from '../domain/user.entity.js';
@@ -8,35 +7,69 @@ import { CreateUserDto } from '../dto/create-user.dto.js';
 import { QueryUserDto } from '../dto/query-user.dto.js';
 
 const SELECT = {
-  id: true,
-  nombre: true,
-  email: true,
-  rol: true,
-  sucursalId: true,
-  activo: true,
-  ultimoLogin: true,
-  createdAt: true,
-  updatedAt: true,
+  idusuarios: true,
+  nombreusuarios: true,
+  emailusuarios: true,
+  sucursales_idsucursales: true,
+  activousuarios: true,
+  ultimo_loginusuarios: true,
+  created_atusuarios: true,
+  updated_atusuarios: true,
+  rol: {
+    select: { codigoroles: true },
+  },
   sucursal: {
-    select: { id: true, codigo: true, nombre: true, ciudad: true },
+    select: {
+      idsucursales: true,
+      codigosucursales: true,
+      nombresucursales: true,
+      ciudadsucursales: true,
+    },
   },
 } satisfies Prisma.UsuarioSelect;
+
+type UsuarioRow = Prisma.UsuarioGetPayload<{ select: typeof SELECT }>;
+
+function toEntity(row: UsuarioRow): UserEntity {
+  return {
+    id:          row.idusuarios,
+    nombre:      row.nombreusuarios,
+    email:       row.emailusuarios,
+    rol:         row.rol.codigoroles,
+    sucursalId:  row.sucursales_idsucursales ?? null,
+    activo:      row.activousuarios,
+    ultimoLogin: row.ultimo_loginusuarios,
+    createdAt:   row.created_atusuarios,
+    updatedAt:   row.updated_atusuarios,
+    sucursal:    row.sucursal
+      ? {
+          id:     row.sucursal.idsucursales,
+          codigo: row.sucursal.codigosucursales,
+          nombre: row.sucursal.nombresucursales,
+          ciudad: row.sucursal.ciudadsucursales,
+        }
+      : null,
+  };
+}
 
 @Injectable()
 export class PrismaUsersRepository implements IUsersRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateUserDto, passwordHash: string): Promise<UserEntity> {
-    return this.prisma.usuario.create({
+    const row = await this.prisma.usuario.create({
       data: {
-        nombre: dto.nombre,
-        email: dto.email,
-        passwordHash,
-        rol: dto.rol as RolUsuario,
-        sucursalId: dto.sucursal_id ?? null,
+        nombreusuarios:      dto.nombre,
+        emailusuarios:       dto.email,
+        password_hashusuarios: passwordHash,
+        rol:                 { connect: { codigoroles: dto.rol } },
+        ...(dto.sucursal_id != null && {
+          sucursal: { connect: { idsucursales: dto.sucursal_id } },
+        }),
       },
       select: SELECT,
-    }) as Promise<UserEntity>;
+    });
+    return toEntity(row);
   }
 
   async findAll(query: QueryUserDto): Promise<{ datos: UserEntity[]; total: number }> {
@@ -44,63 +77,79 @@ export class PrismaUsersRepository implements IUsersRepository {
     const skip = (pagina - 1) * limite;
 
     const where: Prisma.UsuarioWhereInput = {
-      ...(rol && { rol: rol as RolUsuario }),
-      ...(sucursal_id && { sucursalId: sucursal_id }),
-      ...(activo !== undefined && { activo }),
+      ...(rol        && { rol: { codigoroles: rol } }),
+      ...(sucursal_id != null && { sucursales_idsucursales: sucursal_id }),
+      ...(activo !== undefined && { activousuarios: activo }),
       ...(buscar && {
         OR: [
-          { nombre: { contains: buscar, mode: 'insensitive' } },
-          { email: { contains: buscar, mode: 'insensitive' } },
+          { nombreusuarios: { contains: buscar, mode: 'insensitive' } },
+          { emailusuarios:  { contains: buscar, mode: 'insensitive' } },
         ],
       }),
     };
 
-    const [total, datos] = await this.prisma.$transaction([
+    const [total, rows] = await this.prisma.$transaction([
       this.prisma.usuario.count({ where }),
-      this.prisma.usuario.findMany({ where, select: SELECT, orderBy: { nombre: 'asc' }, skip, take: limite }),
+      this.prisma.usuario.findMany({
+        where, select: SELECT, orderBy: { nombreusuarios: 'asc' }, skip, take: limite,
+      }),
     ]);
 
-    return { datos: datos as UserEntity[], total };
+    return { datos: rows.map(toEntity), total };
   }
 
-  async findById(id: string): Promise<UserEntity | null> {
-    return this.prisma.usuario.findUnique({ where: { id }, select: SELECT }) as Promise<UserEntity | null>;
+  async findById(id: number): Promise<UserEntity | null> {
+    const row = await this.prisma.usuario.findUnique({
+      where: { idusuarios: id }, select: SELECT,
+    });
+    return row ? toEntity(row) : null;
   }
 
   async findByEmail(email: string): Promise<UserEntity | null> {
-    return this.prisma.usuario.findUnique({ where: { email }, select: SELECT }) as Promise<UserEntity | null>;
+    const row = await this.prisma.usuario.findUnique({
+      where: { emailusuarios: email }, select: SELECT,
+    });
+    return row ? toEntity(row) : null;
   }
 
-  async findByEmailExcluding(email: string, excludeId: string): Promise<UserEntity | null> {
-    return this.prisma.usuario.findFirst({
-      where: { email, NOT: { id: excludeId } },
+  async findByEmailExcluding(email: string, excludeId: number): Promise<UserEntity | null> {
+    const row = await this.prisma.usuario.findFirst({
+      where: { emailusuarios: email, NOT: { idusuarios: excludeId } },
       select: SELECT,
-    }) as Promise<UserEntity | null>;
+    });
+    return row ? toEntity(row) : null;
   }
 
   async update(
-    id: string,
-    data: { nombre?: string; email?: string; rol?: string; sucursalId?: string | null; activo?: boolean; passwordHash?: string },
+    id: number,
+    data: { nombre?: string; email?: string; rol?: string; sucursalId?: number | null; activo?: boolean; passwordHash?: string },
   ): Promise<UserEntity> {
-    const { sucursalId, rol, ...rest } = data;
-    return this.prisma.usuario.update({
-      where: { id },
+    const { sucursalId, rol, passwordHash, nombre, email, activo } = data;
+    const row = await this.prisma.usuario.update({
+      where: { idusuarios: id },
       data: {
-        ...rest,
-        ...(rol && { rol: rol as RolUsuario }),
+        ...(nombre      && { nombreusuarios: nombre }),
+        ...(email       && { emailusuarios: email }),
+        ...(activo !== undefined && { activousuarios: activo }),
+        ...(passwordHash && { password_hashusuarios: passwordHash }),
+        ...(rol && { rol: { connect: { codigoroles: rol } } }),
         ...(sucursalId !== undefined && {
-          sucursal: sucursalId ? { connect: { id: sucursalId } } : { disconnect: true },
+          sucursal: sucursalId != null
+            ? { connect: { idsucursales: sucursalId } }
+            : { disconnect: true },
         }),
       },
       select: SELECT,
-    }) as Promise<UserEntity>;
+    });
+    return toEntity(row);
   }
 
-  async softDelete(id: string): Promise<{ id: string; email: string; activo: boolean }> {
-    return this.prisma.usuario.update({
-      where: { id },
-      data: { activo: false },
-      select: { id: true, email: true, activo: true },
+  async softDelete(id: number): Promise<{ id: number; email: string; activo: boolean }> {
+    const row = await this.prisma.usuario.update({
+      where: { idusuarios: id },
+      data:  { activousuarios: false },
+      select: { idusuarios: true, emailusuarios: true, activousuarios: true },
     });
+    return { id: row.idusuarios, email: row.emailusuarios, activo: row.activousuarios };
   }
 }

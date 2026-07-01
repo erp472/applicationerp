@@ -1,7 +1,7 @@
 import {
   Controller, Get, Post, Patch, Delete,
   Body, Param, Query, UseGuards, UseFilters,
-  ParseUUIDPipe, BadRequestException, ForbiddenException,
+  ParseIntPipe, BadRequestException, ForbiddenException,
 } from '@nestjs/common';
 import {
   ApiTags, ApiBearerAuth, ApiOperation, ApiResponse,
@@ -42,7 +42,7 @@ export class UsersController {
         email:       { type: 'string', format: 'email', example: 'ana@4-72.com.co' },
         password:    { type: 'string', minLength: 8, example: 'Secure123!' },
         rol:         { type: 'string', enum: ROL_ENUM, example: 'CAJERO' },
-        sucursal_id: { type: 'string', format: 'uuid', nullable: true },
+        sucursal_id: { type: 'integer', nullable: true, example: 1 },
       },
     },
   })
@@ -59,7 +59,7 @@ export class UsersController {
   @Roles(...ROLES_MANAGE, 'ADMINISTRATIVO')
   @ApiOperation({ summary: 'List users with pagination and filters' })
   @ApiQuery({ name: 'rol',         required: false, enum: ROL_ENUM })
-  @ApiQuery({ name: 'sucursal_id', required: false, type: String })
+  @ApiQuery({ name: 'sucursal_id', required: false, type: Number })
   @ApiQuery({ name: 'activo',      required: false, type: Boolean })
   @ApiQuery({ name: 'buscar',      required: false, type: String, description: 'Search by name or email' })
   @ApiQuery({ name: 'pagina',      required: false, type: Number, example: 1 })
@@ -75,24 +75,24 @@ export class UsersController {
   @Get('me')
   @ApiOperation({ summary: 'Authenticated user profile' })
   @ApiResponse({ status: 200, description: 'Current user data' })
-  async getMe(@CurrentUser() user: { id: string }) {
+  async getMe(@CurrentUser() user: { id: number }) {
     return UsersPresenter.toResponse(await this.service.findOne(user.id));
   }
 
   @Get(':id')
   @Roles(...ROLES_MANAGE, 'ADMINISTRATIVO')
   @ApiOperation({ summary: 'Get user by ID' })
-  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'User found' })
   @ApiResponse({ status: 404, description: 'User not found' })
-  async findOne(@Param('id', ParseUUIDPipe) id: string) {
+  async findOne(@Param('id', ParseIntPipe) id: number) {
     return UsersPresenter.toResponse(await this.service.findOne(id));
   }
 
   @Patch(':id')
   @Roles(...ROLES_MANAGE)
   @ApiOperation({ summary: 'Update user' })
-  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiParam({ name: 'id', type: Number })
   @ApiBody({
     schema: {
       type: 'object',
@@ -101,7 +101,7 @@ export class UsersController {
         email:       { type: 'string', format: 'email' },
         password:    { type: 'string', minLength: 8 },
         rol:         { type: 'string', enum: ROL_ENUM },
-        sucursal_id: { type: 'string', format: 'uuid', nullable: true },
+        sucursal_id: { type: 'integer', nullable: true },
         activo:      { type: 'boolean' },
       },
     },
@@ -110,9 +110,9 @@ export class UsersController {
   @ApiResponse({ status: 403, description: 'Forbidden' })
   @ApiResponse({ status: 404, description: 'User not found' })
   async update(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() body: unknown,
-    @CurrentUser() user: { id: string; rol: string },
+    @CurrentUser() user: { id: number; rol: string },
   ) {
     const isOwnProfile = user.id === id;
     const hasPermission = ROLES_MANAGE.includes(user.rol);
@@ -126,10 +126,10 @@ export class UsersController {
   @Delete(':id')
   @Roles(...ROLES_ADMIN)
   @ApiOperation({ summary: 'Deactivate user (soft delete)' })
-  @ApiParam({ name: 'id', type: String, format: 'uuid' })
+  @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'User deactivated' })
   @ApiResponse({ status: 404, description: 'User not found' })
-  remove(@Param('id', ParseUUIDPipe) id: string) {
+  remove(@Param('id', ParseIntPipe) id: number) {
     return this.service.remove(id);
   }
 }

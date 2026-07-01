@@ -1,13 +1,13 @@
 import type { UserEntity } from '../domain/user.entity.js';
 
 export interface UserResponse {
-  id: string;
+  id: number;
   nombre: string;
   email: string;
   rol: string;
   activo: boolean;
   ultimoLogin: string | null;
-  sucursal: { id: string; codigo: string; nombre: string; ciudad: string | null } | null;
+  sucursal: { id: number; codigo: string; nombre: string; ciudad: string | null } | null;
   createdAt: string;
   updatedAt: string;
 }

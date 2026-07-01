@@ -15,7 +15,7 @@ export const CreateUserSchema = z.object({
   email:       z.string().email(),
   password:    z.string().min(8).max(100),
   rol:         RolEnum,
-  sucursal_id: z.string().uuid().optional().nullable(),
+  sucursal_id: z.coerce.number().int().positive().optional().nullable(),
 });
 
 export type CreateUserDto = z.infer<typeof CreateUserSchema>;
