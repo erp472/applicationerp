@@ -45,6 +45,8 @@ export class AuthService {
 
     void this.audit.log({ accion: 'LOGIN', entidad: 'auth', usuario_id: usuario.idusuarios, entidad_id: usuario.idusuarios, resultado: 'OK' });
 
+    const permisos = await this.obtenerPermisos(usuario.rolId);
+
     const payload: JwtPayload = {
       sub:         usuario.idusuarios,
       email:       usuario.emailusuarios,
