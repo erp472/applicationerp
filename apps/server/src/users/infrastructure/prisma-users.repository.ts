@@ -77,6 +77,7 @@ export class PrismaUsersRepository implements IUsersRepository {
     const skip = (pagina - 1) * limite;
 
     const where: Prisma.UsuarioWhereInput = {
+      deleted_atusuarios: null,
       ...(rol        && { rol: { codigoroles: rol } }),
       ...(sucursal_id != null && { sucursales_idsucursales: sucursal_id }),
       ...(activo !== undefined && { activousuarios: activo }),
@@ -144,12 +145,12 @@ export class PrismaUsersRepository implements IUsersRepository {
     return toEntity(row);
   }
 
-  async softDelete(id: number): Promise<{ id: number; email: string; activo: boolean }> {
+  async softDelete(id: number): Promise<UserEntity> {
     const row = await this.prisma.usuario.update({
       where: { idusuarios: id },
-      data:  { activousuarios: false },
-      select: { idusuarios: true, emailusuarios: true, activousuarios: true },
+      data:  { activousuarios: false, deleted_atusuarios: new Date() },
+      select: SELECT,
     });
-    return { id: row.idusuarios, email: row.emailusuarios, activo: row.activousuarios };
+    return toEntity(row);
   }
 }

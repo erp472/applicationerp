@@ -7,19 +7,23 @@ export interface CreateFeatureFlagData {
   descripcion?: string;
   activo: boolean;
   entorno: string;
+  plataforma: string;
+  roles: string[];
 }
 
 export interface UpdateFeatureFlagData {
   descripcion?: string;
   activo?: boolean;
   entorno?: string;
+  plataforma?: string;
+  roles?: string[];
 }
 
 export interface IFeatureFlagsRepository {
   findAll(entorno?: string): Promise<FeatureFlagEntity[]>;
   findById(id: number): Promise<FeatureFlagEntity | null>;
   findByCodigo(codigo: string): Promise<FeatureFlagEntity | null>;
-  findActivos(entorno: string): Promise<FeatureFlagEntity[]>;
+  findActivos(entorno: string, plataforma: string): Promise<FeatureFlagEntity[]>;
   create(data: CreateFeatureFlagData): Promise<FeatureFlagEntity>;
   update(id: number, data: UpdateFeatureFlagData): Promise<FeatureFlagEntity>;
   remove(id: number): Promise<void>;

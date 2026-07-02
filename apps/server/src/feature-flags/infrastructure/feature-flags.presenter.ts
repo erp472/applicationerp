@@ -1,4 +1,4 @@
-import type { FeatureFlagEntity } from '../domain/feature-flag.entity.js';
+import type { FeatureFlagEntity, FeatureFlagRolRef, FeatureFlagUsuarioRef } from '../domain/feature-flag.entity.js';
 
 export interface FeatureFlagResponse {
   id: number;
@@ -6,8 +6,9 @@ export interface FeatureFlagResponse {
   descripcion: string | null;
   activo: boolean;
   entorno: string;
-  roles: { id: number; codigo: string; nombre: string }[];
-  usuarios: { id: number; nombre: string; email: string }[];
+  plataforma: string;
+  roles: FeatureFlagRolRef[];
+  usuarios: FeatureFlagUsuarioRef[];
   createdAt: string;
   updatedAt: string;
 }
@@ -20,6 +21,7 @@ export class FeatureFlagsPresenter {
       descripcion: entity.descripcion,
       activo:      entity.activo,
       entorno:     entity.entorno,
+      plataforma:  entity.plataforma,
       roles:       entity.roles,
       usuarios:    entity.usuarios,
       createdAt:   entity.createdAt.toISOString(),

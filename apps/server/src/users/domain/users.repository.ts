@@ -21,5 +21,5 @@ export interface IUsersRepository {
       passwordHash?: string;
     },
   ): Promise<UserEntity>;
-  softDelete(id: number): Promise<{ id: number; email: string; activo: boolean }>;
+  softDelete(id: number): Promise<UserEntity>;
 }

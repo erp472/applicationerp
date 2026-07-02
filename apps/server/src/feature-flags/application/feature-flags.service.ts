@@ -11,6 +11,7 @@ import type { FeatureFlagEntity } from '../domain/feature-flag.entity.js';
 export interface EvaluacionContexto {
   rol?: string;
   usuarioId?: number;
+  plataforma?: string;
 }
 
 @Injectable()
@@ -31,7 +32,8 @@ export class FeatureFlagsService {
   }
 
   async getActivos(entorno: string, ctx: EvaluacionContexto = {}) {
-    const activos = await this.repo.findActivos(entorno);
+    const plataforma = ctx.plataforma ?? 'all';
+    const activos = await this.repo.findActivos(entorno, plataforma);
     return activos.filter((flag) => this.aplicaA(flag, ctx));
   }
 
@@ -42,10 +44,13 @@ export class FeatureFlagsService {
     return this.aplicaA(flag, ctx);
   }
 
-  /** Sin roles/usuarios asociados = aplica a todos. Con segmentación, basta con cumplir una de las dos. */
+  /**
+   * Plataforma ya fue filtrada en findActivos (AND implícito).
+   * Segmentación rol/usuario es OR: sin restricciones → visible para todos.
+   */
   private aplicaA(flag: FeatureFlagEntity, ctx: EvaluacionContexto): boolean {
     if (flag.roles.length === 0 && flag.usuarios.length === 0) return true;
-    const porRol     = ctx.rol       ? flag.roles.some((r) => r.codigo === ctx.rol) : false;
+    const porRol     = ctx.rol       ? flag.roles.some((r) => r.codigo === ctx.rol)      : false;
     const porUsuario = ctx.usuarioId ? flag.usuarios.some((u) => u.id === ctx.usuarioId) : false;
     return porRol || porUsuario;
   }

@@ -16,6 +16,7 @@ export class FeatureFlagEntity {
   descripcion: string | null;
   activo: boolean;
   entorno: string;
+  plataforma: string;
   createdAt: Date;
   updatedAt: Date;
   roles: FeatureFlagRolRef[];

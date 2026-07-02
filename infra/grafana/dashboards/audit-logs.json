@@ -68,8 +68,9 @@
         "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10 } }
       },
       "targets": [{
-        "rawSql": "SELECT date_trunc('hour', created_ateventos_auditoria) AS time, COALESCE(datos_despueseventos_auditoria->>'accion', operacioneventos_auditoria::text) AS accion, COUNT(*) AS count FROM eventos_auditoria WHERE created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() GROUP BY 1, 2 ORDER BY 1",
-        "format": "time_series"
+        "rawSql": "SELECT date_trunc('hour', created_ateventos_auditoria) AS \"time\", SUM(CASE WHEN tablaeventos_auditoria = 'auth' AND datos_despueseventos_auditoria->>'resultado' = 'OK' THEN 1 ELSE 0 END) AS \"LOGIN\", SUM(CASE WHEN tablaeventos_auditoria = 'auth' AND datos_despueseventos_auditoria->>'resultado' = 'ERROR' THEN 1 ELSE 0 END) AS \"LOGIN_ERROR\", SUM(CASE WHEN operacioneventos_auditoria = 'INSERT' AND tablaeventos_auditoria != 'auth' THEN 1 ELSE 0 END) AS \"INSERT\", SUM(CASE WHEN operacioneventos_auditoria = 'UPDATE' THEN 1 ELSE 0 END) AS \"UPDATE\", SUM(CASE WHEN operacioneventos_auditoria = 'DELETE' THEN 1 ELSE 0 END) AS \"DELETE\" FROM eventos_auditoria WHERE created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() GROUP BY 1 ORDER BY 1",
+        "format": "time_series",
+        "refId": "A"
       }]
     },
     {

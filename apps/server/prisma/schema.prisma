@@ -1363,8 +1363,6 @@ model FeatureFlag {
   created_atfeature_flags  DateTime                @default(now()) @db.Timestamptz(6)
   updated_atfeature_flags  DateTime                @default(now()) @db.Timestamptz(6)
 
-  featureFlagRoles FeatureFlagRol[]
-
   roles    FeatureFlagRol[]
   usuarios FeatureFlagUsuario[]
 
@@ -1379,7 +1377,7 @@ model FeatureFlagRol {
   rol         Rol         @relation(fields: [roles_idroles], references: [idroles], onDelete: Cascade)
 
   @@id([feature_flags_idfeature_flags, roles_idroles])
-  @@map("feature_flags_roles")
+  @@map("feature_flag_roles")
 }
 
 model FeatureFlagUsuario {
@@ -1390,5 +1388,5 @@ model FeatureFlagUsuario {
   usuario     Usuario     @relation(fields: [usuarios_idusuarios], references: [idusuarios], onDelete: Cascade)
 
   @@id([feature_flags_idfeature_flags, usuarios_idusuarios])
-  @@map("feature_flags_usuarios")
+  @@map("feature_flag_usuarios")
 }

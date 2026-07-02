@@ -9,7 +9,7 @@ import {
 } from '@nestjs/swagger';
 import { UsersService } from '../application/users.service.js';
 import { CreateUserSchema } from '../dto/create-user.dto.js';
-import { UpdateUserSchema } from '../dto/update-user.dto.js';
+import { UpdateUserSchema, UpdateOwnProfileSchema } from '../dto/update-user.dto.js';
 import { QueryUserSchema } from '../dto/query-user.dto.js';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../../common/guards/roles.guard.js';
@@ -90,8 +90,11 @@ export class UsersController {
   }
 
   @Patch(':id')
-  @Roles(...ROLES_MANAGE)
-  @ApiOperation({ summary: 'Update user' })
+  @ApiOperation({
+    summary: 'Update user',
+    description: 'Managers (SUPERVISOR_REGIONAL+) can update any field. ' +
+                 'Own profile: only nombre, email and password.',
+  })
   @ApiParam({ name: 'id', type: Number })
   @ApiBody({
     schema: {
@@ -100,9 +103,9 @@ export class UsersController {
         nombre:      { type: 'string', minLength: 2 },
         email:       { type: 'string', format: 'email' },
         password:    { type: 'string', minLength: 8 },
-        rol:         { type: 'string', enum: ROL_ENUM },
-        sucursal_id: { type: 'integer', nullable: true },
-        activo:      { type: 'boolean' },
+        rol:         { type: 'string', enum: ROL_ENUM, description: 'Managers only' },
+        sucursal_id: { type: 'integer', nullable: true, description: 'Managers only' },
+        activo:      { type: 'boolean', description: 'Managers only' },
       },
     },
   })
@@ -115,10 +118,18 @@ export class UsersController {
     @CurrentUser() user: { id: number; rol: string },
   ) {
     const isOwnProfile = user.id === id;
-    const hasPermission = ROLES_MANAGE.includes(user.rol);
-    if (!isOwnProfile && !hasPermission) throw new ForbiddenException('Insufficient permissions');
+    const isManager    = ROLES_MANAGE.includes(user.rol);
 
-    const parsed = UpdateUserSchema.safeParse(body);
+    if (!isOwnProfile && !isManager) throw new ForbiddenException('Insufficient permissions');
+
+    if (isManager) {
+      const parsed = UpdateUserSchema.safeParse(body);
+      if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+      return UsersPresenter.toResponse(await this.service.update(id, parsed.data));
+    }
+
+    // Perfil propio (no manager): solo nombre, email y password
+    const parsed = UpdateOwnProfileSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
     return UsersPresenter.toResponse(await this.service.update(id, parsed.data));
   }
@@ -129,7 +140,7 @@ export class UsersController {
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'User deactivated' })
   @ApiResponse({ status: 404, description: 'User not found' })
-  remove(@Param('id', ParseIntPipe) id: number) {
-    return this.service.remove(id);
+  async remove(@Param('id', ParseIntPipe) id: number) {
+    return UsersPresenter.toResponse(await this.service.remove(id));
   }
 }

@@ -35,9 +35,14 @@ export class FeatureFlagsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Feature flags activos para el usuario y entorno actuales' })
-  @ApiQuery({ name: 'entorno', required: false, enum: ['all', 'dev', 'staging', 'prod'] })
-  async getActivos(@Query('entorno') entorno = 'dev', @CurrentUser() user: AuthUser) {
-    const activos = await this.service.getActivos(entorno, { rol: user.rol, usuarioId: user.id });
+  @ApiQuery({ name: 'entorno',    required: false, enum: ['all', 'dev', 'staging', 'prod'] })
+  @ApiQuery({ name: 'plataforma', required: false, enum: ['all', 'web', 'tauri'] })
+  async getActivos(
+    @Query('entorno')    entorno    = 'dev',
+    @Query('plataforma') plataforma = 'all',
+    @CurrentUser() user: AuthUser,
+  ) {
+    const activos = await this.service.getActivos(entorno, { rol: user.rol, usuarioId: user.id, plataforma });
     return FeatureFlagsPresenter.toList(activos);
   }
 
