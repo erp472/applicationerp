@@ -1,4 +1,4 @@
-export type AuditAction  = 'CREATE' | 'READ' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'LOGOUT' | 'PRINT' | 'EXPORT';
+export type AuditAction  = 'CREATE' | 'READ' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'LOGOUT' | 'PRINT' | 'EXPORT' | 'DENIED';
 export type AuditResult  = 'OK' | 'ERROR';
 
 export class CreateAuditLogDto {

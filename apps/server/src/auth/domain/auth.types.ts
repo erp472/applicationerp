@@ -4,6 +4,7 @@ export interface JwtPayload {
   rol: string;
   sucursal_id: number | null;
   nombre: string;
+  permisos: string[];
 }
 
 export interface LoginResult {

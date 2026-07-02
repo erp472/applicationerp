@@ -57,10 +57,12 @@ Deben aparecer en estado **UP**:
 
 ## Dashboards instalados
 
-Los dashboards se cargan automáticamente desde `infra/grafana/dashboards/` al levantar Grafana.
+Los dashboards se cargan automáticamente desde `infra/grafana/dashboards/` al levantar Grafana (`updateIntervalSeconds: 30`, ver `infra/grafana/provisioning/dashboards/default.yml`). **Toda la configuración de Grafana vive únicamente en `infra/`** — ya no existe una copia paralela en `apps/monitoring/grafana` (se eliminó porque nunca estuvo montada en `docker-compose.monitoring.yml` y quedó desincronizada del schema real de la base de datos).
+
+> **Importante:** las tablas reales son `eventos_auditoria` y `usuarios` (Prisma `schema.prisma`), no `audit_logs`/`users`. Los campos `accion`, `resultado` y `error` de cada evento viven dentro del JSONB `datos_despueseventos_auditoria` (`->>'accion'`, `->>'resultado'`, `->>'error'`), no como columnas planas. Todas las queries de los dashboards de abajo ya están adaptadas a esto.
 
 ### 1. `4-72 POS — Servidor` (`server-metrics.json`)
-Panel de salud de la infraestructura. Refresco: 15s.
+Panel de salud de la infraestructura (host). Refresco: 15s.
 
 | Panel | Métrica | Alerta sugerida |
 |-------|---------|-----------------|
@@ -69,15 +71,29 @@ Panel de salud de la infraestructura. Refresco: 15s.
 | Disco usado % | `100 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} * 100)` | > 90% |
 | Heap Node.js | `pos472_nodejs_heap_size_used_bytes` | > 400 MB |
 
-### 2. `4-72 POS — Auditorías` (`audit-logs.json`)
-Vista operativa de seguridad desde PostgreSQL. Refresco: 30s.
+### 2. `4-72 POS — Performance` (`pos472-performance.json`)
+API/Node.js: requests/s, latencia p50/p95/p99, tasa de error 5xx, memoria, CPU y GC. Refresco: 10s. Fuente: Prometheus (`pos472_http_*`, `pos472_nodejs_*`).
 
-| Panel | SQL |
-|-------|-----|
-| Total eventos | `SELECT COUNT(*) FROM audit_logs WHERE created_at BETWEEN $__timeFrom() AND $__timeTo()` |
-| Errores | `... WHERE resultado = 'ERROR' ...` |
-| Logins OK | `... WHERE accion = 'LOGIN' AND resultado = 'OK' ...` |
-| Usuarios activos | `COUNT(DISTINCT usuario_id) WHERE accion = 'LOGIN' ...` |
+### 3. `4-72 POS — Auditorías` (`audit-logs.json`)
+Vista operativa general desde PostgreSQL (`eventos_auditoria`). Refresco: 30s. Total de eventos, errores, logins, usuarios activos, distribución por acción y tablas de detalle.
+
+### 4. `4-72 POS — Ciberseguridad` (`pos472-ciberseguridad.json`) — nuevo
+Detección de fuerza bruta (fallos de login en los últimos 5 min), IPs únicas, eliminaciones críticas en BD, top 10 IPs sospechosas, y **fugas de privilegios/escalación** (usuarios que intentaron ejecutar acciones restringidas a otro rol). Este último panel depende de que `RolesGuard` registre los intentos denegados — ver sección "Cambios de backend" abajo.
+
+### 5. `4-72 POS — Feature Flags` (`pos472-feature-flags.json`)
+Basado 100% en SQL sobre `feature_flags` (`activofeature_flags`, `entornofeature_flags`). No hay modo A/B test en el modelo real ni métrica Prometheus de feature flags — se descartó ese enfoque.
+
+### 6. `4-72 POS — DevSecOps (Placeholder)` (`pos472-devsecops.json`) — nuevo, sin datos aún
+Pipeline success rate, vulnerabilidades por severidad y lead time de parches. Muestra "No data" hasta conectar un exporter real de CI/CD o de un scanner SAST/DAST (no existe ese pipeline en el repo todavía).
+
+---
+
+## Cambios de backend necesarios para que los dashboards tengan datos
+
+Al revisar por qué los dashboards no mostraban nada se encontraron dos bugs reales en `apps/server`, ya corregidos:
+
+1. **`FeatureFlagsModule` nunca se registraba** en `app.module.ts` (estaba importado pero faltaba en el arreglo `imports`), así que toda la API de feature flags devolvía 404. Corregido.
+2. **Los accesos denegados por rol no se auditaban.** `RolesGuard` devolvía `false` sin dejar rastro, así que el panel de "Fugas de privilegios" del dashboard de Ciberseguridad no tenía forma de mostrar datos. Ahora `RolesGuard` registra un evento `DENIED` vía `AuditService` (se hizo `AuditModule` `@Global()` para poder inyectarlo en los guards de cualquier módulo).
 
 ---
 
@@ -251,29 +267,28 @@ Una vez activo, en Grafana → Explore → Loki puedes buscar:
 ```
 apps/monitoring/
 ├── README.md                          ← este archivo
-├── loki-config.yml                    ← config Loki (pendiente integrar)
+├── loki-config.yml                    ← config Loki (pendiente integrar, ver sección "Agregar Loki")
 ├── promtail-config.yml                ← recolector logs Docker (pendiente integrar)
-└── grafana/
-    └── provisioning/
-        ├── datasources/
-        │   └── datasources.yml        ← Prometheus + Loki + Jaeger + PostgreSQL
-        └── dashboards/
-            ├── dashboards.yml
-            ├── pos472-performance.json ← HTTP metrics + Node.js runtime
-            └── pos472-auditoria.json   ← Auditoría desde PostgreSQL
+└── prometheus.yml                     ← borrador con jobs adicionales (postgres/redis/rabbitmq exporters, no usados aún)
 
-infra/                                 ← configs activas en docker-compose.monitoring.yml
+infra/                                 ← única fuente de verdad, montada por docker-compose.monitoring.yml
 ├── prometheus/prometheus.yml
 └── grafana/
     ├── provisioning/
     │   ├── datasources/
-    │   │   ├── prometheus.yml
-    │   │   └── postgres.yml
+    │   │   ├── prometheus.yml         ← uid: pos472_prom
+    │   │   └── postgres.yml           ← uid: pos472_pg
     │   └── dashboards/default.yml
     └── dashboards/
-        ├── server-metrics.json        ← CPU / RAM / disco / Heap
-        └── audit-logs.json            ← Auditoría operativa
+        ├── server-metrics.json        ← CPU / RAM / disco / Heap (host, node_exporter)
+        ├── pos472-performance.json    ← HTTP metrics + Node.js runtime (API)
+        ├── audit-logs.json            ← Auditoría operativa general
+        ├── pos472-ciberseguridad.json ← Fuerza bruta, IPs sospechosas, escalación de privilegios
+        ├── pos472-feature-flags.json  ← Estado de feature flags (activo/entorno)
+        └── pos472-devsecops.json      ← Placeholder, pendiente de exporters CI/CD y SAST/DAST
 ```
+
+Cualquier archivo `.json` nuevo que agregues en `infra/grafana/dashboards/` aparece automáticamente en Grafana en ≤30s, sin reiniciar el contenedor.
 
 ---
 

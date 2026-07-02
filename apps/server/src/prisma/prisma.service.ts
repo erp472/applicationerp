@@ -181,7 +181,9 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get eventoAuditoria() { return this.rawClient.eventoAuditoria; }
 
   // ── 21. Feature flags ──────────────────────────────────────────────────────
-  get featureFlag()     { return this.client.featureFlag; }
+  get featureFlag()        { return this.client.featureFlag; }
+  get featureFlagRol()     { return this.client.featureFlagRol; }
+  get featureFlagUsuario() { return this.client.featureFlagUsuario; }
 
   // ── Transacciones ──────────────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

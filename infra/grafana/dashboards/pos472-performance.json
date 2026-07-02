@@ -1,5 +1,5 @@
 {
-  "title": "POS 4-72 — Performance",
+  "title": "4-72 POS — Performance",
   "uid": "pos472-performance",
   "version": 1,
   "schemaVersion": 38,
@@ -13,7 +13,7 @@
       "type": "stat",
       "title": "Requests/s",
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "pos472-prometheus" },
+      "datasource": { "uid": "pos472_prom" },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
       "targets": [{
         "refId": "A",
@@ -26,7 +26,7 @@
       "type": "stat",
       "title": "Tasa de error HTTP (%)",
       "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "pos472-prometheus" },
+      "datasource": { "uid": "pos472_prom" },
       "options": {
         "reduceOptions": { "calcs": ["lastNotNull"] },
         "colorMode": "background",
@@ -43,7 +43,7 @@
       "type": "stat",
       "title": "Heap usado",
       "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "pos472-prometheus" },
+      "datasource": { "uid": "pos472_prom" },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "unit": "bytes" },
       "targets": [{
         "refId": "A",
@@ -56,7 +56,7 @@
       "type": "stat",
       "title": "Event loop lag (p99)",
       "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "pos472-prometheus" },
+      "datasource": { "uid": "pos472_prom" },
       "options": {
         "reduceOptions": { "calcs": ["lastNotNull"] },
         "colorMode": "background",
@@ -74,22 +74,22 @@
       "type": "timeseries",
       "title": "Latencia HTTP (p50 / p95 / p99)",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
-      "datasource": { "type": "prometheus", "uid": "pos472-prometheus" },
+      "datasource": { "uid": "pos472_prom" },
       "fieldConfig": { "defaults": { "unit": "ms" } },
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.50, sum(rate(pos472_http_request_duration_ms_bucket[5m])) by (le)) * 1000",
+          "expr": "histogram_quantile(0.50, sum(rate(pos472_http_request_duration_ms_bucket[5m])) by (le))",
           "legendFormat": "p50"
         },
         {
           "refId": "B",
-          "expr": "histogram_quantile(0.95, sum(rate(pos472_http_request_duration_ms_bucket[5m])) by (le)) * 1000",
+          "expr": "histogram_quantile(0.95, sum(rate(pos472_http_request_duration_ms_bucket[5m])) by (le))",
           "legendFormat": "p95"
         },
         {
           "refId": "C",
-          "expr": "histogram_quantile(0.99, sum(rate(pos472_http_request_duration_ms_bucket[5m])) by (le)) * 1000",
+          "expr": "histogram_quantile(0.99, sum(rate(pos472_http_request_duration_ms_bucket[5m])) by (le))",
           "legendFormat": "p99"
         }
       ]
@@ -99,7 +99,7 @@
       "type": "timeseries",
       "title": "Requests por estado HTTP",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
-      "datasource": { "type": "prometheus", "uid": "pos472-prometheus" },
+      "datasource": { "uid": "pos472_prom" },
       "targets": [{
         "refId": "A",
         "expr": "sum by (status) (rate(pos472_http_requests_total[1m]))",
@@ -111,7 +111,7 @@
       "type": "timeseries",
       "title": "Memoria Node.js",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
-      "datasource": { "type": "prometheus", "uid": "pos472-prometheus" },
+      "datasource": { "uid": "pos472_prom" },
       "fieldConfig": { "defaults": { "unit": "bytes" } },
       "targets": [
         {
@@ -136,7 +136,7 @@
       "type": "timeseries",
       "title": "CPU (segundos/s)",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
-      "datasource": { "type": "prometheus", "uid": "pos472-prometheus" },
+      "datasource": { "uid": "pos472_prom" },
       "targets": [{
         "refId": "A",
         "expr": "rate(pos472_process_cpu_seconds_total[1m])",
@@ -147,26 +147,13 @@
       "id": 9,
       "type": "timeseries",
       "title": "GC — duración por tipo",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
-      "datasource": { "type": "prometheus", "uid": "pos472-prometheus" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 },
+      "datasource": { "uid": "pos472_prom" },
       "fieldConfig": { "defaults": { "unit": "s" } },
       "targets": [{
         "refId": "A",
         "expr": "rate(pos472_nodejs_gc_duration_seconds_sum[1m])",
         "legendFormat": "{{kind}}"
-      }]
-    },
-    {
-      "id": 10,
-      "type": "logs",
-      "title": "Logs recientes (Loki)",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
-      "datasource": { "type": "loki", "uid": "pos472-loki" },
-      "options": { "showTime": true, "sortOrder": "Descending" },
-      "targets": [{
-        "refId": "A",
-        "expr": "{container_name=\"pos472_api\"} | json | level =~ \"error|warn\"",
-        "legendFormat": ""
       }]
     }
   ]

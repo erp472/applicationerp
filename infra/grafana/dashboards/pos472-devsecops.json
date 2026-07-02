@@ -1,0 +1,58 @@
+{
+  "title": "4-72 POS — DevSecOps (Placeholder)",
+  "uid": "pos472-devsecops",
+  "version": 1,
+  "schemaVersion": 38,
+  "refresh": "5m",
+  "time": { "from": "now-7d", "to": "now" },
+  "timezone": "America/Bogota",
+  "tags": ["pos472", "devsecops", "placeholder"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "Estado de la integración",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "**Este dashboard es un placeholder.** Los paneles de abajo consultan métricas que todavía no se publican en Prometheus porque el pipeline de CI/CD (GitHub Actions / GitLab / Jenkins) y los scanners SAST/DAST (SonarQube, Trivy, Snyk) aún no están integrados. Mostrarán \"No data\" hasta que se conecte un exporter o webhook real. Ver `docs/information_monitoring.md` para el diseño propuesto.\n\nPendiente:\n- Exportar `pos472_ci_pipeline_success_ratio` (job/status) desde el CI.\n- Exportar `pos472_security_vulnerabilities_total{severidad=\"critico|alto|medio|bajo\"}` desde el scanner SAST/DAST.\n- Exportar `pos472_patch_lead_time_hours` (tiempo entre CVE reportado y despliegue del fix)."
+      }
+    },
+    {
+      "id": 2,
+      "type": "gauge",
+      "title": "Tasa de éxito del pipeline",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 4 },
+      "datasource": { "uid": "pos472_prom" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "showThresholdMarkers": true },
+      "fieldConfig": { "defaults": {
+        "unit": "percent", "min": 0, "max": 100,
+        "thresholds": { "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 70 }, { "color": "green", "value": 90 }] }
+      } },
+      "targets": [{ "refId": "A", "expr": "100 * avg(pos472_ci_pipeline_success_ratio)", "legendFormat": "success %" }]
+    },
+    {
+      "id": 3,
+      "type": "barchart",
+      "title": "Vulnerabilidades abiertas por severidad",
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 4 },
+      "datasource": { "uid": "pos472_prom" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" } } },
+      "options": { "orientation": "horizontal", "stacking": "normal" },
+      "targets": [{ "refId": "A", "expr": "pos472_security_vulnerabilities_total", "legendFormat": "{{severidad}}" }]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Lead time de parches (promedio)",
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 4 },
+      "datasource": { "uid": "pos472_prom" },
+      "options": { "reduceOptions": { "calcs": ["mean"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": {
+        "unit": "h",
+        "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 48 }, { "color": "red", "value": 168 }] }
+      } },
+      "targets": [{ "refId": "A", "expr": "avg(pos472_patch_lead_time_hours)", "legendFormat": "lead time" }]
+    }
+  ]
+}

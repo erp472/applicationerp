@@ -20,5 +20,15 @@ export const UpdateFeatureFlagSchema = z.object({
   roles:       z.array(z.string().min(1)).optional(),
 });
 
+export const AssignRolSchema = z.object({
+  rolId: z.number().int().positive(),
+});
+
+export const AssignUsuarioSchema = z.object({
+  usuarioId: z.number().int().positive(),
+});
+
 export type CreateFeatureFlagDto = z.infer<typeof CreateFeatureFlagSchema>;
 export type UpdateFeatureFlagDto = z.infer<typeof UpdateFeatureFlagSchema>;
+export type AssignRolDto         = z.infer<typeof AssignRolSchema>;
+export type AssignUsuarioDto     = z.infer<typeof AssignUsuarioSchema>;

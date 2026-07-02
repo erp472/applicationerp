@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateAuditLogDto } from './create-audit-log.dto.js';
 
 const ACCION_TO_OPERACION: Record<string, operacion_auditoria> = {
-  CREATE: 'INSERT', LOGIN: 'INSERT', LOGOUT: 'INSERT', PRINT: 'INSERT', EXPORT: 'INSERT', READ: 'INSERT',
+  CREATE: 'INSERT', LOGIN: 'INSERT', LOGOUT: 'INSERT', PRINT: 'INSERT', EXPORT: 'INSERT', READ: 'INSERT', DENIED: 'INSERT',
   UPDATE: 'UPDATE',
   DELETE: 'DELETE',
 };
