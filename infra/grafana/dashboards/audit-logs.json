@@ -14,10 +14,7 @@
       "datasource": { "uid": "pos472_pg" },
       "options": { "colorMode": "background", "graphMode": "area", "textMode": "auto" },
       "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } } },
-      "targets": [{
-        "rawSql": "SELECT COUNT(*) FROM eventos_auditoria WHERE created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo()",
-        "format": "table"
-      }]
+      "targets": [{ "rawSql": "SELECT COUNT(*) FROM eventos_auditoria WHERE $__timeFilter(created_ateventos_auditoria)", "format": "table", "refId": "A" }]
     },
     {
       "id": 2,
@@ -27,23 +24,17 @@
       "datasource": { "uid": "pos472_pg" },
       "options": { "colorMode": "background", "graphMode": "none" },
       "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } } },
-      "targets": [{
-        "rawSql": "SELECT COUNT(*) FROM eventos_auditoria WHERE datos_despueseventos_auditoria->>'resultado' = 'ERROR' AND created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo()",
-        "format": "table"
-      }]
+      "targets": [{ "rawSql": "SELECT COUNT(*) FROM eventos_auditoria WHERE datos_despueseventos_auditoria->>'resultado' = 'ERROR' AND $__timeFilter(created_ateventos_auditoria)", "format": "table", "refId": "A" }]
     },
     {
       "id": 3,
       "type": "stat",
-      "title": "Logins (período)",
+      "title": "Logins exitosos (período)",
       "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
       "datasource": { "uid": "pos472_pg" },
       "options": { "colorMode": "background", "graphMode": "area" },
       "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } } },
-      "targets": [{
-        "rawSql": "SELECT COUNT(*) FROM eventos_auditoria WHERE datos_despueseventos_auditoria->>'accion' = 'LOGIN' AND datos_despueseventos_auditoria->>'resultado' = 'OK' AND created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo()",
-        "format": "table"
-      }]
+      "targets": [{ "rawSql": "SELECT COUNT(*) FROM eventos_auditoria WHERE tablaeventos_auditoria = 'auth' AND datos_despueseventos_auditoria->>'resultado' = 'OK' AND $__timeFilter(created_ateventos_auditoria)", "format": "table", "refId": "A" }]
     },
     {
       "id": 4,
@@ -53,10 +44,17 @@
       "datasource": { "uid": "pos472_pg" },
       "options": { "colorMode": "background", "graphMode": "none" },
       "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }] } } },
-      "targets": [{
-        "rawSql": "SELECT COUNT(DISTINCT usuarios_idusuarios) FROM eventos_auditoria WHERE datos_despueseventos_auditoria->>'accion' = 'LOGIN' AND datos_despueseventos_auditoria->>'resultado' = 'OK' AND usuarios_idusuarios IS NOT NULL AND created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo()",
-        "format": "table"
-      }]
+      "targets": [{ "rawSql": "SELECT COUNT(DISTINCT usuarios_idusuarios) FROM eventos_auditoria WHERE tablaeventos_auditoria = 'auth' AND datos_despueseventos_auditoria->>'resultado' = 'OK' AND usuarios_idusuarios IS NOT NULL AND $__timeFilter(created_ateventos_auditoria)", "format": "table", "refId": "A" }]
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Operaciones CRUD",
+      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "colorMode": "background", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "purple", "value": null }] } } },
+      "targets": [{ "rawSql": "SELECT COUNT(*) FROM eventos_auditoria WHERE tablaeventos_auditoria != 'auth' AND $__timeFilter(created_ateventos_auditoria)", "format": "table", "refId": "A" }]
     },
     {
       "id": 5,
@@ -68,20 +66,22 @@
         "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10 } }
       },
       "targets": [{
-        "rawSql": "SELECT date_trunc('hour', created_ateventos_auditoria) AS time, datos_despueseventos_auditoria->>'accion' AS accion, COUNT(*) AS count FROM eventos_auditoria WHERE created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() GROUP BY 1, 2 ORDER BY 1",
-        "format": "time_series"
+        "rawSql": "SELECT date_trunc('hour', created_ateventos_auditoria) AS \"time\", SUM(CASE WHEN tablaeventos_auditoria = 'auth' AND datos_despueseventos_auditoria->>'resultado' = 'OK' THEN 1 ELSE 0 END) AS \"LOGIN\", SUM(CASE WHEN tablaeventos_auditoria = 'auth' AND datos_despueseventos_auditoria->>'resultado' = 'ERROR' THEN 1 ELSE 0 END) AS \"LOGIN_ERROR\", SUM(CASE WHEN operacioneventos_auditoria = 'INSERT' AND tablaeventos_auditoria != 'auth' THEN 1 ELSE 0 END) AS \"INSERT\", SUM(CASE WHEN operacioneventos_auditoria = 'UPDATE' THEN 1 ELSE 0 END) AS \"UPDATE\", SUM(CASE WHEN operacioneventos_auditoria = 'DELETE' THEN 1 ELSE 0 END) AS \"DELETE\" FROM eventos_auditoria WHERE $__timeFilter(created_ateventos_auditoria) GROUP BY 1 ORDER BY 1",
+        "format": "time_series",
+        "refId": "A"
       }]
     },
     {
       "id": 6,
       "type": "piechart",
-      "title": "Distribución por acción",
-      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 8 },
+      "title": "Distribución por tipo de evento",
+      "gridPos": { "x": 16, "y": 4, "w": 8, "h": 8 },
       "datasource": { "uid": "pos472_pg" },
       "options": { "pieType": "donut", "legendDisplayMode": "table", "placement": "right" },
       "targets": [{
-        "rawSql": "SELECT datos_despueseventos_auditoria->>'accion' AS accion, COUNT(*) AS total FROM eventos_auditoria WHERE created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() GROUP BY accion ORDER BY total DESC",
-        "format": "table"
+        "rawSql": "SELECT COALESCE(datos_despueseventos_auditoria->>'accion', operacioneventos_auditoria::text) AS \"Tipo\", COUNT(*) AS \"Total\" FROM eventos_auditoria WHERE $__timeFilter(created_ateventos_auditoria) GROUP BY 1 ORDER BY 2 DESC",
+        "format": "table",
+        "refId": "A"
       }]
     },
     {
@@ -93,13 +93,21 @@
       "options": { "sortBy": [{ "displayName": "Fecha", "desc": true }] },
       "fieldConfig": {
         "overrides": [
-          { "matcher": { "id": "byName", "options": "resultado" }, "properties": [{ "id": "custom.displayMode", "value": "color-background" }, { "id": "mappings", "value": [{ "type": "value", "options": { "OK": { "color": "green", "text": "OK" }, "ERROR": { "color": "red", "text": "ERROR" } } }] }] },
-          { "matcher": { "id": "byName", "options": "Fecha" }, "properties": [{ "id": "custom.width", "value": 180 }] }
+          {
+            "matcher": { "id": "byName", "options": "Estado" },
+            "properties": [
+              { "id": "custom.displayMode", "value": "color-background" },
+              { "id": "mappings", "value": [{ "type": "value", "options": { "OK": { "color": "green", "text": "OK" }, "ERROR": { "color": "red", "text": "ERROR" }, "INSERT": { "color": "blue", "text": "INSERT" }, "UPDATE": { "color": "orange", "text": "UPDATE" }, "DELETE": { "color": "red", "text": "DELETE" } } }] }
+            ]
+          },
+          { "matcher": { "id": "byName", "options": "Fecha" }, "properties": [{ "id": "custom.width", "value": 200 }] },
+          { "matcher": { "id": "byName", "options": "IP" },    "properties": [{ "id": "custom.width", "value": 120 }] }
         ]
       },
       "targets": [{
-        "rawSql": "SELECT ea.created_ateventos_auditoria AS \"Fecha\", u.nombreusuarios AS \"Usuario\", ea.datos_despueseventos_auditoria->>'accion' AS \"Acción\", ea.tablaeventos_auditoria AS \"Entidad\", ea.operacioneventos_auditoria AS \"Operación DB\", ea.datos_despueseventos_auditoria->>'resultado' AS resultado, ea.ip_origeneventos_auditoria AS \"IP\", ea.datos_despueseventos_auditoria->>'error' AS \"Error\" FROM eventos_auditoria ea LEFT JOIN usuarios u ON u.idusuarios = ea.usuarios_idusuarios WHERE ea.created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() ORDER BY ea.created_ateventos_auditoria DESC LIMIT 100",
-        "format": "table"
+        "rawSql": "SELECT ea.created_ateventos_auditoria AS \"Fecha\", u.nombreusuarios AS \"Usuario\", ea.tablaeventos_auditoria AS \"Entidad\", COALESCE(ea.datos_despueseventos_auditoria->>'accion', ea.operacioneventos_auditoria::text) AS \"Acción\", COALESCE(ea.datos_despueseventos_auditoria->>'resultado', ea.operacioneventos_auditoria::text) AS \"Estado\", ea.ip_origeneventos_auditoria AS \"IP\", ea.datos_despueseventos_auditoria->>'error' AS \"Error\" FROM eventos_auditoria ea LEFT JOIN usuarios u ON u.idusuarios = ea.usuarios_idusuarios WHERE $__timeFilter(ea.created_ateventos_auditoria) ORDER BY ea.created_ateventos_auditoria DESC LIMIT 100",
+        "format": "table",
+        "refId": "A"
       }]
     },
     {
@@ -109,8 +117,9 @@
       "gridPos": { "x": 0, "y": 22, "w": 24, "h": 7 },
       "datasource": { "uid": "pos472_pg" },
       "targets": [{
-        "rawSql": "SELECT ea.created_ateventos_auditoria AS \"Fecha\", u.nombreusuarios AS \"Usuario\", ea.datos_despueseventos_auditoria->>'accion' AS \"Acción\", ea.tablaeventos_auditoria AS \"Entidad\", ea.datos_despueseventos_auditoria->>'error' AS \"Mensaje de error\", ea.ip_origeneventos_auditoria AS \"IP\" FROM eventos_auditoria ea LEFT JOIN usuarios u ON u.idusuarios = ea.usuarios_idusuarios WHERE ea.datos_despueseventos_auditoria->>'resultado' = 'ERROR' AND ea.created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() ORDER BY ea.created_ateventos_auditoria DESC LIMIT 50",
-        "format": "table"
+        "rawSql": "SELECT ea.created_ateventos_auditoria AS \"Fecha\", u.nombreusuarios AS \"Usuario\", ea.tablaeventos_auditoria AS \"Entidad\", ea.datos_despueseventos_auditoria->>'accion' AS \"Acción\", ea.datos_despueseventos_auditoria->>'error' AS \"Mensaje de error\", ea.ip_origeneventos_auditoria AS \"IP\" FROM eventos_auditoria ea LEFT JOIN usuarios u ON u.idusuarios = ea.usuarios_idusuarios WHERE ea.datos_despueseventos_auditoria->>'resultado' = 'ERROR' AND $__timeFilter(ea.created_ateventos_auditoria) ORDER BY ea.created_ateventos_auditoria DESC LIMIT 50",
+        "format": "table",
+        "refId": "A"
       }]
     }
   ]
