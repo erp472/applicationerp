@@ -1,14 +1,15 @@
-import { ExceptionFilter, Catch, ArgumentsHost } from '@nestjs/common';
-import { Response } from 'express';
-import { FeatureFlagsDomainError } from '../domain/feature-flags.errors.js';
+import { ArgumentsHost, Catch, ExceptionFilter } from '@nestjs/common';
+import { FastifyReply } from 'fastify';
+import { FeatureFlagDomainError } from '../domain/feature-flags.errors.js';
 
-@Catch(FeatureFlagsDomainError)
+@Catch(FeatureFlagDomainError)
 export class FeatureFlagsDomainFilter implements ExceptionFilter {
-  catch(err: FeatureFlagsDomainError, host: ArgumentsHost) {
-    host.switchToHttp().getResponse<Response>().status(err.statusCode).json({
-      statusCode: err.statusCode,
-      message: err.message,
-      error: err.name,
+  catch(exception: FeatureFlagDomainError, host: ArgumentsHost) {
+    const response = host.switchToHttp().getResponse<FastifyReply>();
+    response.status(exception.statusCode).send({
+      statusCode: exception.statusCode,
+      message:    exception.message,
+      error:      exception.name,
     });
   }
 }

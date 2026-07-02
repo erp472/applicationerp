@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuditService } from '../../audit/audit.service.js';
+import { PermisosService } from '../../permisos/permisos.service.js';
 import { LoginDto } from '../dto/login.dto.js';
 import { JwtPayload, LoginResult } from '../domain/auth.types.js';
 
@@ -12,6 +13,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly audit: AuditService,
+    private readonly permisosService: PermisosService,
   ) {}
 
   async login(dto: LoginDto, macAddress?: string): Promise<LoginResult> {
@@ -24,7 +26,7 @@ export class AuthService {
         sucursales_idsucursales: true,
         nombreusuarios:         true,
         activousuarios:         true,
-        rol:                    { select: { codigoroles: true } },
+        rol:                    { select: { idroles: true, codigoroles: true } },
       },
     });
 
@@ -45,7 +47,7 @@ export class AuthService {
 
     void this.audit.log({ accion: 'LOGIN', entidad: 'auth', usuario_id: usuario.idusuarios, entidad_id: usuario.idusuarios, resultado: 'OK' });
 
-    const permisos = await this.obtenerPermisos(usuario.rolId);
+    const permisos = await this.obtenerPermisos(usuario.rol.idroles);
 
     const payload: JwtPayload = {
       sub:         usuario.idusuarios,
@@ -53,6 +55,7 @@ export class AuthService {
       rol:         Buffer.from(usuario.rol.codigoroles).toString('base64'),
       sucursal_id: usuario.sucursales_idsucursales ?? null,
       nombre:      usuario.nombreusuarios,
+      permisos,
     };
 
     return {
@@ -109,5 +112,10 @@ export class AuthService {
     const equipo = await this.prisma.equipoAutorizado.findFirst({ where });
 
     if (!equipo) throw new UnauthorizedException('Este equipo no está autorizado para este usuario. Contáctese con soporte: applicationerp472@gmail.com');
+  }
+
+  private async obtenerPermisos(rolId: number): Promise<string[]> {
+    const asignaciones = await this.permisosService.getPermisosDeRol(rolId);
+    return asignaciones.map((a) => a.permiso.codigopermisos);
   }
 }

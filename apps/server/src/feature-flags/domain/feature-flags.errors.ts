@@ -1,19 +1,19 @@
-export abstract class FeatureFlagsDomainError extends Error {
+export abstract class FeatureFlagDomainError extends Error {
   abstract readonly statusCode: number;
 }
 
-export class FeatureFlagNotFoundError extends FeatureFlagsDomainError {
+export class FeatureFlagNotFoundError extends FeatureFlagDomainError {
   readonly statusCode = 404;
   constructor(id: string) {
-    super(`Feature flag "${id}" no encontrado`);
+    super(`FeatureFlag ${id} no encontrado`);
     this.name = 'FeatureFlagNotFoundError';
   }
 }
 
-export class FeatureFlagNombreDuplicadoError extends FeatureFlagsDomainError {
+export class FeatureFlagCodigoDuplicadoError extends FeatureFlagDomainError {
   readonly statusCode = 409;
-  constructor(nombre: string) {
-    super(`Ya existe un feature flag con el nombre "${nombre}"`);
-    this.name = 'FeatureFlagNombreDuplicadoError';
+  constructor(codigo: string) {
+    super(`FeatureFlag "${codigo}" ya existe`);
+    this.name = 'FeatureFlagCodigoDuplicadoError';
   }
 }

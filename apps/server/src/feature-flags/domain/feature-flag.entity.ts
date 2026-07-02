@@ -1,14 +1,23 @@
-export enum FeatureFlagModo {
-  PRODUCCION = 'PRODUCCION',
-  AB_TEST    = 'AB_TEST',
-  INACTIVO   = 'INACTIVO',
+export interface FeatureFlagRolRef {
+  id: number;
+  codigo: string;
+  nombre: string;
+}
+
+export interface FeatureFlagUsuarioRef {
+  id: number;
+  nombre: string;
+  email: string;
 }
 
 export class FeatureFlagEntity {
-  id:          string;
-  nombre:      string;
-  modo:        FeatureFlagModo;
+  id: number;
+  codigo: string;
   descripcion: string | null;
-  createdAt:   Date;
-  updatedAt:   Date;
+  activo: boolean;
+  entorno: string;
+  createdAt: Date;
+  updatedAt: Date;
+  roles: FeatureFlagRolRef[];
+  usuarios: FeatureFlagUsuarioRef[];
 }

@@ -1,108 +1,93 @@
-import { Injectable, Inject, OnApplicationBootstrap } from '@nestjs/common';
-import type Redis from 'ioredis';
-import * as promClient from 'prom-client';
-import { PrismaService } from '../../prisma/prisma.service.js';
-import { REDIS_CLIENT } from '../../redis/redis.module.js';
-import { FeatureFlagModo } from '../domain/feature-flag.entity.js';
+import { Injectable, Inject } from '@nestjs/common';
+import { FEATURE_FLAGS_REPOSITORY } from '../domain/feature-flags.repository.js';
+import type { IFeatureFlagsRepository } from '../domain/feature-flags.repository.js';
 import {
   FeatureFlagNotFoundError,
-  FeatureFlagNombreDuplicadoError,
+  FeatureFlagCodigoDuplicadoError,
 } from '../domain/feature-flags.errors.js';
-import type { CreateFeatureFlagDto, UpdateFeatureFlagDto } from '../dto/create-feature-flag.dto.js';
+import type { CreateFeatureFlagDto, UpdateFeatureFlagDto } from '../dto/feature-flag.dto.js';
+import type { FeatureFlagEntity } from '../domain/feature-flag.entity.js';
 
-const CACHE_TTL = 60; // segundos
-const CACHE_KEY = (nombre: string) => `ff:${nombre}`;
-
-const MODO_VALOR: Record<FeatureFlagModo, number> = {
-  PRODUCCION: 2,
-  AB_TEST:    1,
-  INACTIVO:   0,
-};
-
-// Gauge global — evitamos re-registrar en hot-reload
-const ffGauge: promClient.Gauge<'nombre'> =
-  (promClient.register.getSingleMetric('pos472_feature_flag_modo') as promClient.Gauge<'nombre'>) ??
-  new promClient.Gauge<'nombre'>({
-    name:       'pos472_feature_flag_modo',
-    help:       'Estado del feature flag: 2=PRODUCCION 1=AB_TEST 0=INACTIVO',
-    labelNames: ['nombre'],
-  });
+export interface EvaluacionContexto {
+  rol?: string;
+  usuarioId?: number;
+}
 
 @Injectable()
-export class FeatureFlagsService implements OnApplicationBootstrap {
+export class FeatureFlagsService {
   constructor(
-    private readonly prisma: PrismaService,
-    @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    @Inject(FEATURE_FLAGS_REPOSITORY)
+    private readonly repo: IFeatureFlagsRepository,
   ) {}
 
-  async onApplicationBootstrap() {
-    await this.sincronizarMetricas();
+  findAll(entorno?: string) {
+    return this.repo.findAll(entorno);
   }
 
-  // ─── PUERTA DE ACCESO ──────────────────────────────────────────────────────
-  async isActive(nombre: string): Promise<boolean> {
-    try {
-      const cached = await this.redis.get(CACHE_KEY(nombre));
-      if (cached !== null) return cached !== FeatureFlagModo.INACTIVO;
-    } catch { /* Redis caído → usar BD */ }
-
-    const flag = await this.prisma.featureFlag.findUnique({ where: { nombre } });
-    if (!flag) return false;
-
-    try {
-      await this.redis.setex(CACHE_KEY(nombre), CACHE_TTL, flag.modo);
-    } catch { /* no crítico */ }
-
-    return flag.modo !== FeatureFlagModo.INACTIVO;
-  }
-
-  // ─── CRUD ──────────────────────────────────────────────────────────────────
-  findAll() {
-    return this.prisma.featureFlag.findMany({ orderBy: { nombre: 'asc' } });
-  }
-
-  async findOne(id: string) {
-    const flag = await this.prisma.featureFlag.findUnique({ where: { id } });
-    if (!flag) throw new FeatureFlagNotFoundError(id);
+  async findOne(id: number) {
+    const flag = await this.repo.findById(id);
+    if (!flag) throw new FeatureFlagNotFoundError(String(id));
     return flag;
+  }
+
+  async getActivos(entorno: string, ctx: EvaluacionContexto = {}) {
+    const activos = await this.repo.findActivos(entorno);
+    return activos.filter((flag) => this.aplicaA(flag, ctx));
+  }
+
+  async isActive(codigo: string, entorno: string, ctx: EvaluacionContexto = {}): Promise<boolean> {
+    const flag = await this.repo.findByCodigo(codigo);
+    if (!flag || !flag.activo) return false;
+    if (flag.entorno !== 'all' && flag.entorno !== entorno) return false;
+    return this.aplicaA(flag, ctx);
+  }
+
+  /** Sin roles/usuarios asociados = aplica a todos. Con segmentación, basta con cumplir una de las dos. */
+  private aplicaA(flag: FeatureFlagEntity, ctx: EvaluacionContexto): boolean {
+    if (flag.roles.length === 0 && flag.usuarios.length === 0) return true;
+    const porRol     = ctx.rol       ? flag.roles.some((r) => r.codigo === ctx.rol) : false;
+    const porUsuario = ctx.usuarioId ? flag.usuarios.some((u) => u.id === ctx.usuarioId) : false;
+    return porRol || porUsuario;
   }
 
   async create(dto: CreateFeatureFlagDto) {
-    const existe = await this.prisma.featureFlag.findUnique({ where: { nombre: dto.nombre } });
-    if (existe) throw new FeatureFlagNombreDuplicadoError(dto.nombre);
-
-    const flag = await this.prisma.featureFlag.create({ data: dto });
-    this.actualizarMetrica(flag.nombre, flag.modo as FeatureFlagModo);
-    return flag;
+    const exists = await this.repo.findByCodigo(dto.codigo);
+    if (exists) throw new FeatureFlagCodigoDuplicadoError(dto.codigo);
+    return this.repo.create(dto);
   }
 
-  async update(id: string, dto: UpdateFeatureFlagDto) {
+  async update(id: number, dto: UpdateFeatureFlagDto) {
     await this.findOne(id);
-    const flag = await this.prisma.featureFlag.update({ where: { id }, data: dto });
-
-    try { await this.redis.del(CACHE_KEY(flag.nombre)); } catch {}
-    this.actualizarMetrica(flag.nombre, flag.modo as FeatureFlagModo);
-    return flag;
+    return this.repo.update(id, dto);
   }
 
-  async remove(id: string) {
-    const flag = await this.findOne(id);
-    await this.prisma.featureFlag.delete({ where: { id } });
-
-    try { await this.redis.del(CACHE_KEY(flag.nombre)); } catch {}
-    ffGauge.remove({ nombre: flag.nombre });
+  async remove(id: number) {
+    await this.findOne(id);
+    await this.repo.remove(id);
     return { id, eliminado: true };
   }
 
-  // ─── MÉTRICAS ──────────────────────────────────────────────────────────────
-  private actualizarMetrica(nombre: string, modo: FeatureFlagModo) {
-    ffGauge.set({ nombre }, MODO_VALOR[modo]);
+  async asignarRol(featureFlagId: number, rolId: number) {
+    await this.findOne(featureFlagId);
+    await this.repo.asignarRol(featureFlagId, rolId);
+    return this.findOne(featureFlagId);
   }
 
-  private async sincronizarMetricas() {
-    const flags = await this.prisma.featureFlag.findMany();
-    for (const f of flags) {
-      this.actualizarMetrica(f.nombre, f.modo as FeatureFlagModo);
-    }
+  async revocarRol(featureFlagId: number, rolId: number) {
+    await this.findOne(featureFlagId);
+    await this.repo.revocarRol(featureFlagId, rolId);
+    return this.findOne(featureFlagId);
+  }
+
+  async asignarUsuario(featureFlagId: number, usuarioId: number) {
+    await this.findOne(featureFlagId);
+    await this.repo.asignarUsuario(featureFlagId, usuarioId);
+    return this.findOne(featureFlagId);
+  }
+
+  async revocarUsuario(featureFlagId: number, usuarioId: number) {
+    await this.findOne(featureFlagId);
+    await this.repo.revocarUsuario(featureFlagId, usuarioId);
+    return this.findOne(featureFlagId);
   }
 }

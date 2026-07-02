@@ -11,7 +11,7 @@ import { PermisosModule } from './permisos/permisos.module.js';
 import { FeatureFlagsModule } from './feature-flags/feature-flags.module.js';
 
 @Module({
-  imports: [PrismaModule, AuditModule, MetricsModule, AuthModule, UsersModule, DevicesModule, PermisosModule],
+  imports: [PrismaModule, AuditModule, MetricsModule, AuthModule, UsersModule, DevicesModule, PermisosModule, FeatureFlagsModule],
   controllers: [AppController],
   providers: [AppService],
 })

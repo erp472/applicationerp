@@ -397,6 +397,7 @@ model Rol {
 
   usuarios      Usuario[]
   rolesPermisos RolPermiso[]
+  featureFlagsRoles FeatureFlagRol[]
 
   @@map("roles")
 }
@@ -463,6 +464,7 @@ model Usuario {
   anulacionesAprobadas    Anulacion[]           @relation("AnulacionAprobador")
   eventosAuditoria        EventoAuditoria[]
   consultasInspektor      ConsultaInspektor[]
+  featureFlagsUsuarios    FeatureFlagUsuario[]
 
   @@index([sucursales_idsucursales])
   @@map("usuarios")
@@ -1354,5 +1356,30 @@ model FeatureFlag {
   created_atfeature_flags  DateTime             @default(now()) @db.Timestamptz(6)
   updated_atfeature_flags  DateTime             @default(now()) @db.Timestamptz(6)
 
+  roles    FeatureFlagRol[]
+  usuarios FeatureFlagUsuario[]
+
   @@map("feature_flags")
+}
+
+model FeatureFlagRol {
+  feature_flags_idfeature_flags Int
+  roles_idroles                 Int
+
+  featureFlag FeatureFlag @relation(fields: [feature_flags_idfeature_flags], references: [idfeature_flags], onDelete: Cascade)
+  rol         Rol         @relation(fields: [roles_idroles], references: [idroles], onDelete: Cascade)
+
+  @@id([feature_flags_idfeature_flags, roles_idroles])
+  @@map("feature_flags_roles")
+}
+
+model FeatureFlagUsuario {
+  feature_flags_idfeature_flags Int
+  usuarios_idusuarios           Int
+
+  featureFlag FeatureFlag @relation(fields: [feature_flags_idfeature_flags], references: [idfeature_flags], onDelete: Cascade)
+  usuario     Usuario     @relation(fields: [usuarios_idusuarios], references: [idusuarios], onDelete: Cascade)
+
+  @@id([feature_flags_idfeature_flags, usuarios_idusuarios])
+  @@map("feature_flags_usuarios")
 }
