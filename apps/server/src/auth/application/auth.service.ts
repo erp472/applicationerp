@@ -1,6 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import * as bcrypt from 'bcryptjs';
+import { compare } from '@node-rs/bcrypt';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuditService } from '../../audit/audit.service.js';
 import { LoginDto } from '../dto/login.dto.js';
@@ -30,7 +30,7 @@ export class AuthService {
 
     if (!usuario || !usuario.activousuarios) throw new UnauthorizedException('Credenciales inválidas');
 
-    const passwordOk = await bcrypt.compare(dto.password, usuario.password_hashusuarios);
+    const passwordOk = await compare(dto.password, usuario.password_hashusuarios);
     if (!passwordOk) {
       void this.audit.log({ accion: 'LOGIN', entidad: 'auth', entidad_id: dto.email, resultado: 'ERROR', error_msg: 'Credenciales inválidas' });
       throw new UnauthorizedException('Credenciales inválidas');
@@ -79,11 +79,11 @@ export class AuthService {
     });
     if (!u) return null;
     return {
-      id:          u.idusuarios,
+      id:          String(u.idusuarios),
       nombre:      u.nombreusuarios,
       email:       u.emailusuarios,
       rol:         u.rol.codigoroles,
-      sucursal_id: u.sucursales_idsucursales ?? null,
+      sucursal_id: u.sucursales_idsucursales != null ? String(u.sucursales_idsucursales) : null,
       activo:      u.activousuarios,
       ultimoLogin: u.ultimo_loginusuarios?.toISOString() ?? null,
     };

@@ -1,3 +1,7 @@
+
+-- CreateSchema
+CREATE SCHEMA IF NOT EXISTS "public";
+
 -- CreateExtension
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 
@@ -1292,9 +1296,10 @@ ALTER TABLE "eventos_auditoria" ADD CONSTRAINT "eventos_auditoria_usuarios_idusu
 -- AddForeignKey
 ALTER TABLE "eventos_auditoria" ADD CONSTRAINT "eventos_auditoria_sucursales_idsucursales_fkey" FOREIGN KEY ("sucursales_idsucursales") REFERENCES "sucursales"("idsucursales") ON DELETE SET NULL ON UPDATE CASCADE;
 
--- CHECK constraints (no soportadas nativamente por Prisma)
+
+-- CHECK constraints (no soportados nativamente por Prisma)
 ALTER TABLE "documentos"
-  ADD CONSTRAINT "documentos_rango_check" CHECK (desdedocumentos <= hastadocumentos),
+  ADD CONSTRAINT "documentos_rango_check"  CHECK (desdedocumentos <= hastadocumentos),
   ADD CONSTRAINT "documentos_ultimo_check" CHECK (ultimodocumentos >= 0 AND ultimodocumentos <= hastadocumentos);
 
 ALTER TABLE "clientes"
@@ -1313,6 +1318,6 @@ ALTER TABLE "envios"
 CREATE INDEX "idx_clientes_nombre" ON "clientes"
   USING gin ((nombreclientes || ' ' || COALESCE(apellidoclientes, '')) gin_trgm_ops);
 
--- Índice parcial para apartados por vencer
+-- Índice parcial: solo apartados ocupados con fecha de vencimiento próxima
 CREATE INDEX "idx_apartados_vencimiento" ON "apartados_postales" ("fecha_finapartados_postales")
   WHERE estadoapartados_postales = 'ocupado';

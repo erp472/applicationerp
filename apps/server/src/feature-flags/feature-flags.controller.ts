@@ -12,20 +12,30 @@ import {
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
+import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 
 @ApiTags('feature-flags')
 @Controller('feature-flags')
 export class FeatureFlagsController {
   constructor(private readonly service: FeatureFlagsService) {}
 
-  // ── Endpoint público (autenticado) para el frontend ──────────────────────────
+  // ── Endpoint para el cliente (web / tauri) ───────────────────────────────────
   @Get('activos')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Feature flags activos para el entorno dado' })
-  @ApiQuery({ name: 'entorno', required: false, enum: ['all', 'dev', 'staging', 'prod'] })
-  getActivos(@Query('entorno') entorno = 'dev') {
-    return this.service.getActivos(entorno);
+  @ApiOperation({
+    summary: 'Feature flags activos para el cliente',
+    description: 'Filtra por entorno, plataforma y el rol del usuario autenticado. ' +
+                 'Flags sin restricción de roles son visibles para todos.',
+  })
+  @ApiQuery({ name: 'entorno',   required: false, enum: ['dev', 'staging', 'prod'], example: 'prod' })
+  @ApiQuery({ name: 'plataforma', required: true,  enum: ['web', 'tauri'],           example: 'tauri' })
+  getActivos(
+    @Query('entorno')    entorno    = 'prod',
+    @Query('plataforma') plataforma = 'web',
+    @CurrentUser() user: { rol: string },
+  ) {
+    return this.service.getActivos(entorno, plataforma, user.rol);
   }
 
   // ── CRUD — solo ADMIN_SISTEMA ─────────────────────────────────────────────────
@@ -63,7 +73,7 @@ export class FeatureFlagsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN_SISTEMA')
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Actualizar feature flag' })
+  @ApiOperation({ summary: 'Actualizar feature flag (incluye reemplazar roles)' })
   update(@Param('id', ParseIntPipe) id: number, @Body() body: unknown) {
     const parsed = UpdateFeatureFlagSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());

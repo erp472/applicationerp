@@ -161,16 +161,24 @@ export class PermisosService {
       modulosMap.get(p.modulopermisos)!.push(p);
     }
 
-    const modulos = Array.from(modulosMap.entries()).map(([nombre, permisos]) => ({
-      nombre, permisos,
+    const modulos = Array.from(modulosMap.entries()).map(([nombre, permisos], orden) => ({
+      id:          nombre,
+      nombre:      nombre.charAt(0).toUpperCase() + nombre.slice(1),
+      descripcion: null as string | null,
+      orden,
+      permisos:    permisos.map((p) => ({
+        id:          p.idpermisos,
+        nombre:      p.codigopermisos,
+        descripcion: p.descripcionpermisos,
+      })),
     }));
 
     return {
       modulos,
       roles: roles.map((r) => ({
         id:          r.idroles,
-        codigoroles: r.codigoroles,
-        nombreroles: r.nombreroles,
+        nombre:      r.nombreroles,
+        descripcion: null as string | null,
         permisoIds:  r.rolesPermisos.map((rp) => rp.permisos_idpermisos),
       })),
     };

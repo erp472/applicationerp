@@ -1,7 +1,7 @@
 import 'dotenv/config'
 import { PrismaClient } from '../generated/prisma/client.js'
 import { PrismaPg } from '@prisma/adapter-pg'
-import { hash } from 'bcryptjs'
+import { hash } from '@node-rs/bcrypt'
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! })
 const prisma = new PrismaClient({ adapter })
@@ -488,24 +488,10 @@ async function main() {
   console.log('✓ Inventario inicial para estampillas y empaques')
 
   // ── 15. FEATURE FLAGS ─────────────────────────────────────────────────────
-  const flagsData = [
-    { codigofeature_flags: 'facturacion_electronica',  descripcionfeature_flags: 'Habilita facturación electrónica DIAN', activofeature_flags: false, entornofeature_flags: 'all' as const },
-    { codigofeature_flags: 'giro_moneygram',           descripcionfeature_flags: 'Habilita giros MoneyGram',              activofeature_flags: false, entornofeature_flags: 'all' as const },
-    { codigofeature_flags: 'giro_ria',                 descripcionfeature_flags: 'Habilita giros RIA',                    activofeature_flags: false, entornofeature_flags: 'all' as const },
-    { codigofeature_flags: 'recaudo_barcode',          descripcionfeature_flags: 'Lectura de código de barras en recaudo', activofeature_flags: true,  entornofeature_flags: 'all' as const },
-    { codigofeature_flags: 'sigma_sync',               descripcionfeature_flags: 'Sincronización automática con SIGMA',   activofeature_flags: false, entornofeature_flags: 'prod' as const },
-    { codigofeature_flags: 'inspektor_online',         descripcionfeature_flags: 'Consulta online a Inspektor SAGRILAFT', activofeature_flags: false, entornofeature_flags: 'all' as const },
-    { codigofeature_flags: 'cierre_automatico_caja',   descripcionfeature_flags: 'Cierre automático de caja al finalizar turno', activofeature_flags: false, entornofeature_flags: 'all' as const },
-  ]
-
-  for (const f of flagsData) {
-    await prisma.featureFlag.upsert({
-      where: { codigofeature_flags: f.codigofeature_flags },
-      update: {},
-      create: f,
-    })
-  }
-  console.log(`✓ Feature flags: ${flagsData.length} flags`)
+  // Los módulos y sus restricciones de plataforma/rol viven en la migración
+  // 20260702000001_v1_1_0_data_feature_flags — el seed solo valida que existan.
+  const totalFlags = await prisma.featureFlag.count()
+  console.log(`✓ Feature flags: ${totalFlags} flags (gestionados vía migración de datos)`)
 
   // ── 16. CONVENIOS DE RECAUDO ──────────────────────────────────────────────
   const conveniosData = [

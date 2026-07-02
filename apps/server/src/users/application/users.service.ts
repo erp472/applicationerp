@@ -1,5 +1,5 @@
 import { Injectable, Inject } from '@nestjs/common';
-import * as bcrypt from 'bcryptjs';
+import { hash } from '@node-rs/bcrypt';
 import { USERS_REPOSITORY } from '../domain/users.repository.js';
 import type { IUsersRepository } from '../domain/users.repository.js';
 import { BRANCHES_REPOSITORY } from '../domain/branches.repository.js';
@@ -31,7 +31,7 @@ export class UsersService {
       if (!branchExists) throw new BranchNotFoundError(String(dto.sucursal_id));
     }
 
-    const passwordHash = await bcrypt.hash(dto.password, 12);
+    const passwordHash = await hash(dto.password, 12);
     return this.repo.create(dto, passwordHash);
   }
 
@@ -69,7 +69,7 @@ export class UsersService {
       ...(dto.rol      && { rol: dto.rol }),
       ...(dto.activo !== undefined && { activo: dto.activo }),
       ...(dto.sucursal_id !== undefined && { sucursalId: dto.sucursal_id }),
-      ...(dto.password && { passwordHash: await bcrypt.hash(dto.password, 12) }),
+      ...(dto.password && { passwordHash: await hash(dto.password, 12) }),
     };
 
     return this.repo.update(id, data);

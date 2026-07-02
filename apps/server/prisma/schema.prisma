@@ -272,6 +272,12 @@ enum entorno_feature_flag {
   prod
 }
 
+enum plataforma_feature_flag {
+  all
+  web
+  tauri
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // 1. JERARQUÍA COMERCIAL
 // ══════════════════════════════════════════════════════════════════════════════
@@ -395,8 +401,9 @@ model Rol {
   created_atroles DateTime  @default(now()) @db.Timestamptz(6)
   deleted_atroles DateTime? @db.Timestamptz(6)
 
-  usuarios      Usuario[]
-  rolesPermisos RolPermiso[]
+  usuarios         Usuario[]
+  rolesPermisos    RolPermiso[]
+  featureFlagRoles FeatureFlagRol[]
 
   @@map("roles")
 }
@@ -1346,13 +1353,28 @@ model EventoAuditoria {
 // ══════════════════════════════════════════════════════════════════════════════
 
 model FeatureFlag {
-  idfeature_flags          Int                  @id @default(autoincrement())
-  codigofeature_flags      String               @unique @db.VarChar(100)
-  descripcionfeature_flags String?              @db.VarChar(200)
-  activofeature_flags      Boolean              @default(false)
-  entornofeature_flags     entorno_feature_flag @default(all)
-  created_atfeature_flags  DateTime             @default(now()) @db.Timestamptz(6)
-  updated_atfeature_flags  DateTime             @default(now()) @db.Timestamptz(6)
+  idfeature_flags          Int                     @id @default(autoincrement())
+  codigofeature_flags      String                  @unique @db.VarChar(100)
+  descripcionfeature_flags String?                 @db.VarChar(200)
+  activofeature_flags      Boolean                 @default(false)
+  entornofeature_flags     entorno_feature_flag    @default(all)
+  plataformafeature_flags  plataforma_feature_flag @default(all)
+  created_atfeature_flags  DateTime                @default(now()) @db.Timestamptz(6)
+  updated_atfeature_flags  DateTime                @default(now()) @db.Timestamptz(6)
+
+  featureFlagRoles FeatureFlagRol[]
 
   @@map("feature_flags")
+}
+
+// Restricción de roles por feature flag (vacío = accesible a todos los roles)
+model FeatureFlagRol {
+  feature_flags_idfeature_flags Int
+  roles_idroles                 Int
+
+  featureFlag FeatureFlag @relation(fields: [feature_flags_idfeature_flags], references: [idfeature_flags], onDelete: Cascade)
+  rol         Rol         @relation(fields: [roles_idroles], references: [idroles], onDelete: Cascade)
+
+  @@id([feature_flags_idfeature_flags, roles_idroles])
+  @@map("feature_flag_roles")
 }
