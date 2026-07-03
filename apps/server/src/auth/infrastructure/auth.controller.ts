@@ -24,7 +24,7 @@ export class AuthController {
       type: 'object',
       required: ['email', 'password'],
       properties: {
-        email:    { type: 'string', format: 'email', example: 'admin@4-72.com.co' },
+        email:    { type: 'string', format: 'email', example: 'adminemail.com' },
         password: { type: 'string', minLength: 6, example: 'Segura123!' },
       },
     },

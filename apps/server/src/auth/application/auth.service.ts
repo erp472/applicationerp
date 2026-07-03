@@ -88,7 +88,7 @@ export class AuthService {
       nombre:      u.nombreusuarios,
       email:       u.emailusuarios,
       rol:         u.rol.codigoroles,
-      sucursal_id: u.sucursales_idsucursales != null ? String(u.sucursales_idsucursales) : null,
+      sucursal_id: u.sucursales_idsucursales ?? null,
       activo:      u.activousuarios,
       ultimoLogin: u.ultimo_loginusuarios?.toISOString() ?? null,
     };

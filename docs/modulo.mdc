@@ -1,0 +1,195 @@
+---
+alwaysApply: false
+---
+
+## 🗺️ Convención: columnas `geography` / posiciones (PostgreSQL)
+
+Siempre que en SQL se lean puntos almacenados como `geography` (por ejemplo `geography(Point,4326)` en tablas como `posiciones`, `ignicion`, etc.), **extraer latitud y longitud en la consulta** con el mismo patrón que en `src/Reportes/GetHistorialFlotas.php`:
+
+- **Latitud:** `CASE WHEN columna IS NOT NULL THEN ST_Y(columna::geometry) END AS latitud`
+- **Longitud:** `CASE WHEN columna IS NOT NULL THEN ST_X(columna::geometry) END AS longitud`
+
+No depender de parsear WKT ni del formato textual del driver en PHP para esas columnas; devolver números ya resueltos en el `SELECT` y mapearlos en el endpoint.
+
+## ⏰ Convención: rango de fechas en reportes (hora de servidor)
+
+En endpoints de historial que filtran por timestamp en BD (mismo criterio que `src/Reportes/GetHistorialFlotas.php`), después de completar hora por defecto si el string no trae `HH:MM:SS`, **sumar 5 horas** al inicio y al fin del rango antes de ejecutar el `SELECT`, para alinear la consulta con la hora del servidor:
+
+```php
+// Ajustar rango  5 horas para consultar en hora de servidor
+$fechaInicio = date('Y-m-d H:i:s', strtotime($fechaInicio . ' +5 hours'));
+$fechaFin = date('Y-m-d H:i:s', strtotime($fechaFin . ' +5 hours'));
+```
+
+Aplicar el mismo patrón en reportes equivalentes (por ejemplo historial de ignición) para que el filtro sea coherente con flotas/posiciones.
+
+## 📋 Contexto del Proyecto
+Necesito crear un nuevo módulo llamado **subflotas** siguiendo la estructura existente del proyecto.
+
+## 🗄️ Estructura de Base de Datos
+```sql
+CREATE TABLE subflotas (
+	idsubflotas serial4 NOT NULL,
+	nombresubflotas varchar(150) NOT NULL,
+	flotas_idflotas int4 NOT NULL,
+	idlegacysubflotas int4 NULL,
+	CONSTRAINT subflotas_pkey PRIMARY KEY (idsubflotas)
+);
+
+
+```
+
+## 📁 Archivos de Referencia a Analizar
+
+### Documentación Base:
+- `@stack.mdc` - Arquitectura del stack tecnológico
+- `@routes.mdc` - Documentación de rutas
+- `@layout.js` - Archivo principal de JS
+
+### JavaScript (Frontend):
+- `@usuarios.js` - Vista principal/listado
+- `@usuariosnew.js` - Formulario de creación
+
+
+### Templates HTML:
+- `@usuarios.html` - Vista principal/listado
+- `@usuariosnew.html` - Formulario de creación
+
+### Endpoints PHP (Backend):
+- `@GetUsuarios.php` - Obtener lista
+- `@CreateUsuarios.php` - Crear nuevo registro
+- `@DeleteUsuarios.php` - Eliminar registro
+- `@BaseUsuarios.php` - Clase base del módulo
+
+### Configuración de Rutas:
+- `@routes.php` - Registro de endpoints
+
+## 🔐 Permisos del Módulo Gastos
+- **Ver**: 34
+- **Agregar**: 35
+- **Editar**: 36
+
+
+## 📝 Tareas a Realizar
+
+### 1. Backend (PHP)
+- [ ] Crear `BaseCierrediario.php` (siguiendo estructura de `BaseIngresos.php`)
+- [ ] Crear `GetCierrediario.php` (listar todas los registros)
+- [ ] Crear `CreateCierrediario.php` (crear cierre diario)
+- [ ] Crear `DeleteCierrediario.php` (eliminar ierre diario)
+- [ ] Registrar nuevos endpoints en `routes.php`
+
+### 2. Frontend (JavaScript)
+- [ ] Crear `cierrediario.js` (vista principal/listado)
+- [ ] Crear `cierrediarionew.js` (formulario de creación)
+
+
+### 3. Templates (HTML)
+- [ ] Crear `cierrediario.html` (vista principal/listado)
+- [ ] Crear `cierrediarionew.html` (formulario de creación)
+
+## 🎯 Instrucciones Específicas
+
+1. **Mantén la misma estructura y convenciones** utilizadas en el módulo de "ingresos"
+2. **Implementa todos los permisos** especificados (34, 35, 36)
+3. **Usa la misma arquitectura** de validación y autenticación
+4. **Sigue los mismos patrones** de nomenclatura para archivos y variables
+5. **Incluye manejo de errores** consistente con el resto del proyecto
+6. **Implementa validación** tanto en frontend como backend
+
+## 🔄 Funcionalidades Esperadas
+- CRUD  casi completo (Create, Read, Delete) ya que no vamos a crear la opcion de editar
+- Validación de permisos en cada operación
+- Interfaz responsive y consistente con el modulo de referencia
+- Manejo de errores y mensajes informativos
+- Integración con el sistema de entidades existente
+- La tablas necesarias ya esta creada en la Base de Datos
+- Analiza el uso del select2 en el modulo de gastos porque en este modulo de gastos existen  select2 Rutas_idRutas cuyo comportamiento es el que vamos a usar en nuestro modulo Rutas_idRutas
+- Aparte del campo Rutas_idRutas el otro campo ha diligenciar por el usuario web es el cmapo fechaCierrediario  pero por defecto que aparezca el dia de hoy en el input de fecha solo para agilizar tiempos de diligenciamiento los demas campos de la tabla cierrediario si vienen de la logica del programa
+
+---
+
+**Por favor, analiza todos los archivos de referencia mencionados y crea el módulo completo manteniendo la consistencia con la arquitectura existente.**
+
+## 📋 Contexto del Proyecto
+Necesito crear un nuevo módulo llamado **Cierre Diario** siguiendo la estructura existente del proyecto.
+
+## 🗄️ Estructura de Base de Datos
+```sql
+CREATE TABLE `faresia`.`cierrediario` ( `idCierrediario` INT(11) NOT NULL AUTO_INCREMENT ,  `Rutas_idRutas` INT(11) NOT NULL ,  `Usuarios_idUsuarios` INT(11) NOT NULL ,  `fechaCierrediario` DATE NOT NULL ,  `Entidades_idEntidades` INT(11) NOT NULL ,  `fecharegCierrediario` DATETIME NOT NULL ,    PRIMARY KEY  (`idCierrediario`)) ENGINE = InnoDB;
+
+
+```
+
+## 📁 Archivos de Referencia a Analizar
+
+### Documentación Base:
+- `@stack.mdc` - Arquitectura del stack tecnológico
+- `@routes.mdc` - Documentación de rutas
+- `@layout.js` - Archivo principal de JS
+
+### JavaScript (Frontend):
+- `@ingresos.js` - Vista principal/listado
+- `@ingresosnew.js` - Formulario de creación
+
+
+### Templates HTML:
+- `@ingresos.html` - Vista principal/listado
+- `@ingresosnew.html` - Formulario de creación
+
+### Endpoints PHP (Backend):
+- `@GetIngresos.php` - Obtener lista
+- `@CreateIngreso.php` - Crear nuevo registro
+- `@DeleteIngreso.php` - Eliminar registro
+- `@BaseIngresos.php` - Clase base del módulo
+
+### Configuración de Rutas:
+- `@routes.php` - Registro de endpoints
+
+## 🔐 Permisos del Módulo Gastos
+- **Ver**: 34
+- **Agregar**: 35
+- **Editar**: 36
+
+
+## 📝 Tareas a Realizar
+
+### 1. Backend (PHP)
+- [ ] Crear `BaseCierrediario.php` (siguiendo estructura de `BaseIngresos.php`)
+- [ ] Crear `GetCierrediario.php` (listar todas los registros)
+- [ ] Crear `CreateCierrediario.php` (crear cierre diario)
+- [ ] Crear `DeleteCierrediario.php` (eliminar ierre diario)
+- [ ] Registrar nuevos endpoints en `routes.php`
+
+### 2. Frontend (JavaScript)
+- [ ] Crear `cierrediario.js` (vista principal/listado)
+- [ ] Crear `cierrediarionew.js` (formulario de creación)
+
+
+### 3. Templates (HTML)
+- [ ] Crear `cierrediario.html` (vista principal/listado)
+- [ ] Crear `cierrediarionew.html` (formulario de creación)
+
+## 🎯 Instrucciones Específicas
+
+1. **Mantén la misma estructura y convenciones** utilizadas en el módulo de "ingresos"
+2. **Implementa todos los permisos** especificados (34, 35, 36)
+3. **Usa la misma arquitectura** de validación y autenticación
+4. **Sigue los mismos patrones** de nomenclatura para archivos y variables
+5. **Incluye manejo de errores** consistente con el resto del proyecto
+6. **Implementa validación** tanto en frontend como backend
+
+## 🔄 Funcionalidades Esperadas
+- CRUD  casi completo (Create, Read, Delete) ya que no vamos a crear la opcion de editar
+- Validación de permisos en cada operación
+- Interfaz responsive y consistente con el modulo de referencia
+- Manejo de errores y mensajes informativos
+- Integración con el sistema de entidades existente
+- La tablas necesarias ya esta creada en la Base de Datos
+- Analiza el uso del select2 en el modulo de gastos porque en este modulo de gastos existen  select2 Rutas_idRutas cuyo comportamiento es el que vamos a usar en nuestro modulo Rutas_idRutas
+- Aparte del campo Rutas_idRutas el otro campo ha diligenciar por el usuario web es el cmapo fechaCierrediario  pero por defecto que aparezca el dia de hoy en el input de fecha solo para agilizar tiempos de diligenciamiento los demas campos de la tabla cierrediario si vienen de la logica del programa
+
+---
+
+**Por favor, analiza todos los archivos de referencia mencionados y crea el módulo completo manteniendo la consistencia con la arquitectura existente.**
+

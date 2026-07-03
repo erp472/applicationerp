@@ -39,7 +39,7 @@ export class UsersController {
       required: ['nombre', 'email', 'password', 'rol'],
       properties: {
         nombre:      { type: 'string', minLength: 2, maxLength: 200, example: 'Ana García' },
-        email:       { type: 'string', format: 'email', example: 'ana@4-72.com.co' },
+        email:       { type: 'string', format: 'email', example: 'anaemail.com' },
         password:    { type: 'string', minLength: 8, example: 'Secure123!' },
         rol:         { type: 'string', enum: ROL_ENUM, example: 'CAJERO' },
         sucursal_id: { type: 'integer', nullable: true, example: 1 },

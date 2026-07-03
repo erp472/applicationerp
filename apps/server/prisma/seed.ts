@@ -61,7 +61,7 @@ async function main() {
         direccionsucursales: 'Carrera 7 # 16-36',
         tiposucursales: 'multipuesto',
         telefonosucursales: '6017447000',
-        emailsucursales: 'bogotacentro@4-72.com.co',
+        emailsucursales: 'bogotacentroemail.com',
         activosucursales: true,
       },
     }),
@@ -76,7 +76,7 @@ async function main() {
         departamentosucursales: 'Cundinamarca',
         direccionsucursales: 'Calle 127 # 15-05',
         tiposucursales: 'unipersonal',
-        emailsucursales: 'bogotanorte@4-72.com.co',
+        emailsucursales: 'bogotanorteemail.com',
         activosucursales: true,
       },
     }),
@@ -91,7 +91,7 @@ async function main() {
         departamentosucursales: 'Antioquia',
         direccionsucursales: 'Carrera 43A # 18-17',
         tiposucursales: 'unipersonal',
-        emailsucursales: 'medellinpoblado@4-72.com.co',
+        emailsucursales: 'medellinpobladoemail.com',
         activosucursales: true,
       },
     }),
@@ -220,35 +220,39 @@ async function main() {
   console.log('✓ Roles ↔ Permisos asignados')
 
   // ── 7. USUARIOS ───────────────────────────────────────────────────────────
-  const passwordHash = await hash('Admin@4-72!', 10)
+  // Las contraseñas de seed son datos de prueba — las cuentas reales se
+  // crean fuera del seed (scripts de onboarding o panel de administración).
+  const adminSeedEmail    = process.env.SEED_ADMIN_EMAIL    ?? 'admin.seed@sistema.local'
+  const adminSeedPassword = process.env.SEED_ADMIN_PASSWORD ?? 'Seed.Admin.Dev1!'
+  const adminHash = await hash(adminSeedPassword, 10)
 
   const adminUser = await prisma.usuario.upsert({
-    where: { emailusuarios: 'admin@4-72.com.co' },
+    where: { emailusuarios: adminSeedEmail },
     update: {},
     create: {
       sucursales_idsucursales: null,
       roles_idroles: roles['ADMIN_SISTEMA'].idroles,
-      nombreusuarios: 'Administrador del Sistema',
-      emailusuarios: 'admin@4-72.com.co',
-      password_hashusuarios: passwordHash,
+      nombreusuarios: 'Administrador Seed',
+      emailusuarios: adminSeedEmail,
+      password_hashusuarios: adminHash,
       activousuarios: true,
     },
   })
 
-  const cajeroHash = await hash('Cajero@4-72!', 10)
+  const cajeroHash = await hash('Seed.Cajero.Dev1!', 10)
   const cajero = await prisma.usuario.upsert({
-    where: { emailusuarios: 'cajero.bogota@4-72.com.co' },
+    where: { emailusuarios: 'cajero@4-72.com.co' },
     update: {},
     create: {
       sucursales_idsucursales: sucPrincipal.idsucursales,
       roles_idroles: roles['CAJERO'].idroles,
-      nombreusuarios: 'Cajero Bogotá Centro',
-      emailusuarios: 'cajero.bogota@4-72.com.co',
+      nombreusuarios: 'Cajero Seed',
+      emailusuarios: 'cajero@4-72.com.co',
       password_hashusuarios: cajeroHash,
       activousuarios: true,
     },
   })
-  console.log(`✓ Usuarios: ${adminUser.emailusuarios}, ${cajero.emailusuarios}`)
+  console.log(`✓ Usuarios seed: ${adminUser.emailusuarios}, ${cajero.emailusuarios}`)
 
   // ── 8. TIPOS DE CLIENTE ───────────────────────────────────────────────────
   const tiposClienteData = [
@@ -530,8 +534,8 @@ async function main() {
   console.log('\n✅ Seed completado exitosamente.')
   console.log('━'.repeat(50))
   console.log(`🏢 Comercio:  ${comercio.nombrecomercios} (NIT: ${comercio.nitcomercios})`)
-  console.log(`👤 Admin:     ${adminUser.emailusuarios} / Admin@4-72!`)
-  console.log(`👤 Cajero:    ${cajero.emailusuarios} / Cajero@4-72!`)
+  console.log(`👤 Admin seed:  ${adminUser.emailusuarios}`)
+  console.log(`👤 Cajero seed: ${cajero.emailusuarios}`)
   console.log(`🏪 Sucursales: ${sucursales.map(s => s.nombresucursales).join(' | ')}`)
 }
 
