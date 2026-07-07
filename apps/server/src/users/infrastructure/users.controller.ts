@@ -12,8 +12,10 @@ import { CreateUserSchema } from '../dto/create-user.dto.js';
 import { UpdateUserSchema, UpdateOwnProfileSchema } from '../dto/update-user.dto.js';
 import { QueryUserSchema } from '../dto/query-user.dto.js';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
+import { FeatureFlagGuard } from '../../common/guards/feature-flag.guard.js';
 import { RolesGuard } from '../../common/guards/roles.guard.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
+import { Feature } from '../../common/decorators/feature.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { UsersPresenter } from './users.presenter.js';
 import { UsersDomainFilter } from './users-domain.filter.js';
@@ -25,7 +27,8 @@ const ROL_ENUM      = ['CAJERO', 'ADMINISTRATIVO', 'TESORERIA', 'INVENTARIOS', '
 @ApiTags('users')
 @ApiBearerAuth()
 @Controller('users')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, FeatureFlagGuard, RolesGuard)
+@Feature('modulo_usuarios')
 @UseFilters(new UsersDomainFilter())
 export class UsersController {
   constructor(private readonly service: UsersService) {}
@@ -38,11 +41,15 @@ export class UsersController {
       type: 'object',
       required: ['nombre', 'email', 'password', 'rol'],
       properties: {
-        nombre:      { type: 'string', minLength: 2, maxLength: 200, example: 'Ana García' },
-        email:       { type: 'string', format: 'email', example: 'anaemail.com' },
-        password:    { type: 'string', minLength: 8, example: 'Secure123!' },
-        rol:         { type: 'string', enum: ROL_ENUM, example: 'CAJERO' },
-        sucursal_id: { type: 'integer', nullable: true, example: 1 },
+        nombre:          { type: 'string', minLength: 2, maxLength: 200, example: 'Ana García' },
+        email:           { type: 'string', format: 'email', example: 'ana@email.com' },
+        password:        { type: 'string', minLength: 8, example: 'Secure123!' },
+        rol:             { type: 'string', enum: ROL_ENUM, example: 'CAJERO' },
+        sucursal_id:     { type: 'integer', nullable: true, example: 1 },
+        telefono:        { type: 'string', maxLength: 20, nullable: true, example: '3001234567' },
+        pais_id:         { type: 'integer', nullable: true, example: 82, description: '82 = Colombia' },
+        departamento_id: { type: 'integer', nullable: true, example: 1700, description: 'Antioquia' },
+        ciudad_id:       { type: 'integer', nullable: true, example: 465167, description: 'Medellín' },
       },
     },
   })
@@ -93,19 +100,23 @@ export class UsersController {
   @ApiOperation({
     summary: 'Update user',
     description: 'Managers (SUPERVISOR_REGIONAL+) can update any field. ' +
-                 'Own profile: only nombre, email and password.',
+                 'Own profile: nombre, email, password and contact fields.',
   })
   @ApiParam({ name: 'id', type: Number })
   @ApiBody({
     schema: {
       type: 'object',
       properties: {
-        nombre:      { type: 'string', minLength: 2 },
-        email:       { type: 'string', format: 'email' },
-        password:    { type: 'string', minLength: 8 },
-        rol:         { type: 'string', enum: ROL_ENUM, description: 'Managers only' },
-        sucursal_id: { type: 'integer', nullable: true, description: 'Managers only' },
-        activo:      { type: 'boolean', description: 'Managers only' },
+        nombre:          { type: 'string', minLength: 2 },
+        email:           { type: 'string', format: 'email' },
+        password:        { type: 'string', minLength: 8 },
+        telefono:        { type: 'string', maxLength: 20, nullable: true },
+        pais_id:         { type: 'integer', nullable: true },
+        departamento_id: { type: 'integer', nullable: true },
+        ciudad_id:       { type: 'integer', nullable: true },
+        rol:             { type: 'string', enum: ROL_ENUM, description: 'Managers only' },
+        sucursal_id:     { type: 'integer', nullable: true, description: 'Managers only' },
+        activo:          { type: 'boolean', description: 'Managers only' },
       },
     },
   })

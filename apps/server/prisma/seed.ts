@@ -2,12 +2,26 @@ import 'dotenv/config'
 import { PrismaClient } from '../generated/prisma/client.js'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { hash } from '@node-rs/bcrypt'
+import { seedGeo } from './seed-geo.js'
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! })
 const prisma = new PrismaClient({ adapter })
 
+// Geo IDs extraídos del JSON countries-master (Colombia id=82)
+const GEO = {
+  colombia:      82,
+  cundinamarca:  1726,
+  antioquia:     1700,
+  bogota:        452468,
+  medellin:      465167,
+}
+
 async function main() {
   console.log('🌱 Iniciando seed...')
+
+  // ── 0. GEO ────────────────────────────────────────────────────────────────
+  await seedGeo(prisma)
+  console.log('✓ Geo')
 
   // ── 1. COMERCIO ───────────────────────────────────────────────────────────
   const comercio = await prisma.comercio.upsert({
@@ -53,11 +67,12 @@ async function main() {
       where: { codigosucursales: 'SUC-BOG-001' },
       update: {},
       create: {
-        regionales_idregionales: regBogota.idregionales,
+        regionales_idregionales:       regBogota.idregionales,
+        paises_idpaises:               GEO.colombia,
+        departamentos_iddepartamentos: GEO.cundinamarca,
+        ciudades_idciudades:           GEO.bogota,
         codigosucursales: 'SUC-BOG-001',
         nombresucursales: 'Bogotá Centro',
-        ciudadsucursales: 'Bogotá',
-        departamentosucursales: 'Cundinamarca',
         direccionsucursales: 'Carrera 7 # 16-36',
         tiposucursales: 'multipuesto',
         telefonosucursales: '6017447000',
@@ -69,11 +84,12 @@ async function main() {
       where: { codigosucursales: 'SUC-BOG-002' },
       update: {},
       create: {
-        regionales_idregionales: regBogota.idregionales,
+        regionales_idregionales:       regBogota.idregionales,
+        paises_idpaises:               GEO.colombia,
+        departamentos_iddepartamentos: GEO.cundinamarca,
+        ciudades_idciudades:           GEO.bogota,
         codigosucursales: 'SUC-BOG-002',
         nombresucursales: 'Bogotá Norte',
-        ciudadsucursales: 'Bogotá',
-        departamentosucursales: 'Cundinamarca',
         direccionsucursales: 'Calle 127 # 15-05',
         tiposucursales: 'unipersonal',
         emailsucursales: 'bogotanorteemail.com',
@@ -84,11 +100,12 @@ async function main() {
       where: { codigosucursales: 'SUC-MED-001' },
       update: {},
       create: {
-        regionales_idregionales: regMedellin.idregionales,
+        regionales_idregionales:       regMedellin.idregionales,
+        paises_idpaises:               GEO.colombia,
+        departamentos_iddepartamentos: GEO.antioquia,
+        ciudades_idciudades:           GEO.medellin,
         codigosucursales: 'SUC-MED-001',
         nombresucursales: 'Medellín El Poblado',
-        ciudadsucursales: 'Medellín',
-        departamentosucursales: 'Antioquia',
         direccionsucursales: 'Carrera 43A # 18-17',
         tiposucursales: 'unipersonal',
         emailsucursales: 'medellinpobladoemail.com',
@@ -492,10 +509,33 @@ async function main() {
   console.log('✓ Inventario inicial para estampillas y empaques')
 
   // ── 15. FEATURE FLAGS ─────────────────────────────────────────────────────
-  // Los módulos y sus restricciones de plataforma/rol viven en la migración
-  // 20260702000001_v1_1_0_data_feature_flags — el seed solo valida que existan.
+  // Los módulos existentes viven en la migración 20260702000001_v1_1_0_data_feature_flags.
+  // Los nuevos módulos maestros se insertan aquí con activo=false (habilitación manual).
+  const nuevosFlags = [
+    { codigo: 'modulo_usuarios',   descripcion: 'Módulo de administración de usuarios' },
+    { codigo: 'modulo_geo',        descripcion: 'Módulo de geografía (países, departamentos, ciudades)' },
+    { codigo: 'modulo_comercios',  descripcion: 'Módulo de administración de comercios' },
+    { codigo: 'modulo_regionales', descripcion: 'Módulo de administración de regionales' },
+    { codigo: 'modulo_sucursales', descripcion: 'Módulo de administración de sucursales' },
+    { codigo: 'modulo_equipos',    descripcion: 'Módulo de equipos autorizados (MAC guard)' },
+    { codigo: 'modulo_productos',  descripcion: 'Módulo de catálogo de productos' },
+    { codigo: 'modulo_servicios',  descripcion: 'Módulo de catálogo de servicios de envío' },
+  ]
+  for (const f of nuevosFlags) {
+    await prisma.featureFlag.upsert({
+      where:  { codigofeature_flags: f.codigo },
+      update: {},
+      create: {
+        codigofeature_flags:      f.codigo,
+        descripcionfeature_flags: f.descripcion,
+        activofeature_flags:      false,
+        entornofeature_flags:     'all',
+        plataformafeature_flags:  'all',
+      },
+    })
+  }
   const totalFlags = await prisma.featureFlag.count()
-  console.log(`✓ Feature flags: ${totalFlags} flags (gestionados vía migración de datos)`)
+  console.log(`✓ Feature flags: ${totalFlags} total (${nuevosFlags.length} módulos maestros agregados)`)
 
   // ── 16. CONVENIOS DE RECAUDO ──────────────────────────────────────────────
   const conveniosData = [

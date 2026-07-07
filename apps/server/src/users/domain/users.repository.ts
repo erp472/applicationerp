@@ -17,6 +17,10 @@ export interface IUsersRepository {
       email?: string;
       rol?: string;
       sucursalId?: number | null;
+      telefono?: string | null;
+      paisId?: number | null;
+      departamentoId?: number | null;
+      ciudadId?: number | null;
       activo?: boolean;
       passwordHash?: string;
     },

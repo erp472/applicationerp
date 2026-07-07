@@ -279,6 +279,46 @@ enum plataforma_feature_flag {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// 0. GEO: PAÍSES, DEPARTAMENTOS, CIUDADES
+// ══════════════════════════════════════════════════════════════════════════════
+
+model Pais {
+  idpaises     Int    @id
+  nombrepaises String @db.VarChar(100)
+
+  departamentos Departamento[]
+  sucursales    Sucursal[]
+  usuarios      Usuario[]
+
+  @@map("paises")
+}
+
+model Departamento {
+  iddepartamentos     Int    @id
+  paises_idpaises     Int
+  nombredepartamentos String @db.VarChar(100)
+
+  pais       Pais       @relation(fields: [paises_idpaises], references: [idpaises])
+  ciudades   Ciudad[]
+  sucursales Sucursal[]
+  usuarios   Usuario[]
+
+  @@map("departamentos")
+}
+
+model Ciudad {
+  idciudades                    Int    @id
+  departamentos_iddepartamentos Int
+  nombreciudades                String @db.VarChar(100)
+
+  departamento Departamento @relation(fields: [departamentos_iddepartamentos], references: [iddepartamentos])
+  sucursales   Sucursal[]
+  usuarios     Usuario[]
+
+  @@map("ciudades")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // 1. JERARQUÍA COMERCIAL
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -314,24 +354,28 @@ model Regional {
 }
 
 model Sucursal {
-  idsucursales               Int           @id @default(autoincrement())
-  regionales_idregionales    Int
-  codigosucursales           String        @unique @db.VarChar(20)
-  nombresucursales           String        @db.VarChar(200)
-  ciudadsucursales           String?       @db.VarChar(100)
-  departamentosucursales     String?       @db.VarChar(100)
-  direccionsucursales        String?
-  tiposucursales             tipo_sucursal @default(unipersonal)
-  telefonosucursales         String?       @db.VarChar(20)
-  emailsucursales            String?       @db.VarChar(200)
-  horario_aperturasucursales DateTime?     @db.Time(6)
-  horario_cierresucursales   DateTime?     @db.Time(6)
-  activosucursales           Boolean       @default(true)
-  created_atsucursales       DateTime      @default(now()) @db.Timestamptz(6)
-  updated_atsucursales       DateTime      @default(now()) @db.Timestamptz(6)
-  deleted_atsucursales       DateTime?     @db.Timestamptz(6)
+  idsucursales                  Int           @id @default(autoincrement())
+  regionales_idregionales       Int
+  paises_idpaises               Int?
+  departamentos_iddepartamentos Int?
+  ciudades_idciudades           Int?
+  codigosucursales              String        @unique @db.VarChar(20)
+  nombresucursales              String        @db.VarChar(200)
+  direccionsucursales           String?
+  tiposucursales                tipo_sucursal @default(unipersonal)
+  telefonosucursales            String?       @db.VarChar(20)
+  emailsucursales               String?       @db.VarChar(200)
+  horario_aperturasucursales    DateTime?     @db.Time(6)
+  horario_cierresucursales      DateTime?     @db.Time(6)
+  activosucursales              Boolean       @default(true)
+  created_atsucursales          DateTime      @default(now()) @db.Timestamptz(6)
+  updated_atsucursales          DateTime      @default(now()) @db.Timestamptz(6)
+  deleted_atsucursales          DateTime?     @db.Timestamptz(6)
 
-  regional              Regional               @relation(fields: [regionales_idregionales], references: [idregionales])
+  regional     Regional      @relation(fields: [regionales_idregionales], references: [idregionales])
+  pais         Pais?         @relation(fields: [paises_idpaises], references: [idpaises])
+  departamento Departamento? @relation(fields: [departamentos_iddepartamentos], references: [iddepartamentos])
+  ciudad       Ciudad?       @relation(fields: [ciudades_idciudades], references: [idciudades])
   equiposAutorizados    EquipoAutorizado[]
   documentos            Documento[]
   usuarios              Usuario[]
@@ -436,20 +480,27 @@ model RolPermiso {
 // ══════════════════════════════════════════════════════════════════════════════
 
 model Usuario {
-  idusuarios              Int       @id @default(autoincrement())
-  sucursales_idsucursales Int?
-  roles_idroles           Int
-  nombreusuarios          String    @db.VarChar(200)
-  emailusuarios           String    @unique @db.VarChar(200)
-  password_hashusuarios   String    @db.VarChar(500)
-  activousuarios          Boolean   @default(true)
-  ultimo_loginusuarios    DateTime? @db.Timestamptz(6)
-  created_atusuarios      DateTime  @default(now()) @db.Timestamptz(6)
-  updated_atusuarios      DateTime  @default(now()) @db.Timestamptz(6)
-  deleted_atusuarios      DateTime? @db.Timestamptz(6)
+  idusuarios                    Int       @id @default(autoincrement())
+  sucursales_idsucursales       Int?
+  roles_idroles                 Int
+  paises_idpaises               Int?
+  departamentos_iddepartamentos Int?
+  ciudades_idciudades           Int?
+  nombreusuarios                String    @db.VarChar(200)
+  emailusuarios                 String    @unique @db.VarChar(200)
+  password_hashusuarios         String    @db.VarChar(500)
+  telefonousuarios              String?   @db.VarChar(20)
+  activousuarios                Boolean   @default(true)
+  ultimo_loginusuarios          DateTime? @db.Timestamptz(6)
+  created_atusuarios            DateTime  @default(now()) @db.Timestamptz(6)
+  updated_atusuarios            DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_atusuarios            DateTime? @db.Timestamptz(6)
 
-  sucursal Sucursal? @relation(fields: [sucursales_idsucursales], references: [idsucursales])
-  rol      Rol       @relation(fields: [roles_idroles], references: [idroles])
+  sucursal     Sucursal?     @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  rol          Rol           @relation(fields: [roles_idroles], references: [idroles])
+  pais         Pais?         @relation(fields: [paises_idpaises], references: [idpaises])
+  departamento Departamento? @relation(fields: [departamentos_iddepartamentos], references: [iddepartamentos])
+  ciudad       Ciudad?       @relation(fields: [ciudades_idciudades], references: [idciudades])
 
   sesionesApertura        SesionCaja[]          @relation("SesionCajaApertura")
   sesionesCierre          SesionCaja[]          @relation("SesionCajaCierre")

@@ -12,6 +12,8 @@ import {
 import { CreateUserDto } from '../dto/create-user.dto.js';
 import { UpdateUserDto } from '../dto/update-user.dto.js';
 import { QueryUserDto } from '../dto/query-user.dto.js';
+import { AuditService } from '../../audit/audit.service.js';
+import { auditStore } from '../../common/audit-context.js';
 
 @Injectable()
 export class UsersService {
@@ -20,6 +22,7 @@ export class UsersService {
     private readonly repo: IUsersRepository,
     @Inject(BRANCHES_REPOSITORY)
     private readonly branches: IBranchesRepository,
+    private readonly audit: AuditService,
   ) {}
 
   async create(dto: CreateUserDto) {
@@ -32,7 +35,20 @@ export class UsersService {
     }
 
     const passwordHash = await hash(dto.password, 12);
-    return this.repo.create(dto, passwordHash);
+    const user = await this.repo.create(dto, passwordHash);
+
+    const { userId, ip } = auditStore.getStore() ?? {};
+    void this.audit.log({
+      usuario_id:   userId,
+      accion:       'CREATE',
+      entidad:      'users',
+      entidad_id:   user.id,
+      ip_origen:    ip,
+      resultado:    'OK',
+      datos_despues: { nombre: user.nombre, email: user.email, rol: user.rol },
+    });
+
+    return user;
   }
 
   async findAll(query: QueryUserDto) {
@@ -64,19 +80,48 @@ export class UsersService {
     }
 
     const data: Parameters<IUsersRepository['update']>[1] = {
-      ...(dto.nombre   && { nombre: dto.nombre }),
-      ...(dto.email    && { email: dto.email }),
-      ...(dto.rol      && { rol: dto.rol }),
-      ...(dto.activo !== undefined && { activo: dto.activo }),
-      ...(dto.sucursal_id !== undefined && { sucursalId: dto.sucursal_id }),
+      ...(dto.nombre          && { nombre: dto.nombre }),
+      ...(dto.email           && { email: dto.email }),
+      ...(dto.rol             && { rol: dto.rol }),
+      ...(dto.activo !== undefined  && { activo: dto.activo }),
+      ...(dto.sucursal_id !== undefined    && { sucursalId:     dto.sucursal_id }),
+      ...(dto.telefono !== undefined       && { telefono:       dto.telefono }),
+      ...(dto.pais_id !== undefined        && { paisId:         dto.pais_id }),
+      ...(dto.departamento_id !== undefined && { departamentoId: dto.departamento_id }),
+      ...(dto.ciudad_id !== undefined      && { ciudadId:       dto.ciudad_id }),
       ...(dto.password && { passwordHash: await hash(dto.password, 12) }),
     };
 
-    return this.repo.update(id, data);
+    const updated = await this.repo.update(id, data);
+
+    const { userId, ip } = auditStore.getStore() ?? {};
+    void this.audit.log({
+      usuario_id:    userId,
+      accion:        'UPDATE',
+      entidad:       'users',
+      entidad_id:    id,
+      ip_origen:     ip,
+      resultado:     'OK',
+      datos_despues: { ...dto, password: dto.password ? '[REDACTED]' : undefined },
+    });
+
+    return updated;
   }
 
   async remove(id: number) {
     await this.findOne(id);
-    return this.repo.softDelete(id);
+    const deleted = await this.repo.softDelete(id);
+
+    const { userId, ip } = auditStore.getStore() ?? {};
+    void this.audit.log({
+      usuario_id: userId,
+      accion:     'DELETE',
+      entidad:    'users',
+      entidad_id: id,
+      ip_origen:  ip,
+      resultado:  'OK',
+    });
+
+    return deleted;
   }
 }

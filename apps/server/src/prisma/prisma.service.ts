@@ -95,6 +95,11 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     this.client = extended as unknown as PrismaClient;
   }
 
+  // ── 0. Geo ────────────────────────────────────────────────────────────────
+  get pais()            { return this.client.pais; }
+  get departamento()    { return this.client.departamento; }
+  get ciudad()          { return this.client.ciudad; }
+
   // ── 1. Jerarquía comercial ─────────────────────────────────────────────────
   get comercio()        { return this.client.comercio; }
   get regional()        { return this.client.regional; }
