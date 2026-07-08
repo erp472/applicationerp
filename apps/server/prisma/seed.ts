@@ -239,8 +239,8 @@ async function main() {
   // ── 7. USUARIOS ───────────────────────────────────────────────────────────
   // Las contraseñas de seed son datos de prueba — las cuentas reales se
   // crean fuera del seed (scripts de onboarding o panel de administración).
-  const adminSeedEmail    = process.env.SEED_ADMIN_EMAIL    ?? 'admin.seed@sistema.local'
-  const adminSeedPassword = process.env.SEED_ADMIN_PASSWORD ?? 'Seed.Admin.Dev1!'
+  const adminSeedEmail    = process.env.SEED_ADMIN_EMAIL    ?? 'admin@4-72.com.co'
+  const adminSeedPassword = process.env.SEED_ADMIN_PASSWORD ?? 'Admin472!'
   const adminHash = await hash(adminSeedPassword, 10)
 
   const adminUser = await prisma.usuario.upsert({
@@ -269,7 +269,21 @@ async function main() {
       activousuarios: true,
     },
   })
-  console.log(`✓ Usuarios seed: ${adminUser.emailusuarios}, ${cajero.emailusuarios}`)
+
+  const adminNacHash = await hash('AdminNac472!', 10)
+  const adminNac = await prisma.usuario.upsert({
+    where: { emailusuarios: 'admin.nacional@4-72.com.co' },
+    update: {},
+    create: {
+      sucursales_idsucursales: null,
+      roles_idroles: roles['ADMIN_NACIONAL'].idroles,
+      nombreusuarios: 'Admin Nacional Seed',
+      emailusuarios: 'admin.nacional@4-72.com.co',
+      password_hashusuarios: adminNacHash,
+      activousuarios: true,
+    },
+  })
+  console.log(`✓ Usuarios seed: ${adminUser.emailusuarios}, ${cajero.emailusuarios}, ${adminNac.emailusuarios}`)
 
   // ── 8. TIPOS DE CLIENTE ───────────────────────────────────────────────────
   const tiposClienteData = [
@@ -511,15 +525,21 @@ async function main() {
   // ── 15. FEATURE FLAGS ─────────────────────────────────────────────────────
   // Los módulos existentes viven en la migración 20260702000001_v1_1_0_data_feature_flags.
   // Los nuevos módulos maestros se insertan aquí con activo=false (habilitación manual).
+  await prisma.featureFlag.deleteMany({
+    where: { codigofeature_flags: { in: ['modulo_geo'] } },
+  })
+
   const nuevosFlags = [
-    { codigo: 'modulo_usuarios',   descripcion: 'Módulo de administración de usuarios' },
-    { codigo: 'modulo_geo',        descripcion: 'Módulo de geografía (países, departamentos, ciudades)' },
-    { codigo: 'modulo_comercios',  descripcion: 'Módulo de administración de comercios' },
-    { codigo: 'modulo_regionales', descripcion: 'Módulo de administración de regionales' },
-    { codigo: 'modulo_sucursales', descripcion: 'Módulo de administración de sucursales' },
-    { codigo: 'modulo_equipos',    descripcion: 'Módulo de equipos autorizados (MAC guard)' },
-    { codigo: 'modulo_productos',  descripcion: 'Módulo de catálogo de productos' },
-    { codigo: 'modulo_servicios',  descripcion: 'Módulo de catálogo de servicios de envío' },
+    { codigo: 'modulo_usuarios',    descripcion: 'Módulo de administración de usuarios' },
+    { codigo: 'modulo_comercios',   descripcion: 'Módulo de administración de comercios' },
+    { codigo: 'modulo_regionales',  descripcion: 'Módulo de administración de regionales' },
+    { codigo: 'modulo_sucursales',  descripcion: 'Módulo de administración de sucursales' },
+    { codigo: 'modulo_equipos',     descripcion: 'Módulo de equipos autorizados (MAC guard)' },
+    { codigo: 'modulo_productos',   descripcion: 'Módulo de catálogo de productos' },
+    { codigo: 'modulo_servicios',   descripcion: 'Módulo de catálogo de servicios de envío' },
+    { codigo: 'sistema_permisos',   descripcion: 'Panel de gestión de roles y permisos' },
+    { codigo: 'sistema_aperturas',  descripcion: 'Panel de activación de módulos (feature flags)' },
+    { codigo: 'sistema_auditoria',  descripcion: 'Panel de auditoría y trazabilidad de acciones' },
   ]
   for (const f of nuevosFlags) {
     await prisma.featureFlag.upsert({
