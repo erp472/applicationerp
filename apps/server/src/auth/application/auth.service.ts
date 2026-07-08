@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { compare } from '@node-rs/bcrypt';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -9,6 +9,8 @@ import { JwtPayload, LoginResult } from '../domain/auth.types.js';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
@@ -16,7 +18,7 @@ export class AuthService {
     private readonly permisosService: PermisosService,
   ) {}
 
-  async login(dto: LoginDto, macAddress?: string): Promise<LoginResult> {
+  async login(dto: LoginDto, macAddress?: string, plataforma?: string): Promise<LoginResult> {
     const usuario = await this.prisma.usuario.findUnique({
       where: { emailusuarios: dto.email },
       select: {
@@ -38,7 +40,7 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    await this.validateMac(macAddress, usuario.idusuarios, usuario.sucursales_idsucursales, usuario.rol.codigoroles);
+    await this.validateMac(macAddress, plataforma, usuario.idusuarios, usuario.sucursales_idsucursales, usuario.rol.codigoroles);
 
     await this.prisma.usuario.update({
       where: { idusuarios: usuario.idusuarios },
@@ -96,12 +98,33 @@ export class AuthService {
 
   private async validateMac(
     mac: string | undefined,
+    plataforma: string | undefined,
     usuarioId: number,
     sucursalId: number | null,
     rol: string,
   ) {
-    if (process.env.NODE_ENV === 'development') return;
     if (rol === 'ADMIN_SISTEMA' || rol === 'ADMIN_NACIONAL') return;
+
+    // CAJERO: siempre debe venir de Tauri con MAC aprobada, sin bypass de entorno
+    if (rol === 'CAJERO') {
+      this.logger.log(`[CAJERO login] plataforma=${plataforma} mac=${mac}`);
+      if (plataforma !== 'tauri') {
+        throw new UnauthorizedException('El acceso de cajero solo está permitido desde la aplicación de escritorio.');
+      }
+      if (!mac) throw new UnauthorizedException('Este equipo no está autorizado. Contáctese con soporte: applicationerp472@gmail.com');
+
+      const equipo = await this.prisma.equipoAutorizado.findFirst({
+        where: {
+          mac_addressequipos_autorizados: mac.toLowerCase(),
+          ...(sucursalId != null ? { sucursales_idsucursales: sucursalId } : {}),
+          activoequipos_autorizados: true,
+        },
+      });
+      if (!equipo) throw new UnauthorizedException('Este equipo no está autorizado para este cajero. Contáctese con soporte: applicationerp472@gmail.com');
+      return;
+    }
+
+    if (process.env.NODE_ENV === 'development') return;
 
     if (!mac) throw new UnauthorizedException('Este equipo no está autorizado. Contáctese con soporte: applicationerp472@gmail.com');
 

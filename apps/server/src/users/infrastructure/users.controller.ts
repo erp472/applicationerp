@@ -80,10 +80,24 @@ export class UsersController {
   }
 
   @Get('me')
+  @Feature('')
   @ApiOperation({ summary: 'Authenticated user profile' })
   @ApiResponse({ status: 200, description: 'Current user data' })
   async getMe(@CurrentUser() user: { id: number }) {
     return UsersPresenter.toResponse(await this.service.findOne(user.id));
+  }
+
+  @Patch('me')
+  @Feature('')
+  @ApiOperation({ summary: 'Update own profile (nombre, email, password, contact fields)' })
+  @ApiResponse({ status: 200, description: 'Profile updated' })
+  async updateMe(
+    @CurrentUser() user: { id: number },
+    @Body() body: unknown,
+  ) {
+    const parsed = UpdateOwnProfileSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    return UsersPresenter.toResponse(await this.service.update(user.id, parsed.data));
   }
 
   @Get(':id')

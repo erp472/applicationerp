@@ -49,9 +49,13 @@ export class AuthController {
     },
   })
   @ApiResponse({ status: 401, description: 'Credenciales inválidas' })
-  async login(@Body() body: unknown, @Headers('x-mac-address') mac?: string) {
+  async login(
+    @Body() body: unknown,
+    @Headers('x-mac-address') mac?: string,
+    @Headers('x-plataforma') plataforma?: string,
+  ) {
     const dto = LoginSchema.parse(body);
-    return this.authService.login(dto, mac);
+    return this.authService.login(dto, mac, plataforma);
   }
 
   @UseGuards(JwtAuthGuard)
