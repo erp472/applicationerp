@@ -17,10 +17,11 @@ import { SucursalesModule } from './sucursales/sucursales.module.js';
 import { EquiposModule } from './equipos/equipos.module.js';
 import { ProductosModule } from './productos/productos.module.js';
 import { ServiciosModule } from './servicios/servicios.module.js';
+import { CajasModule } from './cajas/cajas.module.js';
 import { AuditContextInterceptor } from './common/interceptors/audit-context.interceptor.js';
 
 @Module({
-  imports: [PrismaModule, AuditModule, MetricsModule, AuthModule, UsersModule, DevicesModule, PermisosModule, FeatureFlagsModule, GeoModule, ComerciosModule, RegionalesModule, SucursalesModule, EquiposModule, ProductosModule, ServiciosModule],
+  imports: [PrismaModule, AuditModule, MetricsModule, AuthModule, UsersModule, DevicesModule, PermisosModule, FeatureFlagsModule, GeoModule, ComerciosModule, RegionalesModule, SucursalesModule, EquiposModule, ProductosModule, ServiciosModule, CajasModule],
   controllers: [AppController],
   providers: [
     AppService,

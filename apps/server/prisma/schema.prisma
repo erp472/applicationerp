@@ -51,6 +51,7 @@ enum tipo_caja {
   menor
   general
   pos
+  pagos
 }
 
 enum estado_sesion_caja {
@@ -77,6 +78,7 @@ enum tipo_movimiento_caja {
   recaudo
   moneda_circulante
   apartado_postal
+  pago_administrativo
 }
 
 enum medio_pago {
@@ -767,9 +769,10 @@ model SesionCaja {
   monto_cierrasesiones_caja    Decimal?           @db.Decimal(18, 2)
   fecha_aperturasesiones_caja  DateTime           @default(now()) @db.Timestamptz(6)
   fecha_cierrasesiones_caja    DateTime?          @db.Timestamptz(6)
-  cierre_forzadosesiones_caja  Boolean            @default(false)
-  estadosesiones_caja          estado_sesion_caja @default(abierta)
-  observacionessesiones_caja   String?
+  cierre_forzadosesiones_caja           Boolean            @default(false)
+  estadosesiones_caja                   estado_sesion_caja @default(abierta)
+  observacionessesiones_caja            String?
+  arqueo_denominacionessesiones_caja    Json?
 
   caja           Caja    @relation(fields: [cajas_idcajas], references: [idcajas])
   usuarioApertura Usuario @relation("SesionCajaApertura", fields: [usuarios_idusuarios_apertura], references: [idusuarios])
@@ -1195,6 +1198,9 @@ model Giro {
   remitente_direcciongiros             String?
   remitente_emailgiros                 String?             @db.VarChar(200)
   remitente_huellagiros                Boolean             @default(false)
+  beneficiario_huellagiros             Boolean             @default(false)
+  beneficiario_pepgiros                Boolean             @default(false)
+  beneficiario_sospechosogiros         Boolean             @default(false)
   beneficiario_tipo_docgiros           String?             @db.VarChar(20)
   beneficiario_numero_docgiros         String?             @db.VarChar(30)
   beneficiario_nombregiros             String?             @db.VarChar(300)
