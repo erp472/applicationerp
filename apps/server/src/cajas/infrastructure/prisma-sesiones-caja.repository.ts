@@ -20,6 +20,7 @@ const TIPOS_ENTRADA = new Set([
   'moneda_circulante', 'apartado_postal',
 ]);
 
+// traslado_caja_fuerte sale del cajón pero NO de la caja: el dinero sigue en el punto
 const TIPOS_SALIDA = new Set([
   'cambio_custodia_out', 'giro_pago', 'consignacion',
   'diferencia_faltante', 'pago_administrativo', 'anulacion',
@@ -329,11 +330,12 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
     return rows.map(toMovEntity);
   }
 
-  async getStatusPunto(sucursalId: number): Promise<StatusPunto> {
+  async getStatusPunto(cajaPadreId: number): Promise<StatusPunto> {
     const cajaPadre = await this.prisma.cajaPadre.findFirst({
-      where: { sucursales_idsucursales: sucursalId, deleted_atcajas_padres: null },
+      where: { idcajas_padres: cajaPadreId, deleted_atcajas_padres: null },
       select: {
         idcajas_padres:           true,
+        sucursales_idsucursales:  true,
         base_generalcajas_padres: true,
         cajas: {
           where: { activocajas: true, deleted_atcajas: null },
@@ -367,15 +369,16 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
 
     if (!cajaPadre) {
       return {
-        sucursalId,
-        cajaPadreId: 0,
+        sucursalId:  0,
+        cajaPadreId,
         panel: { baseGeneral: '0', cajaGeneral: '0', cajaFuerteGeneral: '0', basePagos: '0', cajaPagos: '0', cajaFuertePagos: '0', acumuladoMonedaCirculante: '0' },
         cajas: [],
       };
     }
 
-    let cajaGeneralTotal = 0;
-    let cajaPagosTotal = 0;
+    let cajonGeneralTotal = 0;   // total en punto (principal + auxiliares)
+    let fuerteGeneralTotal = 0;  // solo auxiliares (pos + menor)
+    let cajonPagosTotal = 0;
     let basePagos = '0';
     let acumuladoMoneda = 0;
 
@@ -388,9 +391,11 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
           sesionId:     null,
           codigo:       caja.codigocajas,
           nombre:       caja.nombrecajas,
+          tipo:         caja.tipocajas as import('../domain/caja.entity.js').TipoCaja,
           cajeroId:     null,
           estado:       'sin_sesion' as const,
           saldoActual:  null,
+          cajaFuerte:   '0',
           baseDia:      caja.base_diacajas.toString(),
           limiteAlerta: caja.limite_alertacajas?.toString() ?? null,
           ingresosTurno: '0',
@@ -423,10 +428,15 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
       const alertas: TipoAlerta[] = evaluarAlertas(saldo.toFixed(2), baseDia, limiteAlerta);
 
       if (caja.tipocajas === 'pagos') {
-        cajaPagosTotal += saldo;
+        cajonPagosTotal += saldo;
         basePagos = baseDia;
+      } else if (caja.tipocajas === 'general') {
+        // Sesión del cajero principal = la caja fuerte física del punto
+        cajonGeneralTotal  += saldo;
+        fuerteGeneralTotal += saldo;
       } else {
-        cajaGeneralTotal += saldo;
+        // pos, menor → bolsillo de cada cajero auxiliar
+        cajonGeneralTotal += saldo;
       }
 
       return {
@@ -434,6 +444,7 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
         sesionId:      sesionActiva.idsesiones_caja,
         codigo:        caja.codigocajas,
         nombre:        caja.nombrecajas,
+        tipo:          caja.tipocajas as import('../domain/caja.entity.js').TipoCaja,
         cajeroId:      sesionActiva.usuarios_idusuarios_apertura,
         estado:        'abierta' as const,
         saldoActual:   saldo.toFixed(2),
@@ -448,15 +459,15 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
     });
 
     return {
-      sucursalId,
+      sucursalId:  cajaPadre.sucursales_idsucursales,
       cajaPadreId: cajaPadre.idcajas_padres,
       panel: {
-        baseGeneral:              cajaPadre.base_generalcajas_padres.toString(),
-        cajaGeneral:              cajaGeneralTotal.toFixed(2),
-        cajaFuerteGeneral:        cajaGeneralTotal.toFixed(2),
+        baseGeneral:               cajaPadre.base_generalcajas_padres.toString(),
+        cajaGeneral:               cajonGeneralTotal.toFixed(2),    // total punto (principal + fuertes)
+        cajaFuerteGeneral:         fuerteGeneralTotal.toFixed(2),   // solo suma de cajas fuertes auxiliares
         basePagos,
-        cajaPagos:                cajaPagosTotal.toFixed(2),
-        cajaFuertePagos:          cajaPagosTotal.toFixed(2),
+        cajaPagos:                 cajonPagosTotal.toFixed(2),
+        cajaFuertePagos:           '0',
         acumuladoMonedaCirculante: acumuladoMoneda.toFixed(2),
       },
       cajas: cards,

@@ -83,5 +83,5 @@ export interface ISesionesCajaRepository {
   aprobarConsignacion(id: number, data: AprobarConsignacionData): Promise<ConsignacionEntity>;
 
   getMovimientos(sesionId: number): Promise<MovimientoCajaEntity[]>;
-  getStatusPunto(sucursalId: number): Promise<StatusPunto>;
+  getStatusPunto(cajaPadreId: number): Promise<StatusPunto>;
 }

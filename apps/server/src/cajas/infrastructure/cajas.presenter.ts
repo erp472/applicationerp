@@ -1,4 +1,6 @@
 import type {
+  CajaEntity,
+  CajaPadreEntity,
   SesionCajaEntity,
   MovimientoCajaEntity,
   ConsignacionEntity,
@@ -8,6 +10,30 @@ import type {
 } from '../domain/caja.entity.js';
 
 export class CajasPresenter {
+  static toCaja(entity: CajaEntity) {
+    return {
+      id:           entity.id,
+      sucursalId:   entity.sucursalId,
+      cajaPadreId:  entity.cajaPadreId,
+      codigo:       entity.codigo,
+      nombre:       entity.nombre,
+      tipo:         entity.tipo,
+      baseDia:      entity.baseDia,
+      limiteAlerta: entity.limiteAlerta,
+      activo:       entity.activo,
+    };
+  }
+
+  static toCajaPadre(entity: CajaPadreEntity) {
+    return {
+      id:          entity.id,
+      sucursalId:  entity.sucursalId,
+      nombre:      entity.nombre,
+      baseGeneral: entity.baseGeneral,
+      horaReset:   entity.horaReset?.toISOString() ?? null,
+    };
+  }
+
   static toSesion(entity: SesionCajaEntity) {
     return {
       id:               entity.id,
@@ -56,6 +82,7 @@ export class CajasPresenter {
       sesionId:      card.sesionId,
       codigo:        card.codigo,
       nombre:        card.nombre,
+      tipo:          card.tipo,
       cajeroId:      card.cajeroId,
       estado:        card.estado,
       saldoActual:   card.saldoActual,

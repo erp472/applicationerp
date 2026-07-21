@@ -1,0 +1,31 @@
+import { z } from 'zod';
+
+const PersonaEnvioSchema = z.object({
+  nombre:      z.string().min(1).max(300),
+  documento:   z.string().max(30).optional(),
+  email:       z.string().email().max(200).optional(),
+  telefono:    z.string().max(20).optional(),
+  direccion:   z.string().optional(),
+  ciudad:      z.string().max(100).optional(),
+  pais:        z.string().length(2).default('CO'),
+  codigoPostal: z.string().max(20).optional(),
+});
+
+export const CrearEnvioSchema = z.object({
+  servicioId:       z.number().int().positive(),
+  sucursalId:       z.number().int().positive(),
+  remitente:        PersonaEnvioSchema,
+  destinatario:     PersonaEnvioSchema,
+  peseFisicoKg:     z.number().positive(),
+  altoCm:           z.number().positive().optional(),
+  anchoCm:          z.number().positive().optional(),
+  largoCm:          z.number().positive().optional(),
+  valorDeclarado:   z.number().nonnegative().optional(),
+  seguroAdicional:  z.boolean().default(false),
+  asignarCaja:      z.boolean().default(false),
+  contenido:        z.string().max(200).optional(),
+  observaciones:    z.string().max(500).optional(),
+  medioPago:        z.enum(['efectivo', 'tarjeta_debito', 'tarjeta_credito', 'transferencia', 'consignacion', 'preporteado', 'mixto_preporteado']),
+});
+
+export type CrearEnvioDto = z.infer<typeof CrearEnvioSchema>;

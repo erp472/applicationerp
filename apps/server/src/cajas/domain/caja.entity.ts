@@ -8,7 +8,7 @@ export type TipoMovimientoCaja =
   | 'cambio_custodia_in' | 'cambio_custodia_out'
   | 'diferencia_faltante' | 'diferencia_sobrante'
   | 'anulacion' | 'recaudo' | 'moneda_circulante'
-  | 'pago_administrativo';
+  | 'pago_administrativo' | 'traslado_caja_fuerte';
 export type MedioPago = 'efectivo' | 'tarjeta_debito' | 'tarjeta_credito' | 'transferencia' | 'consignacion' | 'preporteado' | 'mixto_preporteado';
 export type MedioConsignacion = 'banco' | 'transportadora';
 export type TipoCuentaBancaria = 'ahorros' | 'corriente';
@@ -116,8 +116,10 @@ export interface CardAuxiliar {
   sesionId: number | null;
   codigo: string;
   nombre: string;
+  tipo: TipoCaja;
   cajeroId: number | null;
   estado: EstadoSesionCaja | 'sin_sesion';
+  /** Balance de la caja fuerte del auxiliar (= saldo de la sesión activa) */
   saldoActual: string | null;
   baseDia: string;
   limiteAlerta: string | null;
@@ -133,4 +135,32 @@ export interface StatusPunto {
   cajaPadreId: number;
   panel: PanelPunto;
   cajas: CardAuxiliar[];
+}
+
+export interface ServicioSucursalItem {
+  id: number;
+  codigo: string;
+  nombre: string;
+  tipo: string;
+  activo: boolean;
+}
+
+export interface CajaPosPanel {
+  id: number;
+  codigo: string;
+  nombre: string;
+  sesionActiva: boolean;
+  sesionId: number | null;
+}
+
+export interface SucursalPanelItem {
+  sucursalId:     number;
+  codigo:         string;
+  nombre:         string;
+  tipo:           string;
+  regional:       string;
+  ciudad:         string | null;
+  departamento:   string | null;
+  cajaPos:        CajaPosPanel | null;
+  servicios:      ServicioSucursalItem[];
 }

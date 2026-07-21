@@ -37,6 +37,8 @@ enum tipo_producto {
   filatelia
   empaque
   material_oficina
+  giro
+  paquete
   otro
 }
 
@@ -79,10 +81,12 @@ enum tipo_movimiento_caja {
   moneda_circulante
   apartado_postal
   pago_administrativo
+  traslado_caja_fuerte
 }
 
 enum medio_pago {
   efectivo
+  cheque
   tarjeta_debito
   tarjeta_credito
   transferencia
@@ -872,6 +876,7 @@ model Venta {
   totalventas                   Decimal      @db.Decimal(18, 2)
   medio_pagoventas              medio_pago
   estadoventas                  estado_venta @default(activa)
+  email_factura_ventas          String?      @db.VarChar(200)
   created_atventas              DateTime     @default(now()) @db.Timestamptz(6)
   updated_atventas              DateTime     @default(now()) @db.Timestamptz(6)
 

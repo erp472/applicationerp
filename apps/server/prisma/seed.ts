@@ -306,16 +306,26 @@ async function main() {
 
   // ── 9. PRODUCTOS ──────────────────────────────────────────────────────────
   const productosData = [
-    { codigoproductos: 'EST-20',   nombreproductos: 'Estampilla $20',         tipoproductos: 'estampilla' as const, precioproductos: 20,    porcentaje_taxproductos: 0 },
-    { codigoproductos: 'EST-50',   nombreproductos: 'Estampilla $50',         tipoproductos: 'estampilla' as const, precioproductos: 50,    porcentaje_taxproductos: 0 },
-    { codigoproductos: 'EST-100',  nombreproductos: 'Estampilla $100',        tipoproductos: 'estampilla' as const, precioproductos: 100,   porcentaje_taxproductos: 0 },
-    { codigoproductos: 'EST-200',  nombreproductos: 'Estampilla $200',        tipoproductos: 'estampilla' as const, precioproductos: 200,   porcentaje_taxproductos: 0 },
-    { codigoproductos: 'EST-500',  nombreproductos: 'Estampilla $500',        tipoproductos: 'estampilla' as const, precioproductos: 500,   porcentaje_taxproductos: 0 },
-    { codigoproductos: 'EMP-SOBRE', nombreproductos: 'Sobre 4-72 Estándar',  tipoproductos: 'empaque' as const,    precioproductos: 500,   porcentaje_taxproductos: 0 },
-    { codigoproductos: 'EMP-CAJA-P', nombreproductos: 'Caja Pequeña 4-72',  tipoproductos: 'empaque' as const,    precioproductos: 1500,  porcentaje_taxproductos: 0 },
-    { codigoproductos: 'EMP-CAJA-M', nombreproductos: 'Caja Mediana 4-72',  tipoproductos: 'empaque' as const,    precioproductos: 2500,  porcentaje_taxproductos: 0 },
-    { codigoproductos: 'EMP-CAJA-G', nombreproductos: 'Caja Grande 4-72',   tipoproductos: 'empaque' as const,    precioproductos: 3500,  porcentaje_taxproductos: 0 },
-    { codigoproductos: 'PAPEL-BOND', nombreproductos: 'Papel Bond A4 (500h)', tipoproductos: 'material_oficina' as const, precioproductos: 15000, porcentaje_taxproductos: 19 },
+    // Estampillas
+    { codigoproductos: 'EST-20',      nombreproductos: 'Estampilla $20',                    tipoproductos: 'estampilla' as const,      precioproductos: 20,    porcentaje_taxproductos: 0 },
+    { codigoproductos: 'EST-50',      nombreproductos: 'Estampilla $50',                    tipoproductos: 'estampilla' as const,      precioproductos: 50,    porcentaje_taxproductos: 0 },
+    { codigoproductos: 'EST-100',     nombreproductos: 'Estampilla $100',                   tipoproductos: 'estampilla' as const,      precioproductos: 100,   porcentaje_taxproductos: 0 },
+    { codigoproductos: 'EST-200',     nombreproductos: 'Estampilla $200',                   tipoproductos: 'estampilla' as const,      precioproductos: 200,   porcentaje_taxproductos: 0 },
+    { codigoproductos: 'EST-500',     nombreproductos: 'Estampilla $500',                   tipoproductos: 'estampilla' as const,      precioproductos: 500,   porcentaje_taxproductos: 0 },
+    // Material de Empaque (ME)
+    { codigoproductos: 'ME-CES-S',    nombreproductos: 'ME Caja Especial S 37x28x6',       tipoproductos: 'empaque' as const,         precioproductos: 11860, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ME-CES-M',    nombreproductos: 'ME Caja Especial M 37x28x14',      tipoproductos: 'empaque' as const,         precioproductos:  3700, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ME-CES-G',    nombreproductos: 'ME Caja Especial G 40x30x30',      tipoproductos: 'empaque' as const,         precioproductos:  5250, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ME-BSG',      nombreproductos: 'ME Bolsa de seguridad',             tipoproductos: 'empaque' as const,         precioproductos:   550, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ME-SCC',      nombreproductos: 'ME Sobre de Cartón Carta',          tipoproductos: 'empaque' as const,         precioproductos:   750, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ME-CCO-S',    nombreproductos: 'ME Caja Corriente S 50x40x30',     tipoproductos: 'empaque' as const,         precioproductos:  5050, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ME-CCO-M',    nombreproductos: 'ME Caja Corriente M 60x40x40',     tipoproductos: 'empaque' as const,         precioproductos: 11204, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ME-SDP-HC',   nombreproductos: "ME Sobre 'De-Para' Media Carta",   tipoproductos: 'empaque' as const,         precioproductos:   250, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ME-SDP-C',    nombreproductos: "ME Sobre 'De-Para' Carta",         tipoproductos: 'empaque' as const,         precioproductos:   250, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ME-SDP-O',    nombreproductos: "ME Sobre 'De-Para' Oficio",        tipoproductos: 'empaque' as const,         precioproductos:   350, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ME-SDP-EO',   nombreproductos: "ME Sobre 'De-Para' Extra Oficio",  tipoproductos: 'empaque' as const,         precioproductos:   450, porcentaje_taxproductos: 0 },
+    // Material de oficina
+    { codigoproductos: 'PAPEL-BOND',  nombreproductos: 'Papel Bond A4 (500h)',             tipoproductos: 'material_oficina' as const, precioproductos: 15000, porcentaje_taxproductos: 19 },
   ]
 
   const productos: Record<string, { idproductos: number }> = {}
@@ -502,7 +512,7 @@ async function main() {
         },
       })
     }
-    for (const [codigo, prod] of Object.entries(productos).filter(([k]) => k.startsWith('EMP-'))) {
+    for (const [codigo, prod] of Object.entries(productos).filter(([k]) => k.startsWith('ME-'))) {
       await prisma.inventarioSucursal.upsert({
         where: {
           sucursales_idsucursales_productos_idproductos: {
@@ -514,7 +524,7 @@ async function main() {
         create: {
           sucursales_idsucursales: suc.idsucursales,
           productos_idproductos: prod.idproductos,
-          cantidad_actualinventario_sucursal: codigo === 'EMP-SOBRE' ? 200 : 50,
+          cantidad_actualinventario_sucursal: 100,
           cantidad_minimainventario_sucursal: 10,
         },
       })
@@ -537,6 +547,7 @@ async function main() {
     { codigo: 'modulo_equipos',     descripcion: 'Módulo de equipos autorizados (MAC guard)' },
     { codigo: 'modulo_productos',   descripcion: 'Módulo de catálogo de productos' },
     { codigo: 'modulo_servicios',   descripcion: 'Módulo de catálogo de servicios de envío' },
+    { codigo: 'modulo_cajas',       descripcion: 'Módulo de gestión de cajas y turnos operativos' },
     { codigo: 'sistema_permisos',   descripcion: 'Panel de gestión de roles y permisos' },
     { codigo: 'sistema_aperturas',  descripcion: 'Panel de activación de módulos (feature flags)' },
     { codigo: 'sistema_auditoria',  descripcion: 'Panel de auditoría y trazabilidad de acciones' },
@@ -590,6 +601,89 @@ async function main() {
     }
   }
   console.log(`✓ Convenios de recaudo: ${conveniosData.length} convenios`)
+
+  // ── 17. CAJAS PADRES Y AUXILIARES ────────────────────────────────────────
+  const cajasPlan: Array<{
+    sucursal:    typeof sucPrincipal
+    nombre:      string
+    baseGeneral: string
+    horaReset:   Date
+    auxiliares:  Array<{ codigo: string; nombre: string; tipo: 'general' | 'pos' | 'menor' | 'pagos'; baseDia: string; limiteAlerta?: string }>
+  }> = [
+    {
+      sucursal:    sucPrincipal,
+      nombre:      'Punto Bogotá Centro',
+      baseGeneral: '5000000',
+      horaReset:   (() => { const d = new Date(0); d.setUTCHours(8, 0, 0, 0); return d })(),
+      auxiliares: [
+        { codigo: 'CF-BOG-001',     nombre: 'Caja Fuerte',  tipo: 'general', baseDia: '5000000' },
+        { codigo: 'POS-BOG-001-01', nombre: 'POS 1',        tipo: 'pos',     baseDia: '500000',  limiteAlerta: '100000' },
+        { codigo: 'CM-BOG-001',     nombre: 'Caja Menor',   tipo: 'menor',   baseDia: '200000' },
+        { codigo: 'PAG-BOG-001',    nombre: 'Caja Pagos',   tipo: 'pagos',   baseDia: '2000000' },
+      ],
+    },
+    {
+      sucursal:    sucNorte,
+      nombre:      'Punto Bogotá Norte',
+      baseGeneral: '3000000',
+      horaReset:   (() => { const d = new Date(0); d.setUTCHours(8, 0, 0, 0); return d })(),
+      auxiliares: [
+        { codigo: 'CF-BOG-002',     nombre: 'Caja Fuerte', tipo: 'general', baseDia: '3000000' },
+        { codigo: 'POS-BOG-002-01', nombre: 'POS 1',       tipo: 'pos',     baseDia: '300000', limiteAlerta: '80000' },
+        { codigo: 'CM-BOG-002',     nombre: 'Caja Menor',  tipo: 'menor',   baseDia: '150000' },
+      ],
+    },
+    {
+      sucursal:    sucMed,
+      nombre:      'Punto Medellín El Poblado',
+      baseGeneral: '3000000',
+      horaReset:   (() => { const d = new Date(0); d.setUTCHours(8, 0, 0, 0); return d })(),
+      auxiliares: [
+        { codigo: 'CF-MED-001',     nombre: 'Caja Fuerte', tipo: 'general', baseDia: '3000000' },
+        { codigo: 'POS-MED-001-01', nombre: 'POS 1',       tipo: 'pos',     baseDia: '300000', limiteAlerta: '80000' },
+        { codigo: 'CM-MED-001',     nombre: 'Caja Menor',  tipo: 'menor',   baseDia: '150000' },
+      ],
+    },
+  ]
+
+  for (const plan of cajasPlan) {
+    let cajaPadre = await prisma.cajaPadre.findFirst({
+      where: { sucursales_idsucursales: plan.sucursal.idsucursales, deleted_atcajas_padres: null },
+    })
+    if (!cajaPadre) {
+      cajaPadre = await prisma.cajaPadre.create({
+        data: {
+          sucursales_idsucursales:  plan.sucursal.idsucursales,
+          nombrecajas_padres:       plan.nombre,
+          base_generalcajas_padres: plan.baseGeneral,
+          hora_resetcajas_padres:   plan.horaReset,
+        },
+      })
+    }
+
+    for (const aux of plan.auxiliares) {
+      await prisma.caja.upsert({
+        where: {
+          codigocajas_sucursales_idsucursales: {
+            codigocajas:             aux.codigo,
+            sucursales_idsucursales: plan.sucursal.idsucursales,
+          },
+        },
+        update: {},
+        create: {
+          sucursales_idsucursales:     plan.sucursal.idsucursales,
+          cajas_padres_idcajas_padres: cajaPadre.idcajas_padres,
+          codigocajas:                 aux.codigo,
+          nombrecajas:                 aux.nombre,
+          tipocajas:                   aux.tipo,
+          base_diacajas:               aux.baseDia,
+          limite_alertacajas:          aux.limiteAlerta ?? null,
+          activocajas:                 true,
+        },
+      })
+    }
+    console.log(`✓ Cajas ${plan.nombre}: ${plan.auxiliares.length} cajas`)
+  }
 
   console.log('\n✅ Seed completado exitosamente.')
   console.log('━'.repeat(50))

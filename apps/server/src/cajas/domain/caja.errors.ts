@@ -65,3 +65,27 @@ export class ConsignacionEstadoInvalidoError extends CajaDomainError {
     this.name = 'ConsignacionEstadoInvalidoError';
   }
 }
+
+export class CajaPadreNoEncontradaError extends CajaDomainError {
+  readonly statusCode = 404;
+  constructor(id: number) {
+    super(`Caja padre ${id} no encontrada`);
+    this.name = 'CajaPadreNoEncontradaError';
+  }
+}
+
+export class CodigoCajaDuplicadoError extends CajaDomainError {
+  readonly statusCode = 409;
+  constructor(codigo: string) {
+    super(`Ya existe una caja con el código ${codigo} en esta sucursal`);
+    this.name = 'CodigoCajaDuplicadoError';
+  }
+}
+
+export class AuxiliaresAbiertasError extends CajaDomainError {
+  readonly statusCode = 409;
+  constructor(cantidad: number) {
+    super(`No se puede cerrar el turno principal: hay ${cantidad} caja(s) auxiliar(es) con sesión abierta`);
+    this.name = 'AuxiliaresAbiertasError';
+  }
+}
