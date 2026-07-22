@@ -58,6 +58,8 @@ export class VentasPresenter {
       tipo:          entity.tipo,
       precio:        entity.precio,
       porcentajeTax: entity.porcentajeTax,
+      stockActual:   entity.stockActual,
+      stockMinimo:   entity.stockMinimo,
     };
   }
 

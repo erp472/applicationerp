@@ -210,7 +210,10 @@ function toEnvioEntity(row: any): EnvioEntity {
   };
 }
 
-function toProductoEntity(row: ProductoRow): ProductoCatalogoEntity {
+function toProductoEntity(row: ProductoRow & {
+  inventarioSucursal?: { cantidad_actualinventario_sucursal: number; cantidad_minimainventario_sucursal: number }[]
+}): ProductoCatalogoEntity {
+  const inv = row.inventarioSucursal?.[0] ?? null;
   return {
     id:            row.idproductos,
     codigo:        row.codigoproductos,
@@ -219,6 +222,8 @@ function toProductoEntity(row: ProductoRow): ProductoCatalogoEntity {
     precio:        Number(row.precioproductos),
     porcentajeTax: Number(row.porcentaje_taxproductos),
     activo:        row.activoproductos,
+    stockActual:   inv ? inv.cantidad_actualinventario_sucursal  : null,
+    stockMinimo:   inv ? inv.cantidad_minimainventario_sucursal  : null,
   };
 }
 
@@ -254,7 +259,16 @@ export class PrismaVentasRepository implements IVentasRepository {
           some: { sucursales_idsucursales: sucursalId, activoproductos_sucursal: true },
         },
       },
-      select:  SELECT_PRODUCTO,
+      select: {
+        ...SELECT_PRODUCTO,
+        inventarioSucursal: {
+          where:  { sucursales_idsucursales: sucursalId },
+          select: {
+            cantidad_actualinventario_sucursal: true,
+            cantidad_minimainventario_sucursal: true,
+          },
+        },
+      },
       orderBy: { nombreproductos: 'asc' },
     });
     return rows.map(toProductoEntity);

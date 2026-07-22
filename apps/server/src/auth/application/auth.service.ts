@@ -81,10 +81,16 @@ export class AuthService {
         sucursales_idsucursales: true,
         activousuarios:          true,
         ultimo_loginusuarios:    true,
-        rol:                     { select: { codigoroles: true } },
+        rol: {
+          select: {
+            idroles:     true,
+            codigoroles: true,
+          },
+        },
       },
     });
     if (!u) return null;
+    const permisos = await this.obtenerPermisos(u.rol.idroles);
     return {
       id:          String(u.idusuarios),
       nombre:      u.nombreusuarios,
@@ -93,6 +99,7 @@ export class AuthService {
       sucursal_id: u.sucursales_idsucursales ?? null,
       activo:      u.activousuarios,
       ultimoLogin: u.ultimo_loginusuarios?.toISOString() ?? null,
+      permisos,
     };
   }
 
@@ -105,8 +112,9 @@ export class AuthService {
   ) {
     if (rol === 'ADMIN_SISTEMA' || rol === 'ADMIN_NACIONAL') return;
 
-    // CAJERO: siempre debe venir de Tauri con MAC aprobada, sin bypass de entorno
+    // CAJERO: debe venir de Tauri con MAC aprobada (en producción)
     if (rol === 'CAJERO') {
+      if (process.env.NODE_ENV === 'development') return;
       this.logger.log(`[CAJERO login] plataforma=${plataforma} mac=${mac}`);
       if (plataforma !== 'tauri') {
         throw new UnauthorizedException('El acceso de cajero solo está permitido desde la aplicación de escritorio.');

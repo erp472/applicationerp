@@ -1,7 +1,7 @@
 import {
   Controller, Get, Post, Patch, Delete,
   Body, Param, Query, UseGuards, UseFilters,
-  ParseIntPipe, BadRequestException, HttpCode, HttpStatus,
+  ParseIntPipe, BadRequestException, ForbiddenException, HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { z } from 'zod';
 import {
@@ -123,7 +123,12 @@ export class CajasController {
   @Get('auxiliares')
   @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Listar cajas auxiliares (pos, menor, pagos) por sucursal' })
-  async listCajas(@Query('sucursalId', ParseIntPipe) sucursalId: number) {
+  async listCajas(
+    @Query('sucursalId', ParseIntPipe) sucursalId: number,
+    @CurrentUser() user: { id: number; rol: string; sucursal_id: number | null },
+  ) {
+    const isAdmin = user.rol === 'ADMIN_SISTEMA' || user.rol === 'ADMIN_NACIONAL';
+    if (!isAdmin && user.sucursal_id !== sucursalId) throw new ForbiddenException('No tienes acceso a esta sucursal.');
     const cajas = await this.service.listCajas(sucursalId);
     return cajas.map(CajasPresenter.toCaja);
   }
@@ -201,7 +206,12 @@ export class CajasController {
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Estado del punto buscando por sucursalId' })
   @ApiParam({ name: 'sucursalId', type: Number })
-  async getStatusPuntoBySucursal(@Param('sucursalId', ParseIntPipe) sucursalId: number) {
+  async getStatusPuntoBySucursal(
+    @Param('sucursalId', ParseIntPipe) sucursalId: number,
+    @CurrentUser() user: { id: number; rol: string; sucursal_id: number | null },
+  ) {
+    const isAdmin = user.rol === 'ADMIN_SISTEMA' || user.rol === 'ADMIN_NACIONAL';
+    if (!isAdmin && user.sucursal_id !== sucursalId) throw new ForbiddenException('No tienes acceso a esta sucursal.');
     return CajasPresenter.toStatus(await this.service.getStatusPuntoBySucursal(sucursalId));
   }
 
