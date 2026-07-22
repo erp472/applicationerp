@@ -139,10 +139,11 @@ export class VentasController {
     @Param('ventaId', ParseIntPipe) ventaId: number,
     @Query('cajaId', ParseIntPipe)  cajaId:  number,
     @Body() body: unknown,
+    @CurrentUser() user: { id: number },
   ) {
     const parsed = ConfirmarVentaSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
-    const result = await this.service.confirmarVenta(ventaId, parsed.data, cajaId);
+    const result = await this.service.confirmarVenta(ventaId, parsed.data, cajaId, user.id);
     return {
       venta:       VentasPresenter.toVenta(result.venta),
       movimiento:  result.movimiento,
@@ -164,10 +165,11 @@ export class VentasController {
     @Param('ventaId', ParseIntPipe) ventaId: number,
     @Query('cajaId', ParseIntPipe)  cajaId:  number,
     @Body() body: unknown,
+    @CurrentUser() user: { id: number },
   ) {
     const parsed = AnularVentaSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
-    const result = await this.service.anularVenta(ventaId, parsed.data, cajaId);
+    const result = await this.service.anularVenta(ventaId, parsed.data, cajaId, user.id);
     return {
       venta:       VentasPresenter.toVenta(result.venta),
       movimiento:  result.movimiento,

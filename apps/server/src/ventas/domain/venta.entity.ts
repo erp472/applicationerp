@@ -53,8 +53,10 @@ export class ProductoCatalogoEntity {
   precio:        number;
   porcentajeTax: number;
   activo:        boolean;
-  stockActual:   number | null;
-  stockMinimo:   number | null;
+  stockActual:    number | null;
+  stockMinimo:    number | null;
+  cantidadMinima: number | null;
+  cantidadMaxima: number | null;
 }
 
 export type TamanoApartado = 'pequeno' | 'mediano' | 'grande';

@@ -120,6 +120,23 @@ export interface IVentasRepository {
   crearEnvio(data: CrearEnvioData): Promise<EnvioEntity>;
   anularEnvio(id: number): Promise<EnvioEntity>;
 
+  // Inventario servicios especiales
+  getStockActual(productoId: number, sucursalId: number): Promise<number | null>;
+  descontarInventario(params: {
+    productoId:   number;
+    sucursalId:   number;
+    cantidad:     number;
+    ventaId:      number;
+    usuarioId:    number;
+  }): Promise<void>;
+  restaurarInventario(params: {
+    productoId:   number;
+    sucursalId:   number;
+    cantidad:     number;
+    ventaId:      number;
+    usuarioId:    number;
+  }): Promise<void>;
+
   // Resumen de turno
   getResumenSesion(sesionCajaId: number): Promise<ResumenTurno>;
 }

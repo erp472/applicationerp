@@ -68,13 +68,15 @@ const SELECT_CLIENTE = {
 } satisfies Prisma.ClienteSelect;
 
 const SELECT_PRODUCTO = {
-  idproductos:             true,
-  codigoproductos:         true,
-  nombreproductos:         true,
-  tipoproductos:           true,
-  precioproductos:         true,
-  porcentaje_taxproductos: true,
-  activoproductos:         true,
+  idproductos:                     true,
+  codigoproductos:                 true,
+  nombreproductos:                 true,
+  tipoproductos:                   true,
+  precioproductos:                 true,
+  porcentaje_taxproductos:         true,
+  activoproductos:                 true,
+  cantidad_minima_ventaproductos:  true,
+  cantidad_maxima_ventaproductos:  true,
 } satisfies Prisma.ProductoSelect;
 
 // ── Mappers ──────────────────────────────────────────────────────────────────
@@ -222,8 +224,10 @@ function toProductoEntity(row: ProductoRow & {
     precio:        Number(row.precioproductos),
     porcentajeTax: Number(row.porcentaje_taxproductos),
     activo:        row.activoproductos,
-    stockActual:   inv ? inv.cantidad_actualinventario_sucursal  : null,
-    stockMinimo:   inv ? inv.cantidad_minimainventario_sucursal  : null,
+    stockActual:    inv ? inv.cantidad_actualinventario_sucursal : null,
+    stockMinimo:    inv ? inv.cantidad_minimainventario_sucursal : null,
+    cantidadMinima: row.cantidad_minima_ventaproductos ?? null,
+    cantidadMaxima: row.cantidad_maxima_ventaproductos ?? null,
   };
 }
 
@@ -544,6 +548,121 @@ export class PrismaVentasRepository implements IVentasRepository {
       data:  { estadoenvios: 'anulado', updated_atenvios: new Date() },
     });
     return toEnvioEntity(row);
+  }
+
+  // ── Inventario servicios especiales ──────────────────────────────────────────
+
+  async getStockActual(productoId: number, sucursalId: number): Promise<number | null> {
+    const row = await this.prisma.inventarioSucursal.findUnique({
+      where: {
+        sucursales_idsucursales_productos_idproductos: {
+          sucursales_idsucursales: sucursalId,
+          productos_idproductos:   productoId,
+        },
+      },
+      select: { cantidad_actualinventario_sucursal: true },
+    });
+    return row?.cantidad_actualinventario_sucursal ?? null;
+  }
+
+  async descontarInventario(params: {
+    productoId: number; sucursalId: number; cantidad: number;
+    ventaId: number; usuarioId: number;
+  }): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const inv = await tx.inventarioSucursal.findUnique({
+        where: {
+          sucursales_idsucursales_productos_idproductos: {
+            sucursales_idsucursales: params.sucursalId,
+            productos_idproductos:   params.productoId,
+          },
+        },
+      });
+      const cantidadAnterior = inv?.cantidad_actualinventario_sucursal ?? 0;
+      const cantidadPosterior = cantidadAnterior - params.cantidad;
+
+      await tx.inventarioSucursal.upsert({
+        where: {
+          sucursales_idsucursales_productos_idproductos: {
+            sucursales_idsucursales: params.sucursalId,
+            productos_idproductos:   params.productoId,
+          },
+        },
+        update: {
+          cantidad_actualinventario_sucursal: { decrement: params.cantidad },
+          updated_atinventario_sucursal: new Date(),
+        },
+        create: {
+          sucursales_idsucursales:            params.sucursalId,
+          productos_idproductos:              params.productoId,
+          cantidad_actualinventario_sucursal: -params.cantidad,
+        },
+      });
+
+      await tx.movimientoInventario.create({
+        data: {
+          sucursales_idsucursales:                 params.sucursalId,
+          productos_idproductos:                   params.productoId,
+          tipomovimientos_inventario:              'salida',
+          cantidadmovimientos_inventario:          params.cantidad,
+          cantidad_anteriormovimientos_inventario:  cantidadAnterior,
+          cantidad_posteriormovimientos_inventario: cantidadPosterior,
+          referencia_idmovimientos_inventario:      params.ventaId,
+          referencia_tipomovimientos_inventario:    'Venta',
+          usuarios_idusuarios:                     params.usuarioId,
+        },
+      });
+    });
+  }
+
+  async restaurarInventario(params: {
+    productoId: number; sucursalId: number; cantidad: number;
+    ventaId: number; usuarioId: number;
+  }): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const inv = await tx.inventarioSucursal.findUnique({
+        where: {
+          sucursales_idsucursales_productos_idproductos: {
+            sucursales_idsucursales: params.sucursalId,
+            productos_idproductos:   params.productoId,
+          },
+        },
+      });
+      const cantidadAnterior  = inv?.cantidad_actualinventario_sucursal ?? 0;
+      const cantidadPosterior = cantidadAnterior + params.cantidad;
+
+      await tx.inventarioSucursal.upsert({
+        where: {
+          sucursales_idsucursales_productos_idproductos: {
+            sucursales_idsucursales: params.sucursalId,
+            productos_idproductos:   params.productoId,
+          },
+        },
+        update: {
+          cantidad_actualinventario_sucursal: { increment: params.cantidad },
+          updated_atinventario_sucursal: new Date(),
+        },
+        create: {
+          sucursales_idsucursales:            params.sucursalId,
+          productos_idproductos:              params.productoId,
+          cantidad_actualinventario_sucursal: params.cantidad,
+        },
+      });
+
+      await tx.movimientoInventario.create({
+        data: {
+          sucursales_idsucursales:                 params.sucursalId,
+          productos_idproductos:                   params.productoId,
+          tipomovimientos_inventario:              'devolucion',
+          cantidadmovimientos_inventario:          params.cantidad,
+          cantidad_anteriormovimientos_inventario:  cantidadAnterior,
+          cantidad_posteriormovimientos_inventario: cantidadPosterior,
+          referencia_idmovimientos_inventario:      params.ventaId,
+          referencia_tipomovimientos_inventario:    'VentaAnulada',
+          usuarios_idusuarios:                     params.usuarioId,
+        },
+      });
+    });
   }
 
   // ── Resumen de turno ──────────────────────────────────────────────────────────

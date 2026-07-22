@@ -15,6 +15,9 @@ import {
   ApartadoNoEncontradoError,
   ServicioNoEncontradoError,
   TarifaNoEncontradaError,
+  StockInsuficienteError,
+  CantidadMinimaError,
+  CantidadMaximaError,
 } from '../domain/venta.errors.js';
 import {
   validarSesionActivaParaVenta,
@@ -97,6 +100,16 @@ export class VentasService {
     const producto = await this.repo.findProductoById(dto.productoId);
     if (!producto) throw new ProductoNoEncontradoError(dto.productoId);
 
+    // Validar límites de cantidad para servicios especiales (tipo='otro')
+    if (producto.tipo === 'otro') {
+      if (producto.cantidadMinima !== null && dto.cantidad < producto.cantidadMinima) {
+        throw new CantidadMinimaError(producto.nombre, producto.cantidadMinima);
+      }
+      if (producto.cantidadMaxima !== null && dto.cantidad > producto.cantidadMaxima) {
+        throw new CantidadMaximaError(producto.nombre, producto.cantidadMaxima);
+      }
+    }
+
     const subtotal = calcularSubtotalDetalle(producto.precio, dto.cantidad, dto.descuento);
 
     const detalle = await this.repo.agregarDetalle({
@@ -126,7 +139,7 @@ export class VentasService {
 
   // ── Confirmar venta ───────────────────────────────────────────────────────────
 
-  async confirmarVenta(ventaId: number, dto: ConfirmarVentaDto, cajaId: number) {
+  async confirmarVenta(ventaId: number, dto: ConfirmarVentaDto, cajaId: number, usuarioId: number) {
     const venta = await this.repo.findVentaConDetalle(ventaId);
     if (!venta) throw new VentaNoEncontradaError(ventaId);
     validarVentaActiva(ventaId, venta.estado);
@@ -136,11 +149,31 @@ export class VentasService {
     if (!sesion) throw new SesionCajaInactivaError(cajaId);
     validarVentaEnSesion(ventaId, venta.sesionCajaId, sesion.id);
 
+    // Validar stock de servicios especiales antes de confirmar
+    const itemsServicio = (venta.detalle ?? []).filter(d => d.tipoProducto === 'otro');
+    for (const item of itemsServicio) {
+      const stock = await this.repo.getStockActual(item.productoId, sesion.sucursalId);
+      if (stock !== null && stock < item.cantidad) {
+        throw new StockInsuficienteError(item.nombreProducto ?? `producto ${item.productoId}`, stock, item.cantidad);
+      }
+    }
+
     const ventaActualizada = await this.repo.confirmarVenta(ventaId, {
       medioPago:        dto.medioPago,
       efectivoRecibido: dto.efectivoRecibido,
       emailFactura:     dto.emailFactura,
     });
+
+    // Descontar inventario para cada servicio especial
+    for (const item of itemsServicio) {
+      await this.repo.descontarInventario({
+        productoId: item.productoId,
+        sucursalId: sesion.sucursalId,
+        cantidad:   item.cantidad,
+        ventaId,
+        usuarioId,
+      });
+    }
 
     // Determinar el tipo de movimiento según los productos de la venta
     const tipoMovimiento = this._resolverTipoMovimiento(venta.detalle ?? []);
@@ -177,8 +210,8 @@ export class VentasService {
 
   // ── Anular venta ──────────────────────────────────────────────────────────────
 
-  async anularVenta(ventaId: number, dto: AnularVentaDto, cajaId: number) {
-    const venta = await this.repo.findVentaById(ventaId);
+  async anularVenta(ventaId: number, dto: AnularVentaDto, cajaId: number, usuarioId: number) {
+    const venta = await this.repo.findVentaConDetalle(ventaId);
     if (!venta) throw new VentaNoEncontradaError(ventaId);
     validarVentaActiva(ventaId, venta.estado);
 
@@ -187,6 +220,18 @@ export class VentasService {
     validarVentaEnSesion(ventaId, venta.sesionCajaId, sesion.id);
 
     const ventaAnulada = await this.repo.anularVenta(ventaId);
+
+    // Restaurar inventario de servicios especiales anulados
+    const itemsServicio = (venta.detalle ?? []).filter(d => d.tipoProducto === 'otro');
+    for (const item of itemsServicio) {
+      await this.repo.restaurarInventario({
+        productoId: item.productoId,
+        sucursalId: sesion.sucursalId,
+        cantidad:   item.cantidad,
+        ventaId,
+        usuarioId,
+      });
+    }
 
     const { movimiento, saldoActual, alertas } = await this.cajasService.registrarMovimientoVenta({
       sesionCajaId:   sesion.id,
@@ -408,9 +453,10 @@ export class VentasService {
     return `GU${ts}${rand}`;
   }
 
-  private _resolverTipoMovimiento(detalle: Array<{ tipoProducto?: string }>) {
+  private _resolverTipoMovimiento(detalle: Array<{ tipoProducto?: string | null }>) {
     const tipos = detalle.map(d => d.tipoProducto);
-    if (tipos.every(t => t === 'estampilla' || t === 'filatelia')) return 'venta_estampilla' as const;
+    if (tipos.some(t => t === 'otro'))                                    return 'venta_servicio'  as const;
+    if (tipos.every(t => t === 'estampilla' || t === 'filatelia'))        return 'venta_estampilla' as const;
     return 'venta_producto' as const;
   }
 }

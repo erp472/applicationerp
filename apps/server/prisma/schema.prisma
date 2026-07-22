@@ -574,7 +574,9 @@ model Producto {
   porcentaje_taxproductos     Decimal      @default(0) @db.Decimal(5, 2)
   pesoproductos               Decimal?     @db.Decimal(8, 3)
   factor_volumetricoproductos Decimal?     @db.Decimal(8, 4)
-  imagen_urlproductos         String?      @db.VarChar(500)
+  imagen_urlproductos              String?      @db.VarChar(500)
+  cantidad_minima_ventaproductos   Int?
+  cantidad_maxima_ventaproductos   Int?
   activoproductos             Boolean      @default(true)
   created_atproductos         DateTime     @default(now()) @db.Timestamptz(6)
   updated_atproductos         DateTime     @default(now()) @db.Timestamptz(6)

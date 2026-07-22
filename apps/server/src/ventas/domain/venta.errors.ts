@@ -97,3 +97,27 @@ export class TarifaNoEncontradaError extends VentaDomainError {
     this.name = 'TarifaNoEncontradaError';
   }
 }
+
+export class StockInsuficienteError extends VentaDomainError {
+  readonly statusCode = 409;
+  constructor(nombre: string, disponible: number, solicitado: number) {
+    super(`Stock insuficiente para "${nombre}": disponible ${disponible}, solicitado ${solicitado}`);
+    this.name = 'StockInsuficienteError';
+  }
+}
+
+export class CantidadMinimaError extends VentaDomainError {
+  readonly statusCode = 422;
+  constructor(nombre: string, minimo: number) {
+    super(`La cantidad mínima de compra para "${nombre}" es ${minimo} unidades`);
+    this.name = 'CantidadMinimaError';
+  }
+}
+
+export class CantidadMaximaError extends VentaDomainError {
+  readonly statusCode = 422;
+  constructor(nombre: string, maximo: number) {
+    super(`La cantidad máxima de compra para "${nombre}" es ${maximo} unidades`);
+    this.name = 'CantidadMaximaError';
+  }
+}

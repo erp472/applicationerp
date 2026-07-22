@@ -492,7 +492,7 @@ export class CajasService {
     if (!sesion) return null;
     const saldo  = await this.sesionesRepo.calcularSaldo(sesion.id);
     const alertas = evaluarAlertas(saldo, caja.baseDia, caja.limiteAlerta);
-    return { ...sesion, saldoActual: saldo, alertas };
+    return { ...sesion, saldoActual: saldo, alertas, sucursalId: caja.sucursalId };
   }
 
   // ── Registrar movimiento de venta (usado por VentasModule) ──────────────────
