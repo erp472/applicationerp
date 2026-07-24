@@ -27,18 +27,19 @@ const TIPOS_SALIDA = new Set([
 ]);
 
 const SELECT_SESION = {
-  idsesiones_caja:              true,
-  cajas_idcajas:                true,
-  usuarios_idusuarios_apertura: true,
-  usuarios_idusuarios_cierre:   true,
-  equipo_macsesiones_caja:      true,
-  monto_aperturasesiones_caja:  true,
-  monto_cierrasesiones_caja:    true,
-  fecha_aperturasesiones_caja:  true,
-  fecha_cierrasesiones_caja:    true,
-  cierre_forzadosesiones_caja:  true,
-  estadosesiones_caja:          true,
-  observacionessesiones_caja:   true,
+  idsesiones_caja:                            true,
+  cajas_idcajas:                              true,
+  usuarios_idusuarios_apertura:               true,
+  usuarios_idusuarios_cierre:                 true,
+  usuarios_idusuarios_cajero_asignado:        true,
+  equipo_macsesiones_caja:                    true,
+  monto_aperturasesiones_caja:                true,
+  monto_cierrasesiones_caja:                  true,
+  fecha_aperturasesiones_caja:                true,
+  fecha_cierrasesiones_caja:                  true,
+  cierre_forzadosesiones_caja:                true,
+  estadosesiones_caja:                        true,
+  observacionessesiones_caja:                 true,
 } satisfies Prisma.SesionCajaSelect;
 
 type SesionRow = Prisma.SesionCajaGetPayload<{ select: typeof SELECT_SESION }>;
@@ -49,6 +50,7 @@ function toSesionEntity(row: SesionRow): SesionCajaEntity {
     cajaId:             row.cajas_idcajas,
     usuarioAperturaId:  row.usuarios_idusuarios_apertura,
     usuarioCierreId:    row.usuarios_idusuarios_cierre,
+    cajeroAsignadoId:   row.usuarios_idusuarios_cajero_asignado,
     equipoMac:          row.equipo_macsesiones_caja,
     montoApertura:      row.monto_aperturasesiones_caja.toString(),
     montoCierre:        row.monto_cierrasesiones_caja?.toString() ?? null,
@@ -207,10 +209,11 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
   async crearSesion(data: CrearSesionData): Promise<SesionCajaEntity> {
     const row = await this.prisma.sesionCaja.create({
       data: {
-        cajas_idcajas:                data.cajaId,
-        usuarios_idusuarios_apertura: data.usuarioAperturaId,
-        equipo_macsesiones_caja:      data.equipoMac,
-        monto_aperturasesiones_caja:  data.montoApertura,
+        cajas_idcajas:                             data.cajaId,
+        usuarios_idusuarios_apertura:              data.usuarioAperturaId,
+        usuarios_idusuarios_cajero_asignado:       data.cajeroAsignadoId,
+        equipo_macsesiones_caja:                   data.equipoMac,
+        monto_aperturasesiones_caja:               data.montoApertura,
       },
       select: SELECT_SESION,
     });
@@ -350,9 +353,10 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
               where: { estadosesiones_caja: 'abierta' },
               take: 1,
               select: {
-                idsesiones_caja:              true,
-                usuarios_idusuarios_apertura: true,
-                monto_aperturasesiones_caja:  true,
+                idsesiones_caja:                         true,
+                usuarios_idusuarios_apertura:            true,
+                usuarios_idusuarios_cajero_asignado:     true,
+                monto_aperturasesiones_caja:             true,
                 movimientosCaja: {
                   select: { tipomovimientos_caja: true, montomovimientos_caja: true },
                 },
@@ -445,7 +449,7 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
         codigo:        caja.codigocajas,
         nombre:        caja.nombrecajas,
         tipo:          caja.tipocajas as import('../domain/caja.entity.js').TipoCaja,
-        cajeroId:      sesionActiva.usuarios_idusuarios_apertura,
+        cajeroId:      sesionActiva.usuarios_idusuarios_cajero_asignado ?? sesionActiva.usuarios_idusuarios_apertura,
         estado:        'abierta' as const,
         saldoActual:   saldo.toFixed(2),
         baseDia,

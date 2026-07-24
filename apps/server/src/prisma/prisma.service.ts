@@ -119,9 +119,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get tipoCliente()     { return this.client.tipoCliente; }
 
   // ── 5. Productos ───────────────────────────────────────────────────────────
-  get producto()        { return this.client.producto; }
-  get productoSucursal(){ return this.client.productoSucursal; }
-  get tarifaProducto()  { return this.client.tarifaProducto; }
+  get producto()                 { return this.client.producto; }
+  get productoSucursal()         { return this.client.productoSucursal; }
+  get tarifaProducto()           { return this.client.tarifaProducto; }
+  get tarifaEspecialCantidad()   { return this.client.tarifaEspecialCantidad; }
 
   // ── 6. Servicios de envío ──────────────────────────────────────────────────
   get servicio()        { return this.client.servicio; }

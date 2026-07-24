@@ -19,6 +19,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       email:       payload.email,
       rol:         Buffer.from(payload.rol, 'base64').toString('utf8'),
       sucursal_id: payload.sucursal_id,
+      regional_id: payload.regional_id ?? null,
       nombre:      payload.nombre,
       permisos:    payload.permisos ?? [],
     };

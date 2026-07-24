@@ -1,4 +1,4 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, ForbiddenException, ConflictException, NotFoundException } from '@nestjs/common';
 import { CajasService }   from '../../cajas/application/cajas.service.js';
 import { AuditService }   from '../../audit/audit.service.js';
 import { auditStore }     from '../../common/audit-context.js';
@@ -31,7 +31,9 @@ import type { IniciarVentaDto }       from '../dto/iniciar-venta.dto.js';
 import type { AgregarProductoDto }    from '../dto/agregar-producto.dto.js';
 import type { ConfirmarVentaDto }     from '../dto/confirmar-venta.dto.js';
 import type { AnularVentaDto }        from '../dto/anular-venta.dto.js';
-import type { ContratarApartadoDto }  from '../dto/contratar-apartado.dto.js';
+import type { ContratarApartadoDto }       from '../dto/contratar-apartado.dto.js';
+import type { CrearApartadoAdminDto }       from '../dto/crear-apartado-admin.dto.js';
+import type { UpdateApartadoAdminDto }      from '../dto/update-apartado-admin.dto.js';
 import type { CrearEnvioDto }         from '../dto/crear-envio.dto.js';
 
 @Injectable()
@@ -49,6 +51,10 @@ export class VentasService {
     return this.repo.findProductosBySucursal(sucursalId, tipo);
   }
 
+  async getTarifasEspecial(productoId: number) {
+    return this.repo.findTarifasEspecial(productoId);
+  }
+
   // ── Buscar cliente ────────────────────────────────────────────────────────────
 
   async buscarCliente(tipo: string, numero: string) {
@@ -57,9 +63,14 @@ export class VentasService {
 
   // ── Iniciar venta ─────────────────────────────────────────────────────────────
 
-  async iniciarVenta(cajaId: number, dto: IniciarVentaDto, usuarioId: number) {
+  async iniciarVenta(cajaId: number, dto: IniciarVentaDto, usuarioId: number, userRol: string) {
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
     validarSesionActivaParaVenta(cajaId, sesion?.id ?? null);
+
+    // CAJERO solo puede operar la caja que le fue asignada
+    if (userRol === 'CAJERO' && sesion!.cajeroAsignadoId !== null && sesion!.cajeroAsignadoId !== usuarioId) {
+      throw new ForbiddenException('Esta caja está asignada a otro cajero');
+    }
 
     const cliente = await this.repo.findClienteByDocumento(dto.tipoDocumento, dto.numeroDocumento);
     if (!cliente) throw new ClienteNoEncontradoError(dto.tipoDocumento, dto.numeroDocumento);
@@ -110,13 +121,24 @@ export class VentasService {
       }
     }
 
-    const subtotal = calcularSubtotalDetalle(producto.precio, dto.cantidad, dto.descuento);
+    let precioUnitario = producto.precio;
+    if (producto.tipo === 'otro') {
+      const tarifas = await this.repo.findTarifasEspecial(dto.productoId);
+      if (tarifas.length > 0) {
+        const tarifa = tarifas.find(t =>
+          dto.cantidad >= t.minCantidad && (t.maxCantidad === null || dto.cantidad <= t.maxCantidad)
+        );
+        if (tarifa) precioUnitario = tarifa.precio;
+      }
+    }
+
+    const subtotal = calcularSubtotalDetalle(precioUnitario, dto.cantidad, dto.descuento);
 
     const detalle = await this.repo.agregarDetalle({
       ventaId,
       productoId:     dto.productoId,
       cantidad:       dto.cantidad,
-      precioUnitario: producto.precio,
+      precioUnitario,
       descuento:      dto.descuento,
     });
 
@@ -164,15 +186,27 @@ export class VentasService {
       emailFactura:     dto.emailFactura,
     });
 
-    // Descontar inventario para cada servicio especial
+    // Descontar inventario para cada servicio especial (validación atómica dentro de la transacción)
     for (const item of itemsServicio) {
-      await this.repo.descontarInventario({
-        productoId: item.productoId,
-        sucursalId: sesion.sucursalId,
-        cantidad:   item.cantidad,
-        ventaId,
-        usuarioId,
-      });
+      try {
+        await this.repo.descontarInventario({
+          productoId: item.productoId,
+          sucursalId: sesion.sucursalId,
+          cantidad:   item.cantidad,
+          ventaId,
+          usuarioId,
+        });
+      } catch (err: unknown) {
+        if ((err as { code?: string }).code === 'STOCK_INSUFICIENTE') {
+          const e = err as { stockActual: number; cantidadRequerida: number };
+          throw new StockInsuficienteError(
+            item.nombreProducto ?? `producto ${item.productoId}`,
+            e.stockActual,
+            e.cantidadRequerida,
+          );
+        }
+        throw err;
+      }
     }
 
     // Determinar el tipo de movimiento según los productos de la venta
@@ -274,6 +308,8 @@ export class VentasService {
     return this.repo.findServiciosBySucursal(sucursalId);
   }
 
+  private static readonly PRECIO_APARTADO_POSTAL = 87_500;
+
   async contratarApartado(cajaId: number, clienteId: number, dto: ContratarApartadoDto) {
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
     if (!sesion) throw new SesionCajaInactivaError(cajaId);
@@ -297,19 +333,47 @@ export class VentasService {
       sesionCajaId: sesion.id,
       fechaInicio,
       fechaFin,
-      monto:        dto.monto,
-      incluyeIva:   dto.incluyeIva,
+      monto:        VentasService.PRECIO_APARTADO_POSTAL,
+      incluyeIva:   false,
     });
 
     const { movimiento, saldoActual, alertas } = await this.cajasService.registrarMovimientoVenta({
       sesionCajaId:   sesion.id,
       tipo:           'apartado_postal',
-      monto:          String(dto.monto),
+      monto:          String(VentasService.PRECIO_APARTADO_POSTAL),
       referenciaId:   apartadoContratado.id,
       referenciaTipo: 'ApartadoPostal',
     });
 
     return { apartado: apartadoContratado, movimiento, saldoActual, alertas };
+  }
+
+  // ── Admin CRUD Apartados ──────────────────────────────────────────────────────
+
+  async listApartadosAdmin(filters: { sucursalId?: number; estado?: string; tamano?: string }) {
+    return this.repo.findAllApartadosAdmin(filters);
+  }
+
+  async createApartadoAdmin(dto: CrearApartadoAdminDto) {
+    const existing = await this.repo.findApartadoByNumero(dto.sucursalId, dto.numero);
+    if (existing) throw new ConflictException(`El apartado #${dto.numero} ya existe en esta sucursal`);
+    return this.repo.createApartado({
+      sucursalId:            dto.sucursalId,
+      numero:                dto.numero,
+      tamano:                dto.tamano,
+      diasAlertaVencimiento: dto.diasAlertaVencimiento,
+    });
+  }
+
+  async updateApartadoAdmin(id: number, dto: UpdateApartadoAdminDto) {
+    return this.repo.updateApartadoAdmin(id, dto);
+  }
+
+  async deleteApartadoAdmin(id: number) {
+    const item = await this.repo.findApartadoById(id);
+    if (!item) throw new NotFoundException(`Apartado #${id} no encontrado`);
+    if (item.estado === 'ocupado') throw new ConflictException('No se puede eliminar un apartado ocupado');
+    await this.repo.deleteApartado(id);
   }
 
   // ── Servicios Postales ────────────────────────────────────────────────────────

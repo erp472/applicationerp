@@ -17,6 +17,7 @@ export const SESIONES_CAJA_REPOSITORY = Symbol('SESIONES_CAJA_REPOSITORY');
 export interface CrearSesionData {
   cajaId: number;
   usuarioAperturaId: number;
+  cajeroAsignadoId?: number;
   equipoMac?: string;
   montoApertura: string;
 }

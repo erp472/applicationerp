@@ -191,9 +191,41 @@ export class PrismaCajasRepository implements ICajasRepository {
     });
   }
 
-  async findPanelAdmin() {
+  async findSucursalRegionalId(sucursalId: number): Promise<number | null> {
+    const row = await this.prisma.sucursal.findFirst({
+      where:  { idsucursales: sucursalId, deleted_atsucursales: null },
+      select: { regionales_idregionales: true },
+    });
+    return row?.regionales_idregionales ?? null;
+  }
+
+  async findAllPadresByRegional(regionalId: number): Promise<CajaPadreEntity[]> {
+    const rows = await this.prisma.cajaPadre.findMany({
+      where: {
+        deleted_atcajas_padres: null,
+        sucursal: { regionales_idregionales: regionalId, deleted_atsucursales: null },
+      },
+      select: SELECT_PADRE,
+      orderBy: { idcajas_padres: 'asc' },
+    });
+    return rows.map(toPadreEntity);
+  }
+
+  async findAllPadresBySucursal(sucursalId: number): Promise<CajaPadreEntity[]> {
+    const rows = await this.prisma.cajaPadre.findMany({
+      where: { sucursales_idsucursales: sucursalId, deleted_atcajas_padres: null },
+      select: SELECT_PADRE,
+      orderBy: { idcajas_padres: 'asc' },
+    });
+    return rows.map(toPadreEntity);
+  }
+
+  async findPanelAdmin(regionalId?: number) {
     const rows = await this.prisma.sucursal.findMany({
-      where:   { deleted_atsucursales: null },
+      where: {
+        deleted_atsucursales: null,
+        ...(regionalId != null && { regionales_idregionales: regionalId }),
+      },
       orderBy: { nombresucursales: 'asc' },
       select: {
         idsucursales:     true,

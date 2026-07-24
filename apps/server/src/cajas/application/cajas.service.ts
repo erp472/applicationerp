@@ -189,8 +189,9 @@ export class CajasService {
     const sesion = await this.sesionesRepo.crearSesion({
       cajaId,
       usuarioAperturaId: usuarioId,
-      equipoMac:        dto.equipoMac,
-      montoApertura:    dto.baseAsignada,
+      cajeroAsignadoId:  dto.cajeroAsignadoId,
+      equipoMac:         dto.equipoMac,
+      montoApertura:     dto.baseAsignada,
     });
 
     await this.sesionesRepo.registrarMovimiento({
@@ -222,6 +223,7 @@ export class CajasService {
     const nuevaSesion = await this.sesionesRepo.crearSesion({
       cajaId:            dto.cajaAuxiliarId,
       usuarioAperturaId: usuarioId,
+      cajeroAsignadoId:  dto.cajeroAsignadoId,
       equipoMac:         dto.equipoMac,
       montoApertura:     dto.baseAsignada,
     });
@@ -527,12 +529,33 @@ export class CajasService {
 
   // ── Panel admin ──────────────────────────────────────────────────────────────
 
-  async getPanelAdmin() {
-    return this.cajasRepo.findPanelAdmin();
+  async getPanelAdmin(regionalId?: number) {
+    return this.cajasRepo.findPanelAdmin(regionalId);
   }
 
   async toggleServicioSucursal(sucursalId: number, servicioId: number, activo: boolean) {
     await this.cajasRepo.toggleServicioSucursal(sucursalId, servicioId, activo);
     return { sucursalId, servicioId, activo };
+  }
+
+  // ── Scope helpers (usado por el controller para CAJERO / SUPERVISOR_REGIONAL) ─
+
+  async esPropietarioDeSesion(sesionId: number, userId: number): Promise<boolean> {
+    const sesion = await this.sesionesRepo.findById(sesionId);
+    if (!sesion) throw new SesionNoEncontradaError(sesionId);
+    return sesion.cajeroAsignadoId === userId
+      || (sesion.cajeroAsignadoId === null && sesion.usuarioAperturaId === userId);
+  }
+
+  async getSucursalRegionalId(sucursalId: number): Promise<number | null> {
+    return this.cajasRepo.findSucursalRegionalId(sucursalId);
+  }
+
+  async listCajasPadresByRegional(regionalId: number) {
+    return this.cajasRepo.findAllPadresByRegional(regionalId);
+  }
+
+  async listCajasPadresBySucursal(sucursalId: number) {
+    return this.cajasRepo.findAllPadresBySucursal(sucursalId);
   }
 }

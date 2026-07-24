@@ -40,6 +40,7 @@ export class SesionCajaEntity {
   cajaId: number;
   usuarioAperturaId: number;
   usuarioCierreId: number | null;
+  cajeroAsignadoId: number | null;
   equipoMac: string | null;
   montoApertura: string;
   montoCierre: string | null;

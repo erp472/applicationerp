@@ -19,14 +19,25 @@ import type {
 } from '../domain/venta.repository.js';
 import type {
   ApartadoPostalEntity,
+  ApartadoAdminItem,
   ServicioCatalogoEntity,
   TarifaEnvioEntity,
+  TarifaEspecialEntity,
   EnvioEntity,
   ResumenTurno,
   TamanoApartado,
+  EstadoApartado,
 } from '../domain/venta.entity.js';
 
 // ── Selects ──────────────────────────────────────────────────────────────────
+
+const SELECT_TARIFA_ESPECIAL = {
+  idtarifas_especial_cantidad:    true,
+  productos_idproductos:          true,
+  min_cantidadtarifas_especial:   true,
+  max_cantidadtarifas_especial:   true,
+  preciotarifas_especial:         true,
+} satisfies Prisma.TarifaEspecialCantidadSelect;
 
 const SELECT_VENTA = {
   idventas:                      true,
@@ -81,10 +92,11 @@ const SELECT_PRODUCTO = {
 
 // ── Mappers ──────────────────────────────────────────────────────────────────
 
-type VentaRow   = Prisma.VentaGetPayload<{ select: typeof SELECT_VENTA }>;
-type DetalleRow = Prisma.VentaDetalleGetPayload<{ select: typeof SELECT_DETALLE }>;
-type ClienteRow = Prisma.ClienteGetPayload<{ select: typeof SELECT_CLIENTE }>;
-type ProductoRow = Prisma.ProductoGetPayload<{ select: typeof SELECT_PRODUCTO }>;
+type VentaRow          = Prisma.VentaGetPayload<{ select: typeof SELECT_VENTA }>;
+type DetalleRow        = Prisma.VentaDetalleGetPayload<{ select: typeof SELECT_DETALLE }>;
+type ClienteRow        = Prisma.ClienteGetPayload<{ select: typeof SELECT_CLIENTE }>;
+type ProductoRow       = Prisma.ProductoGetPayload<{ select: typeof SELECT_PRODUCTO }>;
+type TarifaEspecialRow = Prisma.TarifaEspecialCantidadGetPayload<{ select: typeof SELECT_TARIFA_ESPECIAL }>;
 
 function toVentaEntity(row: VentaRow, detalle?: DetalleRow[]): VentaEntity {
   return {
@@ -133,17 +145,18 @@ function toClienteEntity(row: ClienteRow): ClienteResumenEntity {
 
 function toApartadoEntity(row: any): ApartadoPostalEntity {
   return {
-    id:           row.idapartados_postales,
-    sucursalId:   row.sucursales_idsucursales,
-    numero:       row.numeroapartados_postales,
-    tamano:       row.tamanoapartados_postales as TamanoApartado,
-    estado:       row.estadoapartados_postales as ApartadoPostalEntity['estado'],
-    clienteId:    row.clientes_idclientes ?? null,
-    fechaInicio:  row.fecha_inicioapartados_postales ?? null,
-    fechaFin:     row.fecha_finapartados_postales ?? null,
-    valor:        row.valorapartados_postales !== null ? Number(row.valorapartados_postales) : null,
-    incluyeIva:   row.incluye_ivaapartados_postales,
-    sesionCajaId: row.sesiones_caja_idsesiones_caja ?? null,
+    id:                    row.idapartados_postales,
+    sucursalId:            row.sucursales_idsucursales,
+    numero:                row.numeroapartados_postales,
+    tamano:                row.tamanoapartados_postales as TamanoApartado,
+    estado:                row.estadoapartados_postales as ApartadoPostalEntity['estado'],
+    clienteId:             row.clientes_idclientes ?? null,
+    fechaInicio:           row.fecha_inicioapartados_postales ?? null,
+    fechaFin:              row.fecha_finapartados_postales ?? null,
+    valor:                 row.valorapartados_postales !== null ? Number(row.valorapartados_postales) : null,
+    incluyeIva:            row.incluye_ivaapartados_postales,
+    sesionCajaId:          row.sesiones_caja_idsesiones_caja ?? null,
+    diasAlertaVencimiento: row.dias_alerta_vencimientoapartados_postales ?? 30,
   };
 }
 
@@ -172,6 +185,16 @@ function toTarifaEntity(row: any): TarifaEnvioEntity {
     pesoMaxKg:         row.peso_max_kgtarifas_servicio !== null ? Number(row.peso_max_kgtarifas_servicio) : null,
     tarifa:            Number(row.tarifatarifas_servicio),
     tarifaKgAdicional: row.tarifa_kg_adicionaltarifas_servicio !== null ? Number(row.tarifa_kg_adicionaltarifas_servicio) : null,
+  };
+}
+
+function toTarifaEspecialEntity(row: TarifaEspecialRow): TarifaEspecialEntity {
+  return {
+    id:          row.idtarifas_especial_cantidad,
+    productoId:  row.productos_idproductos,
+    minCantidad: row.min_cantidadtarifas_especial,
+    maxCantidad: row.max_cantidadtarifas_especial ?? null,
+    precio:      Number(row.preciotarifas_especial),
   };
 }
 
@@ -459,6 +482,72 @@ export class PrismaVentasRepository implements IVentasRepository {
     return toApartadoEntity(row);
   }
 
+  async findAllApartadosAdmin(filters: { sucursalId?: number; estado?: string; tamano?: string }): Promise<ApartadoAdminItem[]> {
+    const rows = await this.prisma.apartadoPostal.findMany({
+      where: {
+        deleted_atapartados_postales: null,
+        ...(filters.sucursalId && { sucursales_idsucursales: filters.sucursalId }),
+        ...(filters.estado && { estadoapartados_postales: filters.estado as any }),
+        ...(filters.tamano && { tamanoapartados_postales: filters.tamano as any }),
+      },
+      include: {
+        sucursal: { select: { nombresucursales: true, codigosucursales: true } },
+      },
+      orderBy: [
+        { sucursales_idsucursales: 'asc' },
+        { numeroapartados_postales: 'asc' },
+      ],
+    });
+    return rows.map((r) => ({
+      ...toApartadoEntity(r),
+      sucursalNombre: r.sucursal.nombresucursales,
+      sucursalCodigo: r.sucursal.codigosucursales,
+    }));
+  }
+
+  async findApartadoById(id: number): Promise<ApartadoPostalEntity | null> {
+    const row = await this.prisma.apartadoPostal.findFirst({
+      where: { idapartados_postales: id, deleted_atapartados_postales: null },
+    });
+    return row ? toApartadoEntity(row) : null;
+  }
+
+  async createApartado(data: {
+    sucursalId: number; numero: string; tamano: TamanoApartado; diasAlertaVencimiento: number;
+  }): Promise<ApartadoPostalEntity> {
+    const row = await this.prisma.apartadoPostal.create({
+      data: {
+        sucursales_idsucursales:                  data.sucursalId,
+        numeroapartados_postales:                 data.numero,
+        tamanoapartados_postales:                 data.tamano,
+        dias_alerta_vencimientoapartados_postales: data.diasAlertaVencimiento,
+      },
+    });
+    return toApartadoEntity(row);
+  }
+
+  async updateApartadoAdmin(
+    id: number,
+    data: { tamano?: TamanoApartado; estado?: EstadoApartado; diasAlertaVencimiento?: number },
+  ): Promise<ApartadoPostalEntity> {
+    const row = await this.prisma.apartadoPostal.update({
+      where: { idapartados_postales: id },
+      data: {
+        ...(data.tamano                  !== undefined && { tamanoapartados_postales: data.tamano }),
+        ...(data.estado                  !== undefined && { estadoapartados_postales: data.estado }),
+        ...(data.diasAlertaVencimiento   !== undefined && { dias_alerta_vencimientoapartados_postales: data.diasAlertaVencimiento }),
+      },
+    });
+    return toApartadoEntity(row);
+  }
+
+  async deleteApartado(id: number): Promise<void> {
+    await this.prisma.apartadoPostal.update({
+      where: { idapartados_postales: id },
+      data:  { deleted_atapartados_postales: new Date() },
+    });
+  }
+
   // ── Servicios Postales ────────────────────────────────────────────────────────
 
   async findServiciosBySucursal(sucursalId: number): Promise<ServicioCatalogoEntity[]> {
@@ -579,6 +668,15 @@ export class PrismaVentasRepository implements IVentasRepository {
         },
       });
       const cantidadAnterior = inv?.cantidad_actualinventario_sucursal ?? 0;
+
+      // Re-validate inside transaction to prevent TOCTOU race condition
+      if (cantidadAnterior < params.cantidad) {
+        throw Object.assign(
+          new Error(`Stock insuficiente para producto ${params.productoId}: disponible ${cantidadAnterior}, requerido ${params.cantidad}`),
+          { code: 'STOCK_INSUFICIENTE', stockActual: cantidadAnterior, cantidadRequerida: params.cantidad },
+        );
+      }
+
       const cantidadPosterior = cantidadAnterior - params.cantidad;
 
       await tx.inventarioSucursal.upsert({
@@ -693,5 +791,18 @@ export class PrismaVentasRepository implements IVentasRepository {
       sellos.total + productos.total + apartados.total + servicios.total - anulaciones.total;
 
     return { sesionCajaId, sellos, productos, apartados, servicios, anulaciones, totalGeneral };
+  }
+
+  async findTarifasEspecial(productoId: number): Promise<TarifaEspecialEntity[]> {
+    const rows = await this.prisma.tarifaEspecialCantidad.findMany({
+      where: {
+        productos_idproductos:       productoId,
+        activotarifas_especial:      true,
+        deleted_attarifas_especial:  null,
+      },
+      select:  SELECT_TARIFA_ESPECIAL,
+      orderBy: { min_cantidadtarifas_especial: 'asc' },
+    });
+    return rows.map(toTarifaEspecialEntity);
   }
 }

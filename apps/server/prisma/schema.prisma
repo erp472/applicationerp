@@ -510,6 +510,7 @@ model Usuario {
 
   sesionesApertura        SesionCaja[]          @relation("SesionCajaApertura")
   sesionesCierre          SesionCaja[]          @relation("SesionCajaCierre")
+  sesionesCajeroAsignado  SesionCaja[]          @relation("SesionCajaCajeroAsignado")
   consignaciones          Consignacion[]        @relation("ConsignacionUsuario")
   consignacionesAprobadas Consignacion[]        @relation("ConsignacionAprobador")
   reposicionesCaja        ReposicionCaja[]
@@ -582,13 +583,14 @@ model Producto {
   updated_atproductos         DateTime     @default(now()) @db.Timestamptz(6)
   deleted_atproductos         DateTime?    @db.Timestamptz(6)
 
-  productosSucursal     ProductoSucursal[]
-  tarifasProducto       TarifaProducto[]
-  ventasDetalle         VentaDetalle[]
-  enviosItems           EnvioItem[]
-  inventarioSucursal    InventarioSucursal[]
-  movimientosInventario MovimientoInventario[]
-  ordenesItems          OrdenInventarioItem[]
+  productosSucursal       ProductoSucursal[]
+  tarifasProducto         TarifaProducto[]
+  tarifasEspecialCantidad TarifaEspecialCantidad[]
+  ventasDetalle           VentaDetalle[]
+  enviosItems             EnvioItem[]
+  inventarioSucursal      InventarioSucursal[]
+  movimientosInventario   MovimientoInventario[]
+  ordenesItems            OrdenInventarioItem[]
 
   @@map("productos")
 }
@@ -621,6 +623,23 @@ model TarifaProducto {
 
   @@unique([productos_idproductos, tipos_cliente_idtipos_cliente, vigencia_iniciotarifas_producto])
   @@map("tarifas_producto")
+}
+
+model TarifaEspecialCantidad {
+  idtarifas_especial_cantidad    Int       @id @default(autoincrement())
+  productos_idproductos          Int
+  min_cantidadtarifas_especial   Int
+  max_cantidadtarifas_especial   Int?
+  preciotarifas_especial         Decimal   @db.Decimal(18, 2)
+  activotarifas_especial         Boolean   @default(true)
+  created_attarifas_especial     DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_attarifas_especial     DateTime? @db.Timestamptz(6)
+
+  producto Producto @relation(fields: [productos_idproductos], references: [idproductos])
+
+  @@unique([productos_idproductos, min_cantidadtarifas_especial])
+  @@index([productos_idproductos, activotarifas_especial], map: "idx_tarifas_especial_lookup")
+  @@map("tarifas_especial_cantidad")
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -768,8 +787,9 @@ model Caja {
 model SesionCaja {
   idsesiones_caja              Int                @id @default(autoincrement())
   cajas_idcajas                Int
-  usuarios_idusuarios_apertura Int
-  usuarios_idusuarios_cierre   Int?
+  usuarios_idusuarios_apertura          Int
+  usuarios_idusuarios_cierre            Int?
+  usuarios_idusuarios_cajero_asignado   Int?
   equipo_macsesiones_caja      String?            @db.VarChar(30)
   monto_aperturasesiones_caja  Decimal            @default(0) @db.Decimal(18, 2)
   monto_cierrasesiones_caja    Decimal?           @db.Decimal(18, 2)
@@ -780,9 +800,10 @@ model SesionCaja {
   observacionessesiones_caja            String?
   arqueo_denominacionessesiones_caja    Json?
 
-  caja           Caja    @relation(fields: [cajas_idcajas], references: [idcajas])
-  usuarioApertura Usuario @relation("SesionCajaApertura", fields: [usuarios_idusuarios_apertura], references: [idusuarios])
-  usuarioCierre   Usuario? @relation("SesionCajaCierre", fields: [usuarios_idusuarios_cierre], references: [idusuarios])
+  caja              Caja     @relation(fields: [cajas_idcajas], references: [idcajas])
+  usuarioApertura   Usuario  @relation("SesionCajaApertura", fields: [usuarios_idusuarios_apertura], references: [idusuarios])
+  usuarioCierre     Usuario? @relation("SesionCajaCierre", fields: [usuarios_idusuarios_cierre], references: [idusuarios])
+  cajeroAsignado    Usuario? @relation("SesionCajaCajeroAsignado", fields: [usuarios_idusuarios_cajero_asignado], references: [idusuarios])
 
   movimientosCaja  MovimientoCaja[]
   consignaciones   Consignacion[]

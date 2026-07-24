@@ -270,20 +270,38 @@ async function main() {
     },
   })
 
+  const vendedorHash = await hash('Vendedor472!', 10)
+  const vendedor = await prisma.usuario.upsert({
+    where: { emailusuarios: 'vendedor@4-72.com.co' },
+    update: {
+      sucursales_idsucursales: sucPrincipal.idsucursales,
+      roles_idroles: roles['CAJERO'].idroles,
+      activousuarios: true,
+    },
+    create: {
+      sucursales_idsucursales: sucPrincipal.idsucursales,
+      roles_idroles: roles['CAJERO'].idroles,
+      nombreusuarios: 'Vendedor Principal',
+      emailusuarios: 'vendedor@4-72.com.co',
+      password_hashusuarios: vendedorHash,
+      activousuarios: true,
+    },
+  })
+
   const adminNacHash = await hash('AdminNac472!', 10)
   const adminNac = await prisma.usuario.upsert({
     where: { emailusuarios: 'admin.nacional@4-72.com.co' },
-    update: {},
+    update: { password_hashusuarios: adminNacHash, activousuarios: true },
     create: {
       sucursales_idsucursales: null,
       roles_idroles: roles['ADMIN_NACIONAL'].idroles,
-      nombreusuarios: 'Admin Nacional Seed',
+      nombreusuarios: 'Admin Nacional',
       emailusuarios: 'admin.nacional@4-72.com.co',
       password_hashusuarios: adminNacHash,
       activousuarios: true,
     },
   })
-  console.log(`✓ Usuarios seed: ${adminUser.emailusuarios}, ${cajero.emailusuarios}, ${adminNac.emailusuarios}`)
+  console.log(`✓ Usuarios seed: ${adminUser.emailusuarios}, ${cajero.emailusuarios}, ${vendedor.emailusuarios}, ${adminNac.emailusuarios}`)
 
   // ── 8. TIPOS DE CLIENTE ───────────────────────────────────────────────────
   const tiposClienteData = [
@@ -539,6 +557,29 @@ async function main() {
     where: { codigofeature_flags: { in: ['modulo_geo'] } },
   })
 
+  // Flags operativos de Tauri — activos en desarrollo para poder probar en navegador
+  const flagsOperativos = [
+    { codigo: 'modulo:caja',             descripcion: 'Módulo operativo de cajas y turnos (SUPERVISOR_REGIONAL / CAJERO)', activo: true },
+    { codigo: 'modulo:ventas',           descripcion: 'Módulo de punto de venta (CAJERO)',                                 activo: true },
+    { codigo: 'ventas:tab_productos',    descripcion: 'Tab Productos en caja de ventas',                                   activo: true },
+    { codigo: 'ventas:tab_especiales',   descripcion: 'Tab Productos Especiales en caja de ventas',                        activo: true },
+    { codigo: 'ventas:tab_apartado',     descripcion: 'Tab Apartados Postales en caja de ventas',                          activo: true },
+    { codigo: 'ventas:tab_servicios',    descripcion: 'Tab Servicios Postales en caja de ventas',                          activo: true },
+  ]
+  for (const f of flagsOperativos) {
+    await prisma.featureFlag.upsert({
+      where:  { codigofeature_flags: f.codigo },
+      update: { activofeature_flags: f.activo, plataformafeature_flags: 'all' },
+      create: {
+        codigofeature_flags:      f.codigo,
+        descripcionfeature_flags: f.descripcion,
+        activofeature_flags:      f.activo,
+        entornofeature_flags:     'all',
+        plataformafeature_flags:  'all',
+      },
+    })
+  }
+
   const nuevosFlags = [
     { codigo: 'modulo_usuarios',    descripcion: 'Módulo de administración de usuarios' },
     { codigo: 'modulo_comercios',   descripcion: 'Módulo de administración de comercios' },
@@ -669,7 +710,13 @@ async function main() {
             sucursales_idsucursales: plan.sucursal.idsucursales,
           },
         },
-        update: {},
+        update: {
+          cajas_padres_idcajas_padres: cajaPadre.idcajas_padres,
+          tipocajas:                   aux.tipo,
+          base_diacajas:               aux.baseDia,
+          limite_alertacajas:          aux.limiteAlerta ?? null,
+          activocajas:                 true,
+        },
         create: {
           sucursales_idsucursales:     plan.sucursal.idsucursales,
           cajas_padres_idcajas_padres: cajaPadre.idcajas_padres,

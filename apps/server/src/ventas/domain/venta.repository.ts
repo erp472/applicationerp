@@ -4,13 +4,16 @@ import type {
   ClienteResumenEntity,
   ProductoCatalogoEntity,
   ApartadoPostalEntity,
+  ApartadoAdminItem,
   ServicioCatalogoEntity,
   TarifaEnvioEntity,
+  TarifaEspecialEntity,
   EnvioEntity,
   ResumenTurno,
   MedioPagoVenta,
   TipoProducto,
   TamanoApartado,
+  EstadoApartado,
 } from './venta.entity.js';
 
 export const VENTAS_REPOSITORY = Symbol('VENTAS_REPOSITORY');
@@ -107,11 +110,18 @@ export interface IVentasRepository {
   eliminarDetalle(detalleId: number): Promise<void>;
   findDetalleById(detalleId: number): Promise<VentaDetalleEntity | null>;
 
-  // Apartado Postal
+  // Apartado Postal — operativo
   findApartadosDisponibles(sucursalId: number, tamano?: TamanoApartado): Promise<ApartadoPostalEntity[]>;
   findApartadoByNumero(sucursalId: number, numero: string): Promise<ApartadoPostalEntity | null>;
   contratarApartado(data: ContratarApartadoData): Promise<ApartadoPostalEntity>;
   liberarApartado(id: number): Promise<ApartadoPostalEntity>;
+
+  // Apartado Postal — admin CRUD
+  findAllApartadosAdmin(filters: { sucursalId?: number; estado?: string; tamano?: string }): Promise<ApartadoAdminItem[]>;
+  findApartadoById(id: number): Promise<ApartadoPostalEntity | null>;
+  createApartado(data: { sucursalId: number; numero: string; tamano: TamanoApartado; diasAlertaVencimiento: number }): Promise<ApartadoPostalEntity>;
+  updateApartadoAdmin(id: number, data: { tamano?: TamanoApartado; estado?: EstadoApartado; diasAlertaVencimiento?: number }): Promise<ApartadoPostalEntity>;
+  deleteApartado(id: number): Promise<void>;
 
   // Servicios Postales
   findServiciosBySucursal(sucursalId: number): Promise<ServicioCatalogoEntity[]>;
@@ -119,6 +129,9 @@ export interface IVentasRepository {
   findTarifaEnvio(servicioId: number, pesoKg: number, paisDestino: string): Promise<TarifaEnvioEntity | null>;
   crearEnvio(data: CrearEnvioData): Promise<EnvioEntity>;
   anularEnvio(id: number): Promise<EnvioEntity>;
+
+  // Tarifas servicios especiales (por rango de cantidad)
+  findTarifasEspecial(productoId: number): Promise<TarifaEspecialEntity[]>;
 
   // Inventario servicios especiales
   getStockActual(productoId: number, sucursalId: number): Promise<number | null>;

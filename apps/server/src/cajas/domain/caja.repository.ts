@@ -53,6 +53,11 @@ export interface ICajasRepository {
   deletePadre(id: number): Promise<void>;
 
   // Panel admin (sucursales + cajas POS + servicios)
-  findPanelAdmin(): Promise<SucursalPanelItem[]>;
+  findPanelAdmin(regionalId?: number): Promise<SucursalPanelItem[]>;
   toggleServicioSucursal(sucursalId: number, servicioId: number, activo: boolean): Promise<void>;
+
+  // Scope helpers
+  findSucursalRegionalId(sucursalId: number): Promise<number | null>;
+  findAllPadresByRegional(regionalId: number): Promise<CajaPadreEntity[]>;
+  findAllPadresBySucursal(sucursalId: number): Promise<CajaPadreEntity[]>;
 }

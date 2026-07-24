@@ -129,6 +129,95 @@ async function main() {
   }
   console.log(`     ✓  ${sucursales.length} sucursales vinculadas`)
 
+  // 3. Tarifas por rango de cantidad para servicios de alistamiento
+  const TARIFAS_ALISTAMIENTO: { codigo: string; tarifas: { min: number; max: number | null; precio: number }[] }[] = [
+    {
+      codigo: 'SVC-ALI-IPR',
+      tarifas: [
+        { min: 1,      max: 1000,   precio: 41 },
+        { min: 1001,   max: 5000,   precio: 38 },
+        { min: 5001,   max: 10000,  precio: 38 },
+        { min: 10001,  max: 20000,  precio: 36 },
+        { min: 20001,  max: 50000,  precio: 35 },
+        { min: 50001,  max: 100000, precio: 33 },
+        { min: 100001, max: null,   precio: 30 },
+      ],
+    },
+    {
+      codigo: 'SVC-ALI-DPL',
+      tarifas: [
+        { min: 1,      max: 1000,   precio: 41 },
+        { min: 1001,   max: 5000,   precio: 38 },
+        { min: 5001,   max: 10000,  precio: 38 },
+        { min: 10001,  max: 20000,  precio: 36 },
+        { min: 20001,  max: 50000,  precio: 35 },
+        { min: 50001,  max: 100000, precio: 33 },
+        { min: 100001, max: null,   precio: 30 },
+      ],
+    },
+    {
+      codigo: 'SVC-ALI-ENS',
+      tarifas: [
+        { min: 1,      max: 1000,   precio: 41 },
+        { min: 1001,   max: 5000,   precio: 38 },
+        { min: 5001,   max: 10000,  precio: 38 },
+        { min: 10001,  max: 20000,  precio: 36 },
+        { min: 20001,  max: 50000,  precio: 35 },
+        { min: 50001,  max: 100000, precio: 33 },
+        { min: 100001, max: null,   precio: 30 },
+      ],
+    },
+    {
+      codigo: 'SVC-ALI-EMT',
+      tarifas: [
+        { min: 1,      max: 1000,   precio: 41 },
+        { min: 1001,   max: 5000,   precio: 38 },
+        { min: 5001,   max: 10000,  precio: 38 },
+        { min: 10001,  max: 20000,  precio: 36 },
+        { min: 20001,  max: 50000,  precio: 35 },
+        { min: 50001,  max: 100000, precio: 33 },
+        { min: 100001, max: null,   precio: 30 },
+      ],
+    },
+    {
+      codigo: 'SVC-ALI-ROT',
+      tarifas: [
+        { min: 1,      max: 1000,   precio: 41 },
+        { min: 1001,   max: 5000,   precio: 38 },
+        { min: 5001,   max: 10000,  precio: 38 },
+        { min: 10001,  max: 20000,  precio: 36 },
+        { min: 20001,  max: 50000,  precio: 35 },
+        { min: 50001,  max: 100000, precio: 33 },
+        { min: 100001, max: null,   precio: 30 },
+      ],
+    },
+  ]
+
+  console.log('\n  → Creando tarifas por cantidad...')
+  for (const svc of TARIFAS_ALISTAMIENTO) {
+    const prod = await prisma.producto.findUnique({ where: { codigoproductos: svc.codigo } })
+    if (!prod) { console.log(`  ⚠️  Producto ${svc.codigo} no encontrado, saltando tarifas`); continue }
+    for (const t of svc.tarifas) {
+      await (prisma as any).tarifaEspecialCantidad.upsert({
+        where: {
+          productos_idproductos_min_cantidadtarifas_especial: {
+            productos_idproductos:        prod.idproductos,
+            min_cantidadtarifas_especial: t.min,
+          },
+        },
+        update: { preciotarifas_especial: t.precio, max_cantidadtarifas_especial: t.max, activotarifas_especial: true },
+        create: {
+          productos_idproductos:          prod.idproductos,
+          min_cantidadtarifas_especial:   t.min,
+          max_cantidadtarifas_especial:   t.max,
+          preciotarifas_especial:         t.precio,
+          activotarifas_especial:         true,
+        },
+      })
+    }
+    console.log(`     ✓  ${svc.codigo}: ${svc.tarifas.length} tramos de tarifa`)
+  }
+
   console.log(`\n✅  ${SERVICIOS.length} Servicios Especiales listos en ${sucursales.length} sucursal(es).\n`)
   console.log('   ⚠️  Los precios quedan en $0 — actualizar desde Admin → Productos.\n')
 }

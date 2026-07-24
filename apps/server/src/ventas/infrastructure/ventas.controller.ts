@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Delete,
+  Controller, Get, Post, Patch, Delete,
   Body, Param, Query, UseGuards, UseFilters,
   ParseIntPipe, BadRequestException, HttpCode, HttpStatus,
 } from '@nestjs/common';
@@ -12,6 +12,8 @@ import { AgregarProductoSchema }     from '../dto/agregar-producto.dto.js';
 import { ConfirmarVentaSchema }      from '../dto/confirmar-venta.dto.js';
 import { AnularVentaSchema }         from '../dto/anular-venta.dto.js';
 import { ContratarApartadoSchema }   from '../dto/contratar-apartado.dto.js';
+import { CrearApartadoAdminSchema }  from '../dto/crear-apartado-admin.dto.js';
+import { UpdateApartadoAdminSchema } from '../dto/update-apartado-admin.dto.js';
 import { CrearEnvioSchema }          from '../dto/crear-envio.dto.js';
 import { JwtAuthGuard }           from '../../common/guards/jwt-auth.guard.js';
 import { FeatureFlagGuard }       from '../../common/guards/feature-flag.guard.js';
@@ -23,7 +25,9 @@ import { VentasPresenter }        from './ventas.presenter.js';
 import { VentasDomainFilter }     from './ventas-domain.filter.js';
 import type { TipoProducto }      from '../domain/venta.entity.js';
 
-const ROLES_CAJERO     = ['CAJERO', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA'];
+// Solo CAJERO hace ventas — SUPERVISOR_REGIONAL no opera la caja auxiliar
+const ROLES_CAJERO     = ['CAJERO', 'ADMIN_SISTEMA'];
+// SUPERVISOR puede anular como autorización, no como operador de venta
 const ROLES_SUPERVISOR = ['SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA'];
 const ROLES_READ       = ['CAJERO', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL'];
 
@@ -49,6 +53,14 @@ export class VentasController {
   ) {
     const productos = await this.service.getCatalogo(sucursalId, tipo as TipoProducto | undefined);
     return productos.map(VentasPresenter.toProducto);
+  }
+
+  @Get('catalogo/especiales/:productoId/tarifas')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Tarifas por rango de cantidad para un servicio especial' })
+  @ApiParam({ name: 'productoId', type: Number })
+  async getTarifasEspecial(@Param('productoId', ParseIntPipe) productoId: number) {
+    return this.service.getTarifasEspecial(productoId);
   }
 
   // ── Clientes ──────────────────────────────────────────────────────────────────
@@ -78,11 +90,11 @@ export class VentasController {
   async iniciarVenta(
     @Param('cajaId', ParseIntPipe) cajaId: number,
     @Body() body: unknown,
-    @CurrentUser() user: { id: number },
+    @CurrentUser() user: { id: number; rol: string },
   ) {
     const parsed = IniciarVentaSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
-    const { venta, cliente } = await this.service.iniciarVenta(cajaId, parsed.data, user.id);
+    const { venta, cliente } = await this.service.iniciarVenta(cajaId, parsed.data, user.id, user.rol);
     return { venta: VentasPresenter.toVenta(venta), cliente: VentasPresenter.toCliente(cliente) };
   }
 
@@ -295,5 +307,55 @@ export class VentasController {
   @ApiParam({ name: 'cajaId', type: Number })
   async listMovimientosTurno(@Param('cajaId', ParseIntPipe) cajaId: number) {
     return this.service.listMovimientosTurno(cajaId);
+  }
+
+  // ── Admin CRUD Apartados ──────────────────────────────────────────────────────
+
+  @Get('admin/apartados')
+  @Roles('ADMIN_SISTEMA', 'ADMIN_NACIONAL')
+  @ApiOperation({ summary: 'Listar todos los apartados postales (admin)' })
+  @ApiQuery({ name: 'sucursalId', type: Number, required: false })
+  @ApiQuery({ name: 'estado',     type: String, required: false, enum: ['disponible', 'ocupado', 'vencido', 'mantenimiento'] })
+  @ApiQuery({ name: 'tamano',     type: String, required: false, enum: ['pequeno', 'mediano', 'grande'] })
+  async listApartadosAdmin(
+    @Query('sucursalId') sucursalIdRaw?: string,
+    @Query('estado')     estado?: string,
+    @Query('tamano')     tamano?: string,
+  ) {
+    const sucursalId = sucursalIdRaw ? Number(sucursalIdRaw) : undefined;
+    return this.service.listApartadosAdmin({ sucursalId, estado, tamano });
+  }
+
+  @Post('admin/apartados')
+  @Roles('ADMIN_SISTEMA', 'ADMIN_NACIONAL')
+  @ApiOperation({ summary: 'Crear apartado postal' })
+  @ApiResponse({ status: 201, description: 'Apartado creado' })
+  @ApiResponse({ status: 409, description: 'Número duplicado en la sucursal' })
+  async createApartadoAdmin(@Body() body: unknown) {
+    const parsed = CrearApartadoAdminSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    return this.service.createApartadoAdmin(parsed.data);
+  }
+
+  @Patch('admin/apartados/:id')
+  @Roles('ADMIN_SISTEMA', 'ADMIN_NACIONAL')
+  @ApiOperation({ summary: 'Actualizar tamaño, estado o días de alerta de un apartado' })
+  @ApiParam({ name: 'id', type: Number })
+  async updateApartadoAdmin(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: unknown,
+  ) {
+    const parsed = UpdateApartadoAdminSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    return this.service.updateApartadoAdmin(id, parsed.data);
+  }
+
+  @Delete('admin/apartados/:id')
+  @Roles('ADMIN_SISTEMA', 'ADMIN_NACIONAL')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Eliminar (soft) un apartado — solo si está disponible o en mantenimiento' })
+  @ApiParam({ name: 'id', type: Number })
+  async deleteApartadoAdmin(@Param('id', ParseIntPipe) id: number) {
+    await this.service.deleteApartadoAdmin(id);
   }
 }

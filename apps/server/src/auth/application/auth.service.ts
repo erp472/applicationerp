@@ -22,13 +22,13 @@ export class AuthService {
     const usuario = await this.prisma.usuario.findUnique({
       where: { emailusuarios: dto.email },
       select: {
-        idusuarios:             true,
-        emailusuarios:          true,
-        password_hashusuarios:  true,
+        idusuarios:              true,
+        emailusuarios:           true,
+        password_hashusuarios:   true,
         sucursales_idsucursales: true,
-        nombreusuarios:         true,
-        activousuarios:         true,
-        rol:                    { select: { idroles: true, codigoroles: true } },
+        nombreusuarios:          true,
+        activousuarios:          true,
+        rol:                     { select: { idroles: true, codigoroles: true } },
       },
     });
 
@@ -51,11 +51,22 @@ export class AuthService {
 
     const permisos = await this.obtenerPermisos(usuario.rol.idroles);
 
+    // Resuelve regional_id directamente desde la sucursal (evita ambigüedad en el select de relaciones)
+    let regionalId: number | null = null;
+    if (usuario.sucursales_idsucursales != null) {
+      const suc = await this.prisma.sucursal.findUnique({
+        where:  { idsucursales: usuario.sucursales_idsucursales },
+        select: { regionales_idregionales: true },
+      });
+      regionalId = suc?.regionales_idregionales ?? null;
+    }
+
     const payload: JwtPayload = {
       sub:         usuario.idusuarios,
       email:       usuario.emailusuarios,
       rol:         Buffer.from(usuario.rol.codigoroles).toString('base64'),
       sucursal_id: usuario.sucursales_idsucursales ?? null,
+      regional_id: regionalId,
       nombre:      usuario.nombreusuarios,
       permisos,
     };
@@ -67,6 +78,7 @@ export class AuthService {
         nombre:      usuario.nombreusuarios,
         rol:         usuario.rol.codigoroles,
         sucursal_id: usuario.sucursales_idsucursales ?? null,
+        regional_id: regionalId,
       },
     };
   }

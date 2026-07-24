@@ -3,6 +3,7 @@ export interface JwtPayload {
   email: string;
   rol: string;
   sucursal_id: number | null;
+  regional_id: number | null;
   nombre: string;
   permisos: string[];
 }
@@ -14,5 +15,6 @@ export interface LoginResult {
     nombre: string;
     rol: string;
     sucursal_id: number | null;
+    regional_id: number | null;
   };
 }

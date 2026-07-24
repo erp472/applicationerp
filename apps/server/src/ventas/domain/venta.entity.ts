@@ -63,17 +63,23 @@ export type TamanoApartado = 'pequeno' | 'mediano' | 'grande';
 export type EstadoApartado = 'disponible' | 'ocupado' | 'vencido' | 'mantenimiento';
 
 export class ApartadoPostalEntity {
-  id:              number;
-  sucursalId:      number;
-  numero:          string;
-  tamano:          TamanoApartado;
-  estado:          EstadoApartado;
-  clienteId:       number | null;
-  fechaInicio:     Date | null;
-  fechaFin:        Date | null;
-  valor:           number | null;
-  incluyeIva:      boolean;
-  sesionCajaId:    number | null;
+  id:                    number;
+  sucursalId:            number;
+  numero:                string;
+  tamano:                TamanoApartado;
+  estado:                EstadoApartado;
+  clienteId:             number | null;
+  fechaInicio:           Date | null;
+  fechaFin:              Date | null;
+  valor:                 number | null;
+  incluyeIva:            boolean;
+  sesionCajaId:          number | null;
+  diasAlertaVencimiento: number;
+}
+
+export interface ApartadoAdminItem extends ApartadoPostalEntity {
+  sucursalNombre: string;
+  sucursalCodigo: string;
 }
 
 export class ServicioCatalogoEntity {
@@ -113,6 +119,14 @@ export interface ResumenTurno {
   servicios:     ResumenLineaTurno;
   anulaciones:   ResumenLineaTurno;
   totalGeneral:  number;
+}
+
+export class TarifaEspecialEntity {
+  id:          number;
+  productoId:  number;
+  minCantidad: number;
+  maxCantidad: number | null;
+  precio:      number;
 }
 
 export class EnvioEntity {

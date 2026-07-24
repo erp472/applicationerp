@@ -29,11 +29,14 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { CajasPresenter } from './cajas.presenter.js';
 import { CajasDomainFilter } from './cajas-domain.filter.js';
 
-const ROLES_ADMIN      = ['ADMIN_SISTEMA'];
-const ROLES_SUPERVISOR = ['SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA'];
+const ROLES_ADMIN      = ['ADMIN_SISTEMA', 'ADMIN_NACIONAL'];                              // CRUD estructural de cajas (sin apertura de dinero)
+const ROLES_GESTOR     = ['SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL'];       // listar y actualizar cajas
+const ROLES_SUPERVISOR = ['SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA'];                         // apertura/cierre de turnos y asignación de dinero
 const ROLES_CAJERO     = ['CAJERO', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA'];
 const ROLES_TESORERIA  = ['TESORERIA', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA'];
 const ROLES_READ       = ['CAJERO', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL', 'TESORERIA'];
+
+type AuthUser = { id: number; rol: string; sucursal_id: number | null; regional_id: number | null };
 
 @ApiTags('cajas')
 @ApiBearerAuth()
@@ -47,10 +50,21 @@ export class CajasController {
   // ── Superadmin CRUD /cajas ────────────────────────────────────────────────
 
   @Get()
-  @Roles(...ROLES_SUPERVISOR)
+  @Roles(...ROLES_GESTOR)
   @ApiOperation({ summary: 'Listar todas las cajas principales (cajaPadre)' })
-  async listCajasPadres() {
-    const padres = await this.service.listCajaPadres();
+  async listCajasPadres(@CurrentUser() user: AuthUser) {
+    let padres;
+    if (user.rol === 'SUPERVISOR_REGIONAL') {
+      if (user.regional_id != null) {
+        padres = await this.service.listCajasPadresByRegional(user.regional_id);
+      } else if (user.sucursal_id != null) {
+        padres = await this.service.listCajasPadresBySucursal(user.sucursal_id);
+      } else {
+        padres = [];
+      }
+    } else {
+      padres = await this.service.listCajaPadres();
+    }
     return padres.map(CajasPresenter.toCajaPadre);
   }
 
@@ -68,12 +82,17 @@ export class CajasController {
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Obtener caja principal por id' })
   @ApiParam({ name: 'id', type: Number })
-  async getCajaPadre(@Param('id', ParseIntPipe) id: number) {
-    return CajasPresenter.toCajaPadre(await this.service.getCajaPadre(id));
+  async getCajaPadre(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const cajaPadre = await this.service.getCajaPadre(id);
+    await this.assertSucursalAccess(user, cajaPadre.sucursalId);
+    return CajasPresenter.toCajaPadre(cajaPadre);
   }
 
   @Patch(':id')
-  @Roles(...ROLES_SUPERVISOR)
+  @Roles(...ROLES_GESTOR)
   @ApiOperation({ summary: 'Actualizar caja principal (base mínima, hora reset, nombre)' })
   @ApiParam({ name: 'id', type: Number })
   async updateCajaPadre(
@@ -97,14 +116,15 @@ export class CajasController {
   // ── Panel Admin (sucursales + POS + servicios) ───────────────────────────
 
   @Get('panel-admin')
-  @Roles(...ROLES_SUPERVISOR)
+  @Roles(...ROLES_GESTOR)
   @ApiOperation({ summary: 'Panel admin: todas las sucursales con caja POS y servicios' })
-  async getPanelAdmin() {
-    return this.service.getPanelAdmin();
+  async getPanelAdmin(@CurrentUser() user: AuthUser) {
+    const regionalId = user.rol === 'SUPERVISOR_REGIONAL' ? (user.regional_id ?? undefined) : undefined;
+    return this.service.getPanelAdmin(regionalId);
   }
 
   @Patch('panel-admin/:sucursalId/servicios/:servicioId')
-  @Roles(...ROLES_SUPERVISOR)
+  @Roles(...ROLES_GESTOR)
   @ApiOperation({ summary: 'Activar o desactivar un servicio en una sucursal' })
   @ApiParam({ name: 'sucursalId', type: Number })
   @ApiParam({ name: 'servicioId', type: Number })
@@ -121,14 +141,13 @@ export class CajasController {
   // ── Superadmin CRUD /cajas/auxiliares ────────────────────────────────────
 
   @Get('auxiliares')
-  @Roles(...ROLES_SUPERVISOR)
+  @Roles(...ROLES_GESTOR)
   @ApiOperation({ summary: 'Listar cajas auxiliares (pos, menor, pagos) por sucursal' })
   async listCajas(
     @Query('sucursalId', ParseIntPipe) sucursalId: number,
-    @CurrentUser() user: { id: number; rol: string; sucursal_id: number | null },
+    @CurrentUser() user: AuthUser,
   ) {
-    const isAdmin = user.rol === 'ADMIN_SISTEMA' || user.rol === 'ADMIN_NACIONAL';
-    if (!isAdmin && user.sucursal_id !== sucursalId) throw new ForbiddenException('No tienes acceso a esta sucursal.');
+    await this.assertSucursalAccess(user, sucursalId);
     const cajas = await this.service.listCajas(sucursalId);
     return cajas.map(CajasPresenter.toCaja);
   }
@@ -152,7 +171,7 @@ export class CajasController {
   }
 
   @Patch('auxiliares/:id')
-  @Roles(...ROLES_SUPERVISOR)
+  @Roles(...ROLES_GESTOR)
   @ApiOperation({ summary: 'Actualizar caja auxiliar (base, límite, tipo, nombre, etc.)' })
   @ApiParam({ name: 'id', type: Number })
   async updateCaja(
@@ -208,11 +227,14 @@ export class CajasController {
   @ApiParam({ name: 'sucursalId', type: Number })
   async getStatusPuntoBySucursal(
     @Param('sucursalId', ParseIntPipe) sucursalId: number,
-    @CurrentUser() user: { id: number; rol: string; sucursal_id: number | null },
+    @CurrentUser() user: AuthUser,
   ) {
-    const isAdmin = user.rol === 'ADMIN_SISTEMA' || user.rol === 'ADMIN_NACIONAL';
-    if (!isAdmin && user.sucursal_id !== sucursalId) throw new ForbiddenException('No tienes acceso a esta sucursal.');
-    return CajasPresenter.toStatus(await this.service.getStatusPuntoBySucursal(sucursalId));
+    await this.assertSucursalAccess(user, sucursalId);
+    const status = await this.service.getStatusPuntoBySucursal(sucursalId);
+    if (user.rol === 'CAJERO') {
+      return CajasPresenter.toStatus({ ...status, cajas: status.cajas.filter(c => c.cajeroId === user.id) });
+    }
+    return CajasPresenter.toStatus(status);
   }
 
   // ── Caja Principal /cajas/principales/:cajaPadreId ────────────────────────
@@ -222,12 +244,21 @@ export class CajasController {
   @ApiOperation({ summary: 'Estado en tiempo real de todas las cajas del punto' })
   @ApiParam({ name: 'cajaPadreId', type: Number })
   @ApiResponse({ status: 200, description: 'Panel + cards de cajas auxiliares' })
-  async getStatusPunto(@Param('cajaPadreId', ParseIntPipe) cajaPadreId: number) {
-    return CajasPresenter.toStatus(await this.service.getStatusPunto(cajaPadreId));
+  async getStatusPunto(
+    @Param('cajaPadreId', ParseIntPipe) cajaPadreId: number,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const cajaPadre = await this.service.getCajaPadre(cajaPadreId);
+    await this.assertSucursalAccess(user, cajaPadre.sucursalId);
+    const status = await this.service.getStatusPunto(cajaPadreId);
+    if (user.rol === 'CAJERO') {
+      return CajasPresenter.toStatus({ ...status, cajas: status.cajas.filter(c => c.cajeroId === user.id) });
+    }
+    return CajasPresenter.toStatus(status);
   }
 
   @Post('principales/:cajaPadreId/turno/abrir')
-  @Roles(...ROLES_CAJERO)
+  @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Iniciar turno principal (abre sesión en la Caja Fuerte)' })
   @ApiParam({ name: 'cajaPadreId', type: Number })
   @ApiResponse({ status: 201, description: 'Turno principal iniciado' })
@@ -245,7 +276,7 @@ export class CajasController {
   }
 
   @Post('principales/:sesionId/turno/cerrar')
-  @Roles(...ROLES_CAJERO)
+  @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Cerrar turno principal con arqueo — requiere todas las auxiliares cerradas' })
   @ApiParam({ name: 'sesionId', type: Number, description: 'Sesión de la caja principal' })
   @ApiResponse({ status: 200, description: 'Turno cerrado. Diferencia registrada automáticamente si no cuadra.' })
@@ -263,7 +294,7 @@ export class CajasController {
   }
 
   @Post('principales/:sesionId/auxiliar/abrir')
-  @Roles(...ROLES_CAJERO)
+  @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Abrir caja auxiliar con base asignada' })
   @ApiParam({ name: 'sesionId', type: Number, description: 'Sesión de la caja principal' })
   @ApiResponse({ status: 201, description: 'Sesión auxiliar creada' })
@@ -354,7 +385,11 @@ export class CajasController {
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Saldo actual y alertas de la sesión auxiliar' })
   @ApiParam({ name: 'sesionId', type: Number })
-  async getSaldoSesion(@Param('sesionId', ParseIntPipe) sesionId: number) {
+  async getSaldoSesion(
+    @Param('sesionId', ParseIntPipe) sesionId: number,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.assertSesionAccess(user, sesionId);
     return CajasPresenter.toSesion(await this.service.getSaldoSesion(sesionId));
   }
 
@@ -362,7 +397,11 @@ export class CajasController {
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Historial de movimientos de la sesión auxiliar' })
   @ApiParam({ name: 'sesionId', type: Number })
-  async getMovimientos(@Param('sesionId', ParseIntPipe) sesionId: number) {
+  async getMovimientos(
+    @Param('sesionId', ParseIntPipe) sesionId: number,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.assertSesionAccess(user, sesionId);
     const movs = await this.service.getMovimientos(sesionId);
     return movs.map(CajasPresenter.toMovimiento);
   }
@@ -375,8 +414,9 @@ export class CajasController {
   async cerrarAuxiliar(
     @Param('sesionId', ParseIntPipe) sesionId: number,
     @Body() body: unknown,
-    @CurrentUser() user: { id: number },
+    @CurrentUser() user: AuthUser,
   ) {
+    await this.assertSesionAccess(user, sesionId);
     const parsed = CierreCajaSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
     return CajasPresenter.toSesion(
@@ -391,8 +431,9 @@ export class CajasController {
   async cambioCustodia(
     @Param('sesionId', ParseIntPipe) sesionId: number,
     @Body() body: unknown,
-    @CurrentUser() user: { id: number },
+    @CurrentUser() user: AuthUser,
   ) {
+    await this.assertSesionAccess(user, sesionId);
     const parsed = CambioCustodiaSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
     return this.service.cambioCustodia(sesionId, parsed.data, user.id);
@@ -405,11 +446,48 @@ export class CajasController {
   async registrarDiferenciaAuxiliar(
     @Param('sesionId', ParseIntPipe) sesionId: number,
     @Body() body: unknown,
+    @CurrentUser() user: AuthUser,
   ) {
+    await this.assertSesionAccess(user, sesionId);
     const parsed = DiferenciaCajaSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
     return CajasPresenter.toMovimiento(
       await this.service.registrarDiferencia(sesionId, parsed.data),
     );
+  }
+
+  // ── Helpers de autorización ───────────────────────────────────────────────
+
+  private async assertSucursalAccess(user: AuthUser, sucursalId: number): Promise<void> {
+    if (user.rol === 'ADMIN_SISTEMA' || user.rol === 'ADMIN_NACIONAL') return;
+
+    if (user.rol === 'SUPERVISOR_REGIONAL') {
+      if (user.regional_id != null) {
+        const regionalSucursal = await this.service.getSucursalRegionalId(sucursalId);
+        if (regionalSucursal !== user.regional_id) {
+          throw new ForbiddenException('Esta sucursal no pertenece a tu regional.');
+        }
+        return;
+      }
+      // Sin regional_id: supervisor de sucursal específica
+      if (user.sucursal_id !== sucursalId) {
+        throw new ForbiddenException('No tienes acceso a esta sucursal.');
+      }
+      return;
+    }
+
+    // CAJERO y demás roles con sucursal_id fija
+    if (user.sucursal_id !== sucursalId) {
+      throw new ForbiddenException('No tienes acceso a esta sucursal.');
+    }
+  }
+
+  private async assertSesionAccess(user: AuthUser, sesionId: number): Promise<void> {
+    if (user.rol === 'ADMIN_SISTEMA' || user.rol === 'ADMIN_NACIONAL') return;
+
+    if (user.rol === 'CAJERO') {
+      const esPropietario = await this.service.esPropietarioDeSesion(sesionId, user.id);
+      if (!esPropietario) throw new ForbiddenException('Solo puedes operar tu propia sesión de caja.');
+    }
   }
 }
