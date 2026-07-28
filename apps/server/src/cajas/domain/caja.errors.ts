@@ -89,3 +89,11 @@ export class AuxiliaresAbiertasError extends CajaDomainError {
     this.name = 'AuxiliaresAbiertasError';
   }
 }
+
+export class MontoInvalidoError extends CajaDomainError {
+  readonly statusCode = 422;
+  constructor(label: string) {
+    super(`El monto de ${label} debe ser mayor a cero`);
+    this.name = 'MontoInvalidoError';
+  }
+}

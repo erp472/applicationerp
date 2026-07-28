@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { ICajasRepository, CreateCajaData, UpdateCajaData, CreateCajaPadreData, UpdateCajaPadreData } from '../domain/caja.repository.js';
-import type { CajaEntity, CajaPadreEntity } from '../domain/caja.entity.js';
+import type { CajaEntity, CajaPadreEntity, AsignacionSucursal } from '../domain/caja.entity.js';
 
 const SELECT_CAJA = {
   idcajas:                     true,
@@ -306,5 +306,62 @@ export class PrismaCajasRepository implements ICajasRepository {
         activoservicios_sucursal: activo,
       },
     });
+  }
+
+  async getAsignacionSucursal(sucursalId: number): Promise<AsignacionSucursal> {
+    const padre = await this.prisma.cajaPadre.findFirst({
+      where: { sucursales_idsucursales: sucursalId, deleted_atcajas_padres: null },
+      select: {
+        idcajas_padres:   true,
+        nombrecajas_padres: true,
+        cajas: {
+          where: { deleted_atcajas: null, activocajas: true },
+          orderBy: { codigocajas: 'asc' },
+          select: {
+            idcajas:      true,
+            codigocajas:  true,
+            nombrecajas:  true,
+            tipocajas:    true,
+            activocajas:  true,
+            sesiones: {
+              where:   { estadosesiones_caja: 'abierta' },
+              take:    1,
+              orderBy: { fecha_aperturasesiones_caja: 'desc' },
+              select: {
+                idsesiones_caja:                          true,
+                estadosesiones_caja:                      true,
+                fecha_aperturasesiones_caja:              true,
+                usuarioApertura: { select: { idusuarios: true, nombreusuarios: true } },
+                cajeroAsignado:  { select: { idusuarios: true, nombreusuarios: true, emailusuarios: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!padre) return { cajaPadreId: null, cajaPadreNombre: null, cajas: [] };
+
+    return {
+      cajaPadreId:    padre.idcajas_padres,
+      cajaPadreNombre: padre.nombrecajas_padres,
+      cajas: padre.cajas.map(c => ({
+        id:      c.idcajas,
+        codigo:  c.codigocajas,
+        nombre:  c.nombrecajas,
+        tipo:    c.tipocajas as AsignacionSucursal['cajas'][0]['tipo'],
+        activo:  c.activocajas,
+        sesionActiva: c.sesiones[0] ? {
+          sesionId:         c.sesiones[0].idsesiones_caja,
+          estado:           c.sesiones[0].estadosesiones_caja as 'abierta',
+          supervisorId:     c.sesiones[0].usuarioApertura.idusuarios,
+          supervisorNombre: c.sesiones[0].usuarioApertura.nombreusuarios,
+          cajeroId:         c.sesiones[0].cajeroAsignado?.idusuarios ?? null,
+          cajeroNombre:     c.sesiones[0].cajeroAsignado?.nombreusuarios ?? null,
+          cajeroEmail:      c.sesiones[0].cajeroAsignado?.emailusuarios ?? null,
+          fechaApertura:    c.sesiones[0].fecha_aperturasesiones_caja,
+        } : null,
+      })),
+    };
   }
 }

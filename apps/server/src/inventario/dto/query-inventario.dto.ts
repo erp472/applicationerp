@@ -1,10 +1,11 @@
 import { z } from 'zod';
 
 export const QueryInventarioSchema = z.object({
-  buscar:    z.string().optional(),
+  buscar:       z.string().optional(),
   soloConStock: z.coerce.boolean().optional(),
-  pagina:    z.coerce.number().int().positive().default(1),
-  limite:    z.coerce.number().int().positive().max(100).default(50),
+  estado:       z.enum(['ok', 'bajo', 'critico']).optional(),
+  pagina:       z.coerce.number().int().positive().default(1),
+  limite:       z.coerce.number().int().positive().max(100).default(50),
 });
 
 export const QueryMovimientosSchema = z.object({

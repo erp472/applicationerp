@@ -13,7 +13,13 @@ import { Roles } from '../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 
 const ROLES_READ  = ['INVENTARIOS', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL'] as const;
-const ROLES_WRITE = ['INVENTARIOS', 'ADMIN_SISTEMA'] as const;
+const ROLES_WRITE = ['INVENTARIOS', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL'] as const;
+
+const EntradaInventarioSchema = z.object({
+  productoId:  z.number().int().positive(),
+  cantidad:    z.number().int().positive('La cantidad debe ser mayor a 0'),
+  observacion: z.string().max(500).optional(),
+});
 
 @ApiTags('inventario')
 @ApiBearerAuth()
@@ -21,6 +27,24 @@ const ROLES_WRITE = ['INVENTARIOS', 'ADMIN_SISTEMA'] as const;
 @Controller('inventario')
 export class InventarioController {
   constructor(private readonly inventario: InventarioService) {}
+
+  @Get('sucursales')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Lista de sucursales con conteo de alertas de stock' })
+  async listSucursales(
+    @CurrentUser() user: { id: number; rol: string; sucursal_id: number | null },
+  ) {
+    return this.inventario.getSucursales(user.rol, user.sucursal_id);
+  }
+
+  @Get('alertas')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Resumen de alertas de stock por sucursal' })
+  async getAlertas(
+    @CurrentUser() user: { id: number; rol: string; sucursal_id: number | null },
+  ) {
+    return this.inventario.getAlertasResumen(user.rol, user.sucursal_id);
+  }
 
   @Get('sucursal/:sucursalId')
   @Roles(...ROLES_READ)
@@ -48,6 +72,27 @@ export class InventarioController {
       sucursalId,
       body.productoId,
       body.cantidad_nueva,
+      body.observacion,
+      user.id,
+      user.rol,
+      user.sucursal_id,
+    );
+  }
+
+  @Post('sucursal/:sucursalId/entrada')
+  @Roles(...ROLES_WRITE)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Registrar entrada de mercancía al inventario' })
+  async entrada(
+    @Param('sucursalId', ParseIntPipe) sucursalId: number,
+    @Body() rawBody: unknown,
+    @CurrentUser() user: { id: number; rol: string; sucursal_id: number | null },
+  ) {
+    const body = EntradaInventarioSchema.parse(rawBody);
+    return this.inventario.registrarEntrada(
+      sucursalId,
+      body.productoId,
+      body.cantidad,
       body.observacion,
       user.id,
       user.rol,

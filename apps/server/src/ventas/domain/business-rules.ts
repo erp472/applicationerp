@@ -32,24 +32,27 @@ export function calcularSubtotalDetalle(precioUnitario: number, cantidad: number
 }
 
 // BR-VEN-006: recalcula totales del carrito
+// Precios en catálogo son brutos (IVA incluido). El IVA se extrae del bruto:
+//   iva = bruto * t / (100 + t)   ←  NO multiplicar bruto × tasa (bug #1)
+// subtotal almacena la base gravable (sin IVA); total = bruto_total − descuento.
 export function calcularTotalesCarrito(items: Array<{ precioUnitario: number; cantidad: number; descuento: number; porcentajeTax: number }>) {
   let subtotal  = 0;
   let descuento = 0;
   let iva       = 0;
 
   for (const item of items) {
-    const base = item.precioUnitario * item.cantidad;
-    const desc = item.descuento;
-    const neto = Math.max(0, base - desc);
-    subtotal  += base;
-    descuento += desc;
-    iva       += neto * (item.porcentajeTax / 100);
+    const bruto     = item.precioUnitario * item.cantidad;
+    const t         = item.porcentajeTax;
+    const ivaLinea  = t > 0 ? bruto * t / (100 + t) : 0;
+    subtotal  += bruto - ivaLinea;   // base gravable sin IVA
+    descuento += item.descuento;
+    iva       += ivaLinea;
   }
 
   return {
     subtotal:  Math.round(subtotal),
     descuento: Math.round(descuento),
     iva:       Math.round(iva),
-    total:     Math.round(subtotal - descuento + iva),
+    total:     Math.round(subtotal + iva - descuento), // = bruto_total − descuento
   };
 }

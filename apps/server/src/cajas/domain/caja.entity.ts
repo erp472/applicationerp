@@ -154,6 +154,34 @@ export interface CajaPosPanel {
   sesionId: number | null;
 }
 
+// ── Asignación de cajeros por sucursal ────────────────────────────────────────
+
+export interface CajaAsignacionSesion {
+  sesionId:         number;
+  estado:           EstadoSesionCaja;
+  supervisorId:     number;
+  supervisorNombre: string;
+  cajeroId:         number | null;
+  cajeroNombre:     string | null;
+  cajeroEmail:      string | null;
+  fechaApertura:    Date;
+}
+
+export interface CajaAsignacion {
+  id:           number;
+  codigo:       string;
+  nombre:       string;
+  tipo:         TipoCaja;
+  activo:       boolean;
+  sesionActiva: CajaAsignacionSesion | null;
+}
+
+export interface AsignacionSucursal {
+  cajaPadreId:   number | null;
+  cajaPadreNombre: string | null;
+  cajas:         CajaAsignacion[];
+}
+
 export interface SucursalPanelItem {
   sucursalId:     number;
   codigo:         string;

@@ -20,10 +20,11 @@ const TIPOS_ENTRADA = new Set([
   'moneda_circulante', 'apartado_postal',
 ]);
 
-// traslado_caja_fuerte sale del cajón pero NO de la caja: el dinero sigue en el punto
+// traslado_caja_fuerte: el cajero entrega físicamente a bóveda — reduce saldo del cajón
 const TIPOS_SALIDA = new Set([
   'cambio_custodia_out', 'giro_pago', 'consignacion',
   'diferencia_faltante', 'pago_administrativo', 'anulacion',
+  'traslado_caja_fuerte',
 ]);
 
 const SELECT_SESION = {
@@ -476,5 +477,14 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
       },
       cajas: cards,
     };
+  }
+
+  async updateCajeroAsignado(sesionId: number, cajeroId: number | null): Promise<SesionCajaEntity> {
+    const row = await this.prisma.sesionCaja.update({
+      where:  { idsesiones_caja: sesionId },
+      data:   { usuarios_idusuarios_cajero_asignado: cajeroId },
+      select: SELECT_SESION,
+    });
+    return toSesionEntity(row);
   }
 }

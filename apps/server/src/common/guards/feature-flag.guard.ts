@@ -39,8 +39,8 @@ export class FeatureFlagGuard implements CanActivate {
     const user: RequestUser | undefined = req.user;
     if (!user) return false;
 
-    // ADMIN_SISTEMA siempre puede entrar, incluso con el módulo en mantenimiento
-    if (user.rol === 'ADMIN_SISTEMA') return true;
+    // Admins siempre pueden entrar, incluso con el módulo en mantenimiento
+    if (user.rol === 'ADMIN_SISTEMA' || user.rol === 'ADMIN_NACIONAL') return true;
 
     const entorno = NODE_ENV_TO_ENTORNO[process.env.NODE_ENV ?? 'development'] ?? 'staging';
     const activo = await this.featureFlags.isActive(codigo, entorno, { rol: user.rol, usuarioId: user.id });

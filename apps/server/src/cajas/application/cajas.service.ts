@@ -20,6 +20,8 @@ import {
   validarSaldoSuficiente,
   validarConsignacionPendiente,
   evaluarAlertas,
+  validarMontoPositivo,
+  computarArqueo,
 } from '../domain/business-rules.js';
 import type { AperturaAuxiliarDto } from '../dto/apertura-auxiliar.dto.js';
 import type { AperturaPrincipalDto } from '../dto/apertura-principal.dto.js';
@@ -159,6 +161,7 @@ export class CajasService {
 
     const sesionExistente = await this.sesionesRepo.findAbiertaByCaja(cajaFuerte.id);
     validarUnicidadSesion(cajaFuerte.id, !!sesionExistente);
+    validarMontoPositivo(dto.montoApertura, 'apertura principal');
 
     const sesion = await this.sesionesRepo.crearSesion({
       cajaId:            cajaFuerte.id,
@@ -217,6 +220,7 @@ export class CajasService {
     const sesionExistente = await this.sesionesRepo.findAbiertaByCaja(dto.cajaAuxiliarId);
     validarUnicidadSesion(dto.cajaAuxiliarId, !!sesionExistente);
 
+    validarMontoPositivo(dto.baseAsignada, 'base asignada a auxiliar');
     const saldoPrincipal = await this.sesionesRepo.calcularSaldo(sesionPrincipalId);
     validarSaldoSuficiente(saldoPrincipal, dto.baseAsignada);
 
@@ -267,8 +271,10 @@ export class CajasService {
     validarSesionAbierta(sesionAuxiliarId, sesion.estado);
 
     const saldoEsperado = await this.sesionesRepo.calcularSaldo(sesionAuxiliarId);
-    const totalArqueo = dto.totalArqueo;
-    const diferencia = Number(totalArqueo) - Number(saldoEsperado);
+    // C4: calcular arqueo server-side a partir de denominaciones; fallback al valor declarado
+    const totalArqueoCalc = computarArqueo(dto.denominaciones) ?? Number(dto.totalArqueo);
+    const totalArqueo = totalArqueoCalc.toFixed(2);
+    const diferencia = totalArqueoCalc - Number(saldoEsperado);
 
     // Auto-find the Caja Fuerte (general) session for this punto
     let sesionGeneral: Awaited<ReturnType<typeof this.sesionesRepo.findById>> = null;
@@ -281,24 +287,26 @@ export class CajasService {
     }
 
     if (sesionGeneral) {
+      // C2: la devolución a principal usa el saldo electrónico (saldoEsperado),
+      // no el arqueo físico declarado. La diferencia queda registrada aparte.
       await Promise.all([
         this.sesionesRepo.registrarMovimiento({
           sesionCajaId: sesionAuxiliarId,
           tipo:         'cambio_custodia_out',
-          monto:        totalArqueo,
+          monto:        saldoEsperado,
           descripcion:  'Cierre auxiliar — entrega a principal',
         }),
         this.sesionesRepo.registrarMovimiento({
           sesionCajaId: sesionGeneral.id,
           tipo:         'cambio_custodia_in',
-          monto:        totalArqueo,
+          monto:        saldoEsperado,
           descripcion:  `Cierre auxiliar ${sesion.cajaId} — recepción`,
         }),
       ]);
       await this.sesionesRepo.crearReposicion({
         sesionOrigenId:  sesionAuxiliarId,
         sesionDestinoId: sesionGeneral.id,
-        monto:           totalArqueo,
+        monto:           saldoEsperado,
         usuarioId,
         estado:          'aprobada',
         motivo:          'cierre_auxiliar',
@@ -311,7 +319,7 @@ export class CajasService {
         sesionCajaId: sesionAuxiliarId,
         tipo:         tipoDif,
         monto:        Math.abs(diferencia).toFixed(2),
-        descripcion:  `Diferencia automática en cierre. Esperado: $${saldoEsperado}`,
+        descripcion:  `Diferencia en cierre. Esperado: $${saldoEsperado}, arqueo: $${totalArqueo}`,
       });
     }
 
@@ -431,6 +439,10 @@ export class CajasService {
     const sesion = await this.sesionesRepo.findById(sesionId);
     if (!sesion) throw new SesionNoEncontradaError(sesionId);
     validarSesionAbierta(sesionId, sesion.estado);
+    validarMontoPositivo(dto.valor, 'pago administrativo');
+
+    const saldo = await this.sesionesRepo.calcularSaldo(sesionId);
+    validarSaldoSuficiente(saldo, dto.valor);
 
     return this.sesionesRepo.registrarMovimiento({
       sesionCajaId: sesionId,
@@ -457,8 +469,10 @@ export class CajasService {
     }
 
     const saldoEsperado = await this.sesionesRepo.calcularSaldo(sesionPrincipalId);
-    const totalArqueo   = dto.totalArqueo;
-    const diferencia    = Number(totalArqueo) - Number(saldoEsperado);
+    // C4: calcular arqueo server-side a partir de denominaciones; fallback al valor declarado
+    const totalArqueoCalc = computarArqueo(dto.denominaciones) ?? Number(dto.totalArqueo);
+    const totalArqueo     = totalArqueoCalc.toFixed(2);
+    const diferencia      = totalArqueoCalc - Number(saldoEsperado);
 
     await this.sesionesRepo.registrarMovimiento({
       sesionCajaId: sesionPrincipalId,
@@ -557,5 +571,16 @@ export class CajasService {
 
   async listCajasPadresBySucursal(sucursalId: number) {
     return this.cajasRepo.findAllPadresBySucursal(sucursalId);
+  }
+
+  async getAsignacionSucursal(sucursalId: number) {
+    return this.cajasRepo.getAsignacionSucursal(sucursalId);
+  }
+
+  async setCajeroAsignado(sesionId: number, cajeroId: number | null) {
+    const sesion = await this.sesionesRepo.findById(sesionId);
+    if (!sesion) throw new SesionNoEncontradaError(sesionId);
+    validarSesionAbierta(sesionId, sesion.estado);
+    return this.sesionesRepo.updateCajeroAsignado(sesionId, cajeroId);
   }
 }

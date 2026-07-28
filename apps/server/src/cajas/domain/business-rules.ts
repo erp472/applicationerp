@@ -4,6 +4,7 @@ import {
   SaldoInsuficienteError,
   BaseMinimaVioladaError,
   ConsignacionEstadoInvalidoError,
+  MontoInvalidoError,
 } from './caja.errors.js';
 import type { TipoAlerta, EstadoSesionCaja, EstadoAprobacion } from './caja.entity.js';
 
@@ -37,6 +38,18 @@ export function validarCajaGeneralMinimo(
 // BR-CAJ-005: La consignación solo se puede aprobar/rechazar si está pendiente
 export function validarConsignacionPendiente(id: number, estado: EstadoAprobacion): void {
   if (estado !== 'pendiente') throw new ConsignacionEstadoInvalidoError(estado);
+}
+
+// BR-CAJ-007: monto de apertura o base asignada debe ser mayor a cero
+export function validarMontoPositivo(monto: string, label: string): void {
+  if (Number(monto) <= 0) throw new MontoInvalidoError(label);
+}
+
+// Calcula el total del arqueo físico a partir del desglose de denominaciones (server-side)
+// Evita confiar en el totalArqueo declarado por el cliente
+export function computarArqueo(denominaciones: Array<{ denominacion: number; cantidad: number }> | undefined): number | null {
+  if (!denominaciones || denominaciones.length === 0) return null;
+  return denominaciones.reduce((sum, d) => sum + d.denominacion * d.cantidad, 0);
 }
 
 // BR-CAJ-006: evalúa alertas después de registrar un movimiento

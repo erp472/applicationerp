@@ -393,9 +393,15 @@ export class VentasService {
     const tarifa = await this.repo.findTarifaEnvio(servicioId, pesoTarificado, paisDestino);
     if (!tarifa) throw new TarifaNoEncontradaError(servicioId, pesoTarificado);
 
+    // Bug #15: validar peso máximo del servicio
+    if (servicio.pesoMaximoKg !== null && pesoTarificado > servicio.pesoMaximoKg) {
+      throw new Error(`Peso ${pesoTarificado} kg supera el límite del servicio (${servicio.pesoMaximoKg} kg)`);
+    }
+
     let valorServicio = tarifa.tarifa;
-    if (tarifa.tarifaKgAdicional && pesoTarificado > tarifa.pesoMinKg) {
-      const kgExtra = pesoTarificado - tarifa.pesoMinKg;
+    // Bug #3: el kg adicional se calcula desde el techo del tramo (pesoMaxKg), no el piso (pesoMinKg)
+    if (tarifa.tarifaKgAdicional && tarifa.pesoMaxKg !== null && pesoTarificado > tarifa.pesoMaxKg) {
+      const kgExtra = pesoTarificado - tarifa.pesoMaxKg;
       valorServicio += kgExtra * tarifa.tarifaKgAdicional;
     }
 
@@ -497,14 +503,15 @@ export class VentasService {
     const ventaFull = await this.repo.findVentaConDetalle(ventaId);
     if (!ventaFull?.detalle) return;
 
-    const productosDetalle = await Promise.all(
-      ventaFull.detalle.map(async (d) => {
-        const p = await this.repo.findProductoById(d.productoId);
-        return { precioUnitario: d.precioUnitario, cantidad: d.cantidad, descuento: d.descuento, porcentajeTax: p?.porcentajeTax ?? 0 };
-      }),
+    const totales = calcularTotalesCarrito(
+      ventaFull.detalle.map(d => ({
+        precioUnitario: d.precioUnitario,
+        cantidad:       d.cantidad,
+        descuento:      d.descuento,
+        porcentajeTax:  d.porcentajeTax ?? 0,
+      })),
     );
 
-    const totales = calcularTotalesCarrito(productosDetalle);
     await this.repo.confirmarVenta(ventaId, {
       medioPago: ventaFull.medioPago,
       ...totales as any,

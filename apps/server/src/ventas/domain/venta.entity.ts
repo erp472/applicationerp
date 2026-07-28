@@ -14,7 +14,9 @@ export class VentaDetalleEntity {
   subtotal:       number;
   // populated on demand
   nombreProducto?: string;
+  codigoProducto?: string;
   tipoProducto?:   TipoProducto;
+  porcentajeTax?:  number;
 }
 
 export class VentaEntity {

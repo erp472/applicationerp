@@ -85,4 +85,5 @@ export interface ISesionesCajaRepository {
 
   getMovimientos(sesionId: number): Promise<MovimientoCajaEntity[]>;
   getStatusPunto(cajaPadreId: number): Promise<StatusPunto>;
+  updateCajeroAsignado(sesionId: number, cajeroId: number | null): Promise<SesionCajaEntity>;
 }

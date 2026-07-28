@@ -64,7 +64,7 @@ const SELECT_DETALLE = {
   descuentoventas_detalle:       true,
   subtotalventas_detalle:        true,
   producto: {
-    select: { nombreproductos: true, tipoproductos: true, porcentaje_taxproductos: true },
+    select: { codigoproductos: true, nombreproductos: true, tipoproductos: true, porcentaje_taxproductos: true },
   },
 } satisfies Prisma.VentaDetalleSelect;
 
@@ -127,7 +127,9 @@ function toDetalleEntity(row: DetalleRow): VentaDetalleEntity {
     descuento:      Number(row.descuentoventas_detalle),
     subtotal:       Number(row.subtotalventas_detalle),
     nombreProducto: row.producto.nombreproductos,
+    codigoProducto: row.producto.codigoproductos,
     tipoProducto:   row.producto.tipoproductos as TipoProducto,
+    porcentajeTax:  Number(row.producto.porcentaje_taxproductos),
   };
 }
 
@@ -301,9 +303,19 @@ export class PrismaVentasRepository implements IVentasRepository {
     return rows.map(toProductoEntity);
   }
 
-  async findProductoById(productoId: number): Promise<ProductoCatalogoEntity | null> {
+  // Bug #14: cuando se pasa sucursalId, el producto debe estar activo en esa sucursal
+  async findProductoById(productoId: number, sucursalId?: number): Promise<ProductoCatalogoEntity | null> {
     const row = await this.prisma.producto.findFirst({
-      where: { idproductos: productoId, activoproductos: true, deleted_atproductos: null },
+      where: {
+        idproductos:       productoId,
+        activoproductos:   true,
+        deleted_atproductos: null,
+        ...(sucursalId !== undefined && {
+          productosSucursal: {
+            some: { sucursales_idsucursales: sucursalId, activoproductos_sucursal: true },
+          },
+        }),
+      },
       select: SELECT_PRODUCTO,
     });
     return row ? toProductoEntity(row) : null;

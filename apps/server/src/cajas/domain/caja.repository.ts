@@ -1,4 +1,4 @@
-import type { CajaEntity, CajaPadreEntity, SucursalPanelItem } from './caja.entity.js';
+import type { CajaEntity, CajaPadreEntity, SucursalPanelItem, AsignacionSucursal } from './caja.entity.js';
 
 export const CAJAS_REPOSITORY = Symbol('CAJAS_REPOSITORY');
 
@@ -60,4 +60,7 @@ export interface ICajasRepository {
   findSucursalRegionalId(sucursalId: number): Promise<number | null>;
   findAllPadresByRegional(regionalId: number): Promise<CajaPadreEntity[]>;
   findAllPadresBySucursal(sucursalId: number): Promise<CajaPadreEntity[]>;
+
+  // Asignación de cajeros
+  getAsignacionSucursal(sucursalId: number): Promise<AsignacionSucursal>;
 }

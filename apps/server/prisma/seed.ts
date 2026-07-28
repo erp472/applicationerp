@@ -259,29 +259,25 @@ async function main() {
   const cajeroHash = await hash('Seed.Cajero.Dev1!', 10)
   const cajero = await prisma.usuario.upsert({
     where: { emailusuarios: 'cajero@4-72.com.co' },
-    update: {},
+    update: { sucursales_idsucursales: sucMed.idsucursales, activousuarios: false },
     create: {
-      sucursales_idsucursales: sucPrincipal.idsucursales,
+      sucursales_idsucursales: sucMed.idsucursales,
       roles_idroles: roles['CAJERO'].idroles,
       nombreusuarios: 'Cajero Seed',
       emailusuarios: 'cajero@4-72.com.co',
       password_hashusuarios: cajeroHash,
-      activousuarios: true,
+      activousuarios: false,
     },
   })
 
-  const vendedorHash = await hash('Vendedor472!', 10)
+  const vendedorHash = await hash('Vendedor.472', 10)
   const vendedor = await prisma.usuario.upsert({
     where: { emailusuarios: 'vendedor@4-72.com.co' },
-    update: {
-      sucursales_idsucursales: sucPrincipal.idsucursales,
-      roles_idroles: roles['CAJERO'].idroles,
-      activousuarios: true,
-    },
+    update: { password_hashusuarios: vendedorHash, activousuarios: true },
     create: {
       sucursales_idsucursales: sucPrincipal.idsucursales,
       roles_idroles: roles['CAJERO'].idroles,
-      nombreusuarios: 'Vendedor Principal',
+      nombreusuarios: 'Vendedor.472',
       emailusuarios: 'vendedor@4-72.com.co',
       password_hashusuarios: vendedorHash,
       activousuarios: true,
@@ -559,23 +555,24 @@ async function main() {
 
   // Flags operativos de Tauri — activos en desarrollo para poder probar en navegador
   const flagsOperativos = [
-    { codigo: 'modulo:caja',             descripcion: 'Módulo operativo de cajas y turnos (SUPERVISOR_REGIONAL / CAJERO)', activo: true },
-    { codigo: 'modulo:ventas',           descripcion: 'Módulo de punto de venta (CAJERO)',                                 activo: true },
-    { codigo: 'ventas:tab_productos',    descripcion: 'Tab Productos en caja de ventas',                                   activo: true },
-    { codigo: 'ventas:tab_especiales',   descripcion: 'Tab Productos Especiales en caja de ventas',                        activo: true },
-    { codigo: 'ventas:tab_apartado',     descripcion: 'Tab Apartados Postales en caja de ventas',                          activo: true },
-    { codigo: 'ventas:tab_servicios',    descripcion: 'Tab Servicios Postales en caja de ventas',                          activo: true },
+    { codigo: 'modulo:caja',             descripcion: 'Módulo operativo de cajas y turnos (SUPERVISOR_REGIONAL / CAJERO)', activo: true,  plataforma: 'all'   },
+    { codigo: 'modulo:ventas',           descripcion: 'Módulo de punto de venta (CAJERO)',                                 activo: true,  plataforma: 'all'   },
+    { codigo: 'ventas:tab_productos',    descripcion: 'Tab Productos en caja de ventas',                                   activo: true,  plataforma: 'all'   },
+    { codigo: 'ventas:tab_especiales',   descripcion: 'Tab Productos Especiales en caja de ventas',                        activo: true,  plataforma: 'all'   },
+    { codigo: 'ventas:tab_apartado',     descripcion: 'Tab Apartados Postales en caja de ventas',                          activo: true,  plataforma: 'all'   },
+    { codigo: 'ventas:tab_servicios',    descripcion: 'Tab Servicios Postales en caja de ventas',                          activo: true,  plataforma: 'tauri' },
+    { codigo: 'ventas:tab_historial',    descripcion: 'Tab Historial de ventas en caja',                                     activo: true,  plataforma: 'all'   },
   ]
   for (const f of flagsOperativos) {
     await prisma.featureFlag.upsert({
       where:  { codigofeature_flags: f.codigo },
-      update: { activofeature_flags: f.activo, plataformafeature_flags: 'all' },
+      update: { activofeature_flags: f.activo, plataformafeature_flags: f.plataforma as 'all' | 'tauri' },
       create: {
         codigofeature_flags:      f.codigo,
         descripcionfeature_flags: f.descripcion,
         activofeature_flags:      f.activo,
         entornofeature_flags:     'all',
-        plataformafeature_flags:  'all',
+        plataformafeature_flags:  f.plataforma as 'all' | 'tauri',
       },
     })
   }
@@ -588,8 +585,9 @@ async function main() {
     { codigo: 'modulo_equipos',     descripcion: 'Módulo de equipos autorizados (MAC guard)' },
     { codigo: 'modulo_productos',   descripcion: 'Módulo de catálogo de productos' },
     { codigo: 'modulo_servicios',   descripcion: 'Módulo de catálogo de servicios de envío' },
-    { codigo: 'modulo_cajas',       descripcion: 'Módulo de gestión de cajas y turnos operativos' },
-    { codigo: 'sistema_permisos',   descripcion: 'Panel de gestión de roles y permisos' },
+    { codigo: 'modulo_cajas',        descripcion: 'Módulo de gestión de cajas y turnos operativos' },
+    { codigo: 'modulo_inventario',   descripcion: 'Módulo de inventario por sucursal' },
+    { codigo: 'sistema_permisos',    descripcion: 'Panel de gestión de roles y permisos' },
     { codigo: 'sistema_aperturas',  descripcion: 'Panel de activación de módulos (feature flags)' },
     { codigo: 'sistema_auditoria',  descripcion: 'Panel de auditoría y trazabilidad de acciones' },
   ]
@@ -735,8 +733,9 @@ async function main() {
   console.log('\n✅ Seed completado exitosamente.')
   console.log('━'.repeat(50))
   console.log(`🏢 Comercio:  ${comercio.nombrecomercios} (NIT: ${comercio.nitcomercios})`)
-  console.log(`👤 Admin seed:  ${adminUser.emailusuarios}`)
-  console.log(`👤 Cajero seed: ${cajero.emailusuarios}`)
+  console.log(`👤 Admin seed:    ${adminUser.emailusuarios}`)
+  console.log(`👤 Cajero seed:   ${cajero.emailusuarios}`)
+  console.log(`👤 Vendedor seed: ${vendedor.emailusuarios}`)
   console.log(`🏪 Sucursales: ${sucursales.map(s => s.nombresucursales).join(' | ')}`)
 }
 

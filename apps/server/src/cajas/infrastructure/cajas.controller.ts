@@ -138,6 +138,29 @@ export class CajasController {
     return this.service.toggleServicioSucursal(sucursalId, servicioId, parsed.data.activo);
   }
 
+  // ── Asignación de cajeros (ADMIN_SISTEMA only) ────────────────────────────
+
+  @Get('asignacion/sucursal/:sucursalId')
+  @Roles('ADMIN_SISTEMA')
+  @ApiOperation({ summary: 'Estructura de cajas + sesiones activas + cajero asignado por sucursal' })
+  @ApiParam({ name: 'sucursalId', type: Number })
+  async getAsignacionSucursal(@Param('sucursalId', ParseIntPipe) sucursalId: number) {
+    return this.service.getAsignacionSucursal(sucursalId);
+  }
+
+  @Patch('sesiones/:sesionId/cajero-asignado')
+  @Roles('ADMIN_SISTEMA')
+  @ApiOperation({ summary: 'Asignar o retirar cajero de una sesión activa' })
+  @ApiParam({ name: 'sesionId', type: Number })
+  async setCajeroAsignado(
+    @Param('sesionId', ParseIntPipe) sesionId: number,
+    @Body() body: unknown,
+  ) {
+    const parsed = z.object({ cajeroId: z.number().int().positive().nullable() }).safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    return this.service.setCajeroAsignado(sesionId, parsed.data.cajeroId);
+  }
+
   // ── Superadmin CRUD /cajas/auxiliares ────────────────────────────────────
 
   @Get('auxiliares')

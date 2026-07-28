@@ -95,7 +95,7 @@ export interface IVentasRepository {
 
   // Catálogo productos
   findProductosBySucursal(sucursalId: number, tipo?: TipoProducto): Promise<ProductoCatalogoEntity[]>;
-  findProductoById(productoId: number): Promise<ProductoCatalogoEntity | null>;
+  findProductoById(productoId: number, sucursalId?: number): Promise<ProductoCatalogoEntity | null>;
 
   // Ventas
   crearVenta(data: CrearVentaData): Promise<VentaEntity>;
@@ -126,7 +126,7 @@ export interface IVentasRepository {
   // Servicios Postales
   findServiciosBySucursal(sucursalId: number): Promise<ServicioCatalogoEntity[]>;
   findServicioById(servicioId: number): Promise<ServicioCatalogoEntity | null>;
-  findTarifaEnvio(servicioId: number, pesoKg: number, paisDestino: string): Promise<TarifaEnvioEntity | null>;
+  findTarifaEnvio(servicioId: number, pesoKg: number, paisDestino: string, ciudadDestino?: string): Promise<TarifaEnvioEntity | null>;
   crearEnvio(data: CrearEnvioData): Promise<EnvioEntity>;
   anularEnvio(id: number): Promise<EnvioEntity>;
 

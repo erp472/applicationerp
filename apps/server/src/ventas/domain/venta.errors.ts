@@ -121,3 +121,19 @@ export class CantidadMaximaError extends VentaDomainError {
     this.name = 'CantidadMaximaError';
   }
 }
+
+export class CantidadFueraDeTarifaError extends VentaDomainError {
+  readonly statusCode = 422;
+  constructor(nombre: string, cantidad: number) {
+    super(`La cantidad ${cantidad} no corresponde a ningún tramo de tarifa para "${nombre}"`);
+    this.name = 'CantidadFueraDeTarifaError';
+  }
+}
+
+export class PesoExcedeLimiteError extends VentaDomainError {
+  readonly statusCode = 422;
+  constructor(pesoKg: number, limiteKg: number) {
+    super(`El peso ${pesoKg} kg supera el límite del servicio (${limiteKg} kg)`);
+    this.name = 'PesoExcedeLimiteError';
+  }
+}
