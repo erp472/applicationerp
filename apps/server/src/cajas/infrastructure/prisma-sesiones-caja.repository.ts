@@ -381,11 +381,12 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
       };
     }
 
-    let cajonGeneralTotal = 0;   // total en punto (principal + auxiliares)
-    let fuerteGeneralTotal = 0;  // solo auxiliares (pos + menor)
-    let cajonPagosTotal = 0;
-    let basePagos = '0';
-    let acumuladoMoneda = 0;
+    let cajonGeneralTotal    = 0;  // total operativo del punto (general + pos + menor)
+    let fuerteGeneralTotal   = 0;  // bóveda física: saldo sesión general + traslados mid-turn de aux
+    let cajaFuertePagosTotal = 0;  // C6: traslados mid-turn a bóveda desde cajas de pagos
+    let cajonPagosTotal      = 0;
+    let basePagos            = '0';
+    let acumuladoMoneda      = 0;
 
     const cards: CardAuxiliar[] = cajaPadre.cajas.map((caja) => {
       const sesionActiva = caja.sesiones[0] ?? null;
@@ -411,16 +412,18 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
         };
       }
 
-      let saldo = Number(sesionActiva.monto_aperturasesiones_caja);
-      let ingresos = 0;
-      let egresos = 0;
+      let saldo            = Number(sesionActiva.monto_aperturasesiones_caja);
+      let ingresos         = 0;
+      let egresos          = 0;
       let monedaCirculante = 0;
+      let trasladoVault    = 0;  // C5/C6: efectivo físicamente trasladado a bóveda mid-turn
 
       for (const m of sesionActiva.movimientosCaja) {
         const monto = Number(m.montomovimientos_caja);
         if (TIPOS_ENTRADA.has(m.tipomovimientos_caja)) { saldo += monto; ingresos += monto; }
         else if (TIPOS_SALIDA.has(m.tipomovimientos_caja)) { saldo -= monto; egresos += monto; }
         if (m.tipomovimientos_caja === 'moneda_circulante') monedaCirculante += monto;
+        if (m.tipomovimientos_caja === 'traslado_caja_fuerte') trasladoVault += monto;
       }
 
       acumuladoMoneda += monedaCirculante;
@@ -428,20 +431,24 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
       const girosCount = sesionActiva.giros.length;
       const girosValor = sesionActiva.giros.reduce((acc, g) => acc + Number(g.monto_copgiros), 0);
 
-      const baseDia = caja.base_diacajas.toString();
+      const baseDia     = caja.base_diacajas.toString();
       const limiteAlerta = caja.limite_alertacajas?.toString() ?? null;
       const alertas: TipoAlerta[] = evaluarAlertas(saldo.toFixed(2), baseDia, limiteAlerta);
 
       if (caja.tipocajas === 'pagos') {
-        cajonPagosTotal += saldo;
+        cajonPagosTotal      += saldo;
+        cajaFuertePagosTotal += trasladoVault;  // C6: acumula lo trasladado a bóveda desde pagos
         basePagos = baseDia;
       } else if (caja.tipocajas === 'general') {
-        // Sesión del cajero principal = la caja fuerte física del punto
+        // La sesión 'general' ES la bóveda física del punto.
+        // Su saldo incluye cambio_custodia_in de auxiliares ya cerradas (vía TIPOS_ENTRADA).
         cajonGeneralTotal  += saldo;
         fuerteGeneralTotal += saldo;
       } else {
-        // pos, menor → bolsillo de cada cajero auxiliar
-        cajonGeneralTotal += saldo;
+        // pos, menor → cajón operativo del cajero auxiliar
+        cajonGeneralTotal  += saldo;
+        // C5: traslados mid-turn de aux → ya están en la bóveda física aunque la aux sigue abierta
+        fuerteGeneralTotal += trasladoVault;
       }
 
       return {
@@ -453,6 +460,7 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
         cajeroId:      sesionActiva.usuarios_idusuarios_cajero_asignado ?? sesionActiva.usuarios_idusuarios_apertura,
         estado:        'abierta' as const,
         saldoActual:   saldo.toFixed(2),
+        cajaFuerte:    trasladoVault.toFixed(2),
         baseDia,
         limiteAlerta,
         ingresosTurno: ingresos.toFixed(2),
@@ -468,11 +476,11 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
       cajaPadreId: cajaPadre.idcajas_padres,
       panel: {
         baseGeneral:               cajaPadre.base_generalcajas_padres.toString(),
-        cajaGeneral:               cajonGeneralTotal.toFixed(2),    // total punto (principal + fuertes)
-        cajaFuerteGeneral:         fuerteGeneralTotal.toFixed(2),   // solo suma de cajas fuertes auxiliares
+        cajaGeneral:               cajonGeneralTotal.toFixed(2),
+        cajaFuerteGeneral:         fuerteGeneralTotal.toFixed(2),   // C5: saldo general + traslados mid-turn de aux
         basePagos,
         cajaPagos:                 cajonPagosTotal.toFixed(2),
-        cajaFuertePagos:           '0',
+        cajaFuertePagos:           cajaFuertePagosTotal.toFixed(2), // C6: traslados a bóveda desde pagos
         acumuladoMonedaCirculante: acumuladoMoneda.toFixed(2),
       },
       cajas: cards,

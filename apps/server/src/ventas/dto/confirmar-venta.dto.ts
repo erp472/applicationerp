@@ -8,7 +8,7 @@ const MEDIOS_PAGO = [
 export const ConfirmarVentaSchema = z.object({
   medioPago:        z.enum(MEDIOS_PAGO),
   efectivoRecibido: z.number().positive().optional(),
-  emailFactura:     z.string().email(),
+  emailFactura:     z.string().email().optional(),
 }).refine(
   (d) => d.medioPago !== 'efectivo' || d.efectivoRecibido !== undefined,
   { message: 'efectivoRecibido es requerido cuando medioPago es efectivo', path: ['efectivoRecibido'] },

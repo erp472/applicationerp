@@ -111,4 +111,47 @@ export class VentasPresenter {
       createdAt:            entity.createdAt.toISOString(),
     };
   }
+
+  static toGuia(entity: EnvioEntity) {
+    const esInternacional = entity.tipo.startsWith('internacional');
+    return {
+      numeroGuia:   entity.numeroGuia,
+      codigoBarras: entity.numeroGuia,
+      tipo:         esInternacional ? 'internacional' : 'nacional',
+      tipoServicio: entity.tipo,
+      remitente: {
+        nombre:    entity.remitenteNombre,
+        documento: entity.remitenteDocumento,
+        telefono:  entity.remitenteTelefono,
+        email:     entity.remitenteEmail,
+        direccion: entity.remitenteDireccion,
+        ciudad:    entity.remitenteCiudad,
+        pais:      'CO',
+      },
+      destinatario: {
+        nombre:    entity.destinatarioNombre,
+        documento: entity.destinatarioDocumento,
+        telefono:  entity.destinatarioTelefono,
+        email:     entity.destinatarioEmail,
+        direccion: entity.destinatarioDireccion,
+        ciudad:    entity.destinatarioCiudad,
+        pais:      entity.destinatarioPais,
+      },
+      peso: {
+        fisicoKg:     entity.pesoFisicoKg,
+        tarificadoKg: entity.pesoTarificadoKg,
+        altoCm:       entity.altoCm,
+        anchoCm:      entity.anchoCm,
+        largoCm:      entity.largoCm,
+      },
+      valores: {
+        servicio:   entity.valorServicio,
+        seguro:     entity.valorSeguro,
+        declarado:  entity.valorDeclarado,
+        total:      entity.valorTotal,
+      },
+      estado:      entity.estado,
+      generadoEn:  entity.createdAt.toISOString(),
+    };
+  }
 }

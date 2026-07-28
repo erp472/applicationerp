@@ -280,7 +280,8 @@ export class VentasController {
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
     const result = await this.service.crearEnvio(cajaId, user.id, parsed.data);
     return {
-      envio:       result.envio,
+      guia:        VentasPresenter.toGuia(result.envio),
+      envio:       VentasPresenter.toEnvio(result.envio),
       cotizacion:  { pesoTarificadoKg: result.cotizacion.pesoTarificadoKg, valorServicio: result.cotizacion.valorServicio },
       movimiento:  result.movimiento,
       saldoActual: result.saldoActual,

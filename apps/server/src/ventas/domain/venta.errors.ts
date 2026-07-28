@@ -137,3 +137,11 @@ export class PesoExcedeLimiteError extends VentaDomainError {
     this.name = 'PesoExcedeLimiteError';
   }
 }
+
+export class EfectivoInsuficienteError extends VentaDomainError {
+  readonly statusCode = 422;
+  constructor(recibido: number, total: number) {
+    super(`Efectivo insuficiente: recibido $${recibido.toLocaleString('es-CO')}, total a pagar $${total.toLocaleString('es-CO')}`);
+    this.name = 'EfectivoInsuficienteError';
+  }
+}

@@ -20,9 +20,13 @@ import {
   validarSaldoSuficiente,
   validarConsignacionPendiente,
   evaluarAlertas,
-  validarMontoPositivo,
-  computarArqueo,
 } from '../domain/business-rules.js';
+import { calcularCierreTurno } from '../domain/calculos/cierre-turno.js';
+import { calcularCapacidadPunto } from '../domain/calculos/capacidad-punto.js';
+import { buildBaseAperturaPrincipal, calcularBaseAsignadaAuxiliar } from '../domain/calculos/base-apertura.js';
+import { buildDebitoPrincipalPorApertura, buildCreditoAuxiliarPorApertura, calcularCambioCustodiaMidTurno } from '../domain/calculos/cambio-custodia.js';
+import { calcularDiferenciaFaltante, calcularDiferenciaSobrante } from '../domain/calculos/diferencia-saldo.js';
+import { buildPagoAdministrativo } from '../domain/calculos/pago-administrativo-calc.js';
 import type { AperturaAuxiliarDto } from '../dto/apertura-auxiliar.dto.js';
 import type { AperturaPrincipalDto } from '../dto/apertura-principal.dto.js';
 import type { CierreCajaDto } from '../dto/cierre-caja.dto.js';
@@ -161,19 +165,19 @@ export class CajasService {
 
     const sesionExistente = await this.sesionesRepo.findAbiertaByCaja(cajaFuerte.id);
     validarUnicidadSesion(cajaFuerte.id, !!sesionExistente);
-    validarMontoPositivo(dto.montoApertura, 'apertura principal');
+    const baseApertura = buildBaseAperturaPrincipal(dto.montoApertura);
 
     const sesion = await this.sesionesRepo.crearSesion({
       cajaId:            cajaFuerte.id,
       usuarioAperturaId: usuarioId,
       equipoMac:         dto.equipoMac,
-      montoApertura:     dto.montoApertura,
+      montoApertura:     baseApertura.montoApertura,
     });
 
     await this.sesionesRepo.registrarMovimiento({
       sesionCajaId: sesion.id,
-      tipo:         'apertura',
-      monto:        dto.montoApertura,
+      tipo:         baseApertura.tipoMovimiento,
+      monto:        baseApertura.saldoInicial,
       descripcion:  'Apertura turno principal',
     });
 
@@ -220,29 +224,30 @@ export class CajasService {
     const sesionExistente = await this.sesionesRepo.findAbiertaByCaja(dto.cajaAuxiliarId);
     validarUnicidadSesion(dto.cajaAuxiliarId, !!sesionExistente);
 
-    validarMontoPositivo(dto.baseAsignada, 'base asignada a auxiliar');
     const saldoPrincipal = await this.sesionesRepo.calcularSaldo(sesionPrincipalId);
-    validarSaldoSuficiente(saldoPrincipal, dto.baseAsignada);
+    const baseResult   = calcularBaseAsignadaAuxiliar(saldoPrincipal, dto.baseAsignada, false);
+    const debito       = buildDebitoPrincipalPorApertura(baseResult.baseAsignada);
+    const credito      = buildCreditoAuxiliarPorApertura(baseResult.baseAsignada);
 
     const nuevaSesion = await this.sesionesRepo.crearSesion({
       cajaId:            dto.cajaAuxiliarId,
       usuarioAperturaId: usuarioId,
       cajeroAsignadoId:  dto.cajeroAsignadoId,
       equipoMac:         dto.equipoMac,
-      montoApertura:     dto.baseAsignada,
+      montoApertura:     baseResult.baseAsignada,
     });
 
     await Promise.all([
       this.sesionesRepo.registrarMovimiento({
         sesionCajaId: sesionPrincipalId,
-        tipo:         'cambio_custodia_out',
-        monto:        dto.baseAsignada,
+        tipo:         debito.tipoMovimiento,
+        monto:        debito.monto,
         descripcion:  `Apertura caja auxiliar ${caja.codigo}`,
       }),
       this.sesionesRepo.registrarMovimiento({
         sesionCajaId: nuevaSesion.id,
-        tipo:         'cambio_custodia_in',
-        monto:        dto.baseAsignada,
+        tipo:         credito.tipoMovimiento,
+        monto:        credito.monto,
         descripcion:  `Base asignada desde principal`,
       }),
     ]);
@@ -271,10 +276,10 @@ export class CajasService {
     validarSesionAbierta(sesionAuxiliarId, sesion.estado);
 
     const saldoEsperado = await this.sesionesRepo.calcularSaldo(sesionAuxiliarId);
-    // C4: calcular arqueo server-side a partir de denominaciones; fallback al valor declarado
-    const totalArqueoCalc = computarArqueo(dto.denominaciones) ?? Number(dto.totalArqueo);
-    const totalArqueo = totalArqueoCalc.toFixed(2);
-    const diferencia = totalArqueoCalc - Number(saldoEsperado);
+    const totalArqueo = dto.denominaciones?.length
+      ? calcularCierreTurno(saldoEsperado, dto.denominaciones).totalArqueo
+      : Number(dto.totalArqueo).toFixed(2);
+    const diferencia = Number(totalArqueo) - Number(saldoEsperado);
 
     // Auto-find the Caja Fuerte (general) session for this punto
     let sesionGeneral: Awaited<ReturnType<typeof this.sesionesRepo.findById>> = null;
@@ -313,22 +318,36 @@ export class CajasService {
       });
     }
 
-    if (Math.abs(diferencia) >= 0.01) {
-      const tipoDif = diferencia > 0 ? 'diferencia_sobrante' : 'diferencia_faltante';
+    // C9: diferencia registrada en libros para cuadre; pendiente aprobación supervisor
+    let diferenciaCierre: { tipo: 'sobrante' | 'faltante'; monto: string } | null = null;
+    if (diferencia > 0.01) {
+      const dif = calcularDiferenciaSobrante(saldoEsperado, totalArqueo);
       await this.sesionesRepo.registrarMovimiento({
         sesionCajaId: sesionAuxiliarId,
-        tipo:         tipoDif,
-        monto:        Math.abs(diferencia).toFixed(2),
-        descripcion:  `Diferencia en cierre. Esperado: $${saldoEsperado}, arqueo: $${totalArqueo}`,
+        tipo:         dif.tipoMovimiento,
+        monto:        dif.sobrante,
+        descripcion:  `PENDIENTE APROBACIÓN: diferencia de cierre auxiliar. Esperado $${saldoEsperado}, arqueo $${totalArqueo}`,
       });
+      diferenciaCierre = { tipo: 'sobrante', monto: dif.sobrante };
+    } else if (diferencia < -0.01) {
+      const dif = calcularDiferenciaFaltante(saldoEsperado, totalArqueo);
+      await this.sesionesRepo.registrarMovimiento({
+        sesionCajaId: sesionAuxiliarId,
+        tipo:         dif.tipoMovimiento,
+        monto:        dif.faltante,
+        descripcion:  `PENDIENTE APROBACIÓN: diferencia de cierre auxiliar. Esperado $${saldoEsperado}, arqueo $${totalArqueo}`,
+      });
+      diferenciaCierre = { tipo: 'faltante', monto: dif.faltante };
     }
 
-    return this.sesionesRepo.cerrarSesion(sesionAuxiliarId, {
+    const sesionCerrada = await this.sesionesRepo.cerrarSesion(sesionAuxiliarId, {
       usuarioCierreId: usuarioId,
       montoCierre:     totalArqueo,
       arqueo:          dto.denominaciones,
       observaciones:   dto.observaciones,
     });
+
+    return { sesion: sesionCerrada, diferenciaCierre };
   }
 
   // ── Cambio de custodia ──────────────────────────────────────────────────────
@@ -343,19 +362,19 @@ export class CajasService {
     validarSesionAbierta(dto.sesionDestinoId, sesionDestino.estado);
 
     const saldoOrigen = await this.sesionesRepo.calcularSaldo(sesionOrigenId);
-    validarSaldoSuficiente(saldoOrigen, dto.monto);
+    const custodia = calcularCambioCustodiaMidTurno(dto.monto, saldoOrigen);
 
     await Promise.all([
       this.sesionesRepo.registrarMovimiento({
         sesionCajaId: sesionOrigenId,
-        tipo:         'cambio_custodia_out',
-        monto:        dto.monto,
+        tipo:         custodia.movimientoPrincipal.tipoMovimiento,
+        monto:        custodia.movimientoPrincipal.monto,
         descripcion:  dto.motivo,
       }),
       this.sesionesRepo.registrarMovimiento({
         sesionCajaId: dto.sesionDestinoId,
-        tipo:         'cambio_custodia_in',
-        monto:        dto.monto,
+        tipo:         custodia.movimientoAuxiliar.tipoMovimiento,
+        monto:        custodia.movimientoAuxiliar.monto,
         descripcion:  dto.motivo,
       }),
     ]);
@@ -439,16 +458,16 @@ export class CajasService {
     const sesion = await this.sesionesRepo.findById(sesionId);
     if (!sesion) throw new SesionNoEncontradaError(sesionId);
     validarSesionAbierta(sesionId, sesion.estado);
-    validarMontoPositivo(dto.valor, 'pago administrativo');
 
     const saldo = await this.sesionesRepo.calcularSaldo(sesionId);
-    validarSaldoSuficiente(saldo, dto.valor);
+    const descripcion = `${dto.tipoPago}${dto.numeroCaso ? ` caso #${dto.numeroCaso}` : ''}${dto.observacion ? ` — ${dto.observacion}` : ''}`;
+    const pagoResult = buildPagoAdministrativo(dto.valor, descripcion, saldo);
 
     return this.sesionesRepo.registrarMovimiento({
       sesionCajaId: sesionId,
-      tipo:         'pago_administrativo',
-      monto:        dto.valor,
-      descripcion:  `${dto.tipoPago}${dto.numeroCaso ? ` caso #${dto.numeroCaso}` : ''}${dto.observacion ? ` — ${dto.observacion}` : ''}`,
+      tipo:         pagoResult.tipoMovimiento,
+      monto:        pagoResult.monto,
+      descripcion:  pagoResult.descripcion,
     });
   }
 
@@ -469,10 +488,10 @@ export class CajasService {
     }
 
     const saldoEsperado = await this.sesionesRepo.calcularSaldo(sesionPrincipalId);
-    // C4: calcular arqueo server-side a partir de denominaciones; fallback al valor declarado
-    const totalArqueoCalc = computarArqueo(dto.denominaciones) ?? Number(dto.totalArqueo);
-    const totalArqueo     = totalArqueoCalc.toFixed(2);
-    const diferencia      = totalArqueoCalc - Number(saldoEsperado);
+    const totalArqueo = dto.denominaciones?.length
+      ? calcularCierreTurno(saldoEsperado, dto.denominaciones).totalArqueo
+      : Number(dto.totalArqueo).toFixed(2);
+    const diferencia = Number(totalArqueo) - Number(saldoEsperado);
 
     await this.sesionesRepo.registrarMovimiento({
       sesionCajaId: sesionPrincipalId,
@@ -481,22 +500,38 @@ export class CajasService {
       descripcion:  'Cierre de turno principal',
     });
 
-    if (Math.abs(diferencia) >= 0.01) {
-      const tipoDif = diferencia > 0 ? 'diferencia_sobrante' : 'diferencia_faltante';
+    // C9: la diferencia se registra en libros para cuadre, pero queda pendiente de
+    // aprobación por tesorería. El supervisor debe usar registrarDiferencia() para
+    // formalizar el impacto (absorción de pérdida o depósito de sobrante).
+    let diferenciaCierre: { tipo: 'sobrante' | 'faltante'; monto: string } | null = null;
+    if (diferencia > 0.01) {
+      const dif = calcularDiferenciaSobrante(saldoEsperado, totalArqueo);
       await this.sesionesRepo.registrarMovimiento({
         sesionCajaId: sesionPrincipalId,
-        tipo:         tipoDif,
-        monto:        Math.abs(diferencia).toFixed(2),
-        descripcion:  `Diferencia automática en cierre principal. Esperado: $${saldoEsperado}`,
+        tipo:         dif.tipoMovimiento,
+        monto:        dif.sobrante,
+        descripcion:  `PENDIENTE APROBACIÓN: diferencia de cierre principal. Esperado $${saldoEsperado}, arqueo $${totalArqueo}`,
       });
+      diferenciaCierre = { tipo: 'sobrante', monto: dif.sobrante };
+    } else if (diferencia < -0.01) {
+      const dif = calcularDiferenciaFaltante(saldoEsperado, totalArqueo);
+      await this.sesionesRepo.registrarMovimiento({
+        sesionCajaId: sesionPrincipalId,
+        tipo:         dif.tipoMovimiento,
+        monto:        dif.faltante,
+        descripcion:  `PENDIENTE APROBACIÓN: diferencia de cierre principal. Esperado $${saldoEsperado}, arqueo $${totalArqueo}`,
+      });
+      diferenciaCierre = { tipo: 'faltante', monto: dif.faltante };
     }
 
-    return this.sesionesRepo.cerrarSesion(sesionPrincipalId, {
+    const sesionCerrada = await this.sesionesRepo.cerrarSesion(sesionPrincipalId, {
       usuarioCierreId: usuarioId,
       montoCierre:     totalArqueo,
       arqueo:          dto.denominaciones,
       observaciones:   dto.observaciones,
     });
+
+    return { sesion: sesionCerrada, diferenciaCierre };
   }
 
   // ── Sesión activa por cajaId (para integración con ventas) ──────────────────
@@ -582,5 +617,25 @@ export class CajasService {
     if (!sesion) throw new SesionNoEncontradaError(sesionId);
     validarSesionAbierta(sesionId, sesion.estado);
     return this.sesionesRepo.updateCajeroAsignado(sesionId, cajeroId);
+  }
+
+  // ── Capacidad del punto ──────────────────────────────────────────────────────
+
+  async getCapacidadPunto(cajaPadreId: number) {
+    const padre = await this.cajasRepo.findPadreById(cajaPadreId);
+    if (!padre) throw new CajaPadreNoEncontradaError(cajaPadreId);
+
+    const todasCajas = await this.cajasRepo.findBySucursal(padre.sucursalId);
+    const auxiliares = todasCajas.filter(c => c.cajaPadreId === cajaPadreId && c.tipo !== 'general');
+
+    const sesionesAbiertas = await this.sesionesRepo.findAbiertasByPunto(padre.sucursalId);
+    const auxiliaresAbiertas = sesionesAbiertas.filter(
+      s => auxiliares.some(c => c.id === s.cajaId),
+    ).length;
+
+    const baseDias = auxiliares.map(c => Number(c.baseDia)).filter(b => b > 0);
+    const baseMinimaAuxiliar = baseDias.length > 0 ? String(Math.min(...baseDias)) : padre.baseGeneral;
+
+    return calcularCapacidadPunto(padre.baseGeneral, baseMinimaAuxiliar, auxiliaresAbiertas);
   }
 }

@@ -26,7 +26,19 @@ import {
   validarVentaEnSesion,
   calcularSubtotalDetalle,
   calcularTotalesCarrito,
+  validarEfectivoSuficiente,
 } from '../domain/business-rules.js';
+import { calcularPesoVolumetrico } from '../domain/calculos/peso-volumetrico.js';
+import { calcularPesoFacturado } from '../domain/calculos/peso-facturado.js';
+import { validarPesoMaximo } from '../domain/calculos/validar-peso-maximo.js';
+import { calcularKgAdicional } from '../domain/calculos/kg-adicional.js';
+import { calcularValorServicioTotal } from '../domain/calculos/valor-servicio-total.js';
+import { calcularSeguroPostal } from '../domain/calculos/seguro-postal.js';
+import { calcularFechaVencimiento } from '../domain/calculos/fecha-vencimiento.js';
+import { calcularPrecioPorMeses } from '../domain/calculos/precio-por-meses.js';
+import { calcularIvaApartado } from '../domain/calculos/iva-apartado.js';
+import { generarNumeroGuiaSecuencia } from '../domain/calculos/numero-guia-secuencia.js';
+import { calcularValorEstampillasRequeridas } from '../domain/calculos/valor-estampillas-requeridas.js';
 import type { IniciarVentaDto }       from '../dto/iniciar-venta.dto.js';
 import type { AgregarProductoDto }    from '../dto/agregar-producto.dto.js';
 import type { ConfirmarVentaDto }     from '../dto/confirmar-venta.dto.js';
@@ -180,10 +192,14 @@ export class VentasService {
       }
     }
 
+    if (dto.medioPago === 'efectivo') {
+      validarEfectivoSuficiente(dto.efectivoRecibido!, venta.total);
+    }
+
     const ventaActualizada = await this.repo.confirmarVenta(ventaId, {
       medioPago:        dto.medioPago,
       efectivoRecibido: dto.efectivoRecibido,
-      emailFactura:     dto.emailFactura,
+      emailFactura:     dto.emailFactura ?? undefined,
     });
 
     // Descontar inventario para cada servicio especial (validación atómica dentro de la transacción)
@@ -308,7 +324,7 @@ export class VentasService {
     return this.repo.findServiciosBySucursal(sucursalId);
   }
 
-  private static readonly PRECIO_APARTADO_POSTAL = 87_500;
+  private static readonly TARIFA_ANUAL_APARTADO_POSTAL = 87_500 * 12;
 
   async contratarApartado(cajaId: number, clienteId: number, dto: ContratarApartadoDto) {
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
@@ -322,8 +338,10 @@ export class VentasService {
     if (apartado.estado !== 'disponible') throw new ApartadoNoDisponibleError(dto.numeroApartado);
 
     const fechaInicio = new Date(dto.fechaInicio);
-    const fechaFin    = new Date(fechaInicio);
-    fechaFin.setMonth(fechaFin.getMonth() + dto.meses);
+    const fechaFin    = new Date(calcularFechaVencimiento(dto.fechaInicio, dto.meses));
+
+    const precioBase = calcularPrecioPorMeses(String(VentasService.TARIFA_ANUAL_APARTADO_POSTAL), dto.meses);
+    const ivaResult  = calcularIvaApartado(precioBase, '19', true);
 
     const apartadoContratado = await this.repo.contratarApartado({
       sucursalId:   apartado.sucursalId,
@@ -333,14 +351,14 @@ export class VentasService {
       sesionCajaId: sesion.id,
       fechaInicio,
       fechaFin,
-      monto:        VentasService.PRECIO_APARTADO_POSTAL,
-      incluyeIva:   false,
+      monto:        Number(ivaResult.precioTotal),
+      incluyeIva:   true,
     });
 
     const { movimiento, saldoActual, alertas } = await this.cajasService.registrarMovimientoVenta({
       sesionCajaId:   sesion.id,
       tipo:           'apartado_postal',
-      monto:          String(VentasService.PRECIO_APARTADO_POSTAL),
+      monto:          ivaResult.precioTotal,
       referenciaId:   apartadoContratado.id,
       referenciaTipo: 'ApartadoPostal',
     });
@@ -383,27 +401,20 @@ export class VentasService {
     if (!servicio) throw new ServicioNoEncontradoError(servicioId);
 
     const pesoVolumetrico = altoCm && anchoCm && largoCm
-      ? (altoCm * anchoCm * largoCm) / servicio.factorVolumetrico
+      ? calcularPesoVolumetrico(altoCm, anchoCm, largoCm, servicio.factorVolumetrico ?? undefined)
       : null;
 
-    const pesoTarificado = pesoVolumetrico
-      ? Math.max(pesoFisicoKg, pesoVolumetrico)
-      : pesoFisicoKg;
+    const pesoTarificado = calcularPesoFacturado(pesoFisicoKg, pesoVolumetrico ?? undefined);
 
     const tarifa = await this.repo.findTarifaEnvio(servicioId, pesoTarificado, paisDestino);
     if (!tarifa) throw new TarifaNoEncontradaError(servicioId, pesoTarificado);
 
-    // Bug #15: validar peso máximo del servicio
-    if (servicio.pesoMaximoKg !== null && pesoTarificado > servicio.pesoMaximoKg) {
-      throw new Error(`Peso ${pesoTarificado} kg supera el límite del servicio (${servicio.pesoMaximoKg} kg)`);
-    }
+    validarPesoMaximo(pesoTarificado, servicio.pesoMaximoKg ?? undefined);
 
-    let valorServicio = tarifa.tarifa;
-    // Bug #3: el kg adicional se calcula desde el techo del tramo (pesoMaxKg), no el piso (pesoMinKg)
-    if (tarifa.tarifaKgAdicional && tarifa.pesoMaxKg !== null && pesoTarificado > tarifa.pesoMaxKg) {
-      const kgExtra = pesoTarificado - tarifa.pesoMaxKg;
-      valorServicio += kgExtra * tarifa.tarifaKgAdicional;
-    }
+    const valorKgAdicional = tarifa.tarifaKgAdicional != null && tarifa.pesoMaxKg != null
+      ? calcularKgAdicional(pesoTarificado, tarifa.pesoMaxKg, String(tarifa.tarifaKgAdicional))
+      : '0';
+    const valorServicio = Number(calcularValorServicioTotal(String(tarifa.tarifa), valorKgAdicional));
 
     return {
       servicio,
@@ -411,7 +422,7 @@ export class VentasService {
       pesoVolumetricoKg: pesoVolumetrico,
       pesoTarificadoKg:  pesoTarificado,
       tarifa,
-      valorServicio:     Math.round(valorServicio),
+      valorServicio,
     };
   }
 
@@ -428,9 +439,14 @@ export class VentasService {
       dto.destinatario.pais,
     );
 
-    const valorSeguro  = dto.seguroAdicional && dto.valorDeclarado
-      ? Math.round(dto.valorDeclarado * 0.005)
+    const valorSeguro = dto.seguroAdicional && dto.valorDeclarado
+      ? Number(calcularSeguroPostal(String(dto.valorDeclarado), '0.5'))
       : 0;
+    const estampillasResult = calcularValorEstampillasRequeridas(
+      cotizacion.servicio.requiereEstampilla ?? false,
+      String(cotizacion.valorServicio),
+      [],
+    );
     const valorTotal   = cotizacion.valorServicio + valorSeguro;
     const numeroGuia   = this._generarNumeroGuia();
 
@@ -469,7 +485,7 @@ export class VentasService {
       pesoTarificadoKg:     cotizacion.pesoTarificadoKg,
       valorDeclarado:       dto.valorDeclarado,
       valorServicio:        cotizacion.valorServicio,
-      valorEstampillas:     0,
+      valorEstampillas:     Number(estampillasResult.valorEstampillas),
       valorSeguro,
       valorTotal,
       medioPago:            dto.medioPago as any,
@@ -519,9 +535,8 @@ export class VentasService {
   }
 
   private _generarNumeroGuia(): string {
-    const ts   = Date.now().toString(36).toUpperCase();
-    const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
-    return `GU${ts}${rand}`;
+    const consecutivo = Number(String(Date.now()).slice(-8));
+    return generarNumeroGuiaSecuencia('GU', consecutivo);
   }
 
   private _resolverTipoMovimiento(detalle: Array<{ tipoProducto?: string | null }>) {

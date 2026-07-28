@@ -6,12 +6,14 @@ import {
   validarVentaEnSesion,
   calcularSubtotalDetalle,
   calcularTotalesCarrito,
+  validarEfectivoSuficiente,
 } from './business-rules.js';
 import {
   SesionCajaInactivaError,
   CarritoVacioError,
   VentaYaAnuladaError,
   VentaDeOtroTurnoError,
+  EfectivoInsuficienteError,
 } from './venta.errors.js';
 
 describe('Ventas business rules', () => {
@@ -64,6 +66,18 @@ describe('Ventas business rules', () => {
     });
   });
 
+  describe('BR-VEN-007 validarEfectivoSuficiente', () => {
+    it('lanza EfectivoInsuficienteError si el efectivo no cubre el total', () => {
+      expect(() => validarEfectivoSuficiente(9000, 10000)).toThrow(EfectivoInsuficienteError);
+    });
+    it('no lanza si el efectivo es igual al total (pago exacto)', () => {
+      expect(() => validarEfectivoSuficiente(10000, 10000)).not.toThrow();
+    });
+    it('no lanza si el efectivo supera el total (hay cambio)', () => {
+      expect(() => validarEfectivoSuficiente(20000, 10000)).not.toThrow();
+    });
+  });
+
   describe('BR-VEN-006 calcularTotalesCarrito', () => {
     it('suma correctamente subtotal, descuento, iva y total', () => {
       const items = [
@@ -71,11 +85,14 @@ describe('Ventas business rules', () => {
         { precioUnitario:  5000, cantidad: 1, descuento: 500,  porcentajeTax: 19 },
       ];
       const t = calcularTotalesCarrito(items);
-      expect(t.subtotal).toBe(25000);
+      // Precios son IVA-incluido. IVA se extrae: bruto * t / (100 + t)
+      // item2: iva = 5000 * 19 / 119 = 798.32 → 798
+      // subtotal = (20000 - 0) + (5000 - 798.32) = 24202
+      // total = subtotal + iva - descuento = 24202 + 798 - 500 = 24500
+      expect(t.subtotal).toBe(24202);
       expect(t.descuento).toBe(500);
-      // iva = (5000 - 500) * 0.19 = 855
-      expect(t.iva).toBe(855);
-      expect(t.total).toBe(25000 - 500 + 855);
+      expect(t.iva).toBe(798);
+      expect(t.total).toBe(24500);
     });
     it('carrito vacío retorna todos en 0', () => {
       const t = calcularTotalesCarrito([]);

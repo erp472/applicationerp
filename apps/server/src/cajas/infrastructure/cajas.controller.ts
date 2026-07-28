@@ -311,9 +311,8 @@ export class CajasController {
   ) {
     const parsed = CierreCajaSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
-    return CajasPresenter.toSesion(
-      await this.service.cerrarTurnoPrincipal(sesionId, parsed.data, user.id),
-    );
+    const result = await this.service.cerrarTurnoPrincipal(sesionId, parsed.data, user.id);
+    return { ...CajasPresenter.toSesion(result.sesion), diferenciaCierre: result.diferenciaCierre };
   }
 
   @Post('principales/:sesionId/auxiliar/abrir')
@@ -442,9 +441,8 @@ export class CajasController {
     await this.assertSesionAccess(user, sesionId);
     const parsed = CierreCajaSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
-    return CajasPresenter.toSesion(
-      await this.service.cerrarAuxiliar(sesionId, parsed.data, user.id),
-    );
+    const result = await this.service.cerrarAuxiliar(sesionId, parsed.data, user.id);
+    return { ...CajasPresenter.toSesion(result.sesion), diferenciaCierre: result.diferenciaCierre };
   }
 
   @Post('punto/:sesionId/cambio-custodia')
@@ -477,6 +475,20 @@ export class CajasController {
     return CajasPresenter.toMovimiento(
       await this.service.registrarDiferencia(sesionId, parsed.data),
     );
+  }
+
+  @Get('principales/:cajaPadreId/capacidad')
+  @Roles(...ROLES_SUPERVISOR)
+  @ApiOperation({ summary: 'Capacidad del punto: cuántas auxiliares más pueden abrir según la base disponible' })
+  @ApiParam({ name: 'cajaPadreId', type: Number })
+  @ApiResponse({ status: 200, description: 'Capacidad calculada' })
+  async getCapacidadPunto(
+    @Param('cajaPadreId', ParseIntPipe) cajaPadreId: number,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const cajaPadre = await this.service.getCajaPadre(cajaPadreId);
+    await this.assertSucursalAccess(user, cajaPadre.sucursalId);
+    return this.service.getCapacidadPunto(cajaPadreId);
   }
 
   // ── Helpers de autorización ───────────────────────────────────────────────

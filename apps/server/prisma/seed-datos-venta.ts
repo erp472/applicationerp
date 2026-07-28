@@ -204,7 +204,40 @@ async function main() {
   }
   console.log(`✓ Clientes: ${clientesCreados} creados (${clientesData.length - clientesCreados} ya existían)`)
 
-  // ── 5. Estado final ───────────────────────────────────────────────────────
+  // ── 5. Apartados postales ─────────────────────────────────────────────────
+  const apartadosData = [
+    { numero: '100001', tamano: 'pequeno'  as const },
+    { numero: '100002', tamano: 'pequeno'  as const },
+    { numero: '100003', tamano: 'mediano'  as const },
+    { numero: '100004', tamano: 'grande'   as const },
+  ]
+
+  let apartadosCreados = 0
+  for (const a of apartadosData) {
+    const existe = await prisma.apartadoPostal.findUnique({
+      where: {
+        sucursales_idsucursales_numeroapartados_postales: {
+          sucursales_idsucursales:  SUCURSAL_ID,
+          numeroapartados_postales: a.numero,
+        },
+      },
+    })
+    if (!existe) {
+      await prisma.apartadoPostal.create({
+        data: {
+          sucursales_idsucursales:                   SUCURSAL_ID,
+          numeroapartados_postales:                  a.numero,
+          tamanoapartados_postales:                  a.tamano,
+          estadoapartados_postales:                  'disponible',
+          dias_alerta_vencimientoapartados_postales: 30,
+        },
+      })
+      apartadosCreados++
+    }
+  }
+  console.log(`✓ Apartados postales: ${apartadosCreados} creados (${apartadosData.length - apartadosCreados} ya existían)`)
+
+  // ── 6. Estado final ───────────────────────────────────────────────────────
 
   const prodsFinales = await prisma.producto.findMany({
     where: {
