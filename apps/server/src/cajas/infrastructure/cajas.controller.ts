@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { z } from 'zod';
 import {
-  ApiTags, ApiBearerAuth, ApiOperation, ApiResponse, ApiParam,
+  ApiTags, ApiBearerAuth, ApiOperation, ApiResponse, ApiParam, ApiQuery,
 } from '@nestjs/swagger';
 import { CajasService } from '../application/cajas.service.js';
 import { CreateCajaSchema } from '../dto/create-caja.dto.js';
@@ -20,6 +20,8 @@ import { ConsignacionSchema, AprobarConsignacionSchema } from '../dto/consignaci
 import { DiferenciaCajaSchema } from '../dto/diferencia-caja.dto.js';
 import { CambioCustodiaSchema } from '../dto/cambio-custodia.dto.js';
 import { PagoAdministrativoSchema } from '../dto/pago-administrativo.dto.js';
+import { ConfirmarCustodiaSchema } from '../dto/confirmar-custodia.dto.js';
+import { ResolverDiferenciaSchema } from '../dto/resolver-diferencia.dto.js';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
 import { FeatureFlagGuard } from '../../common/guards/feature-flag.guard.js';
 import { RolesGuard } from '../../common/guards/roles.guard.js';
@@ -31,7 +33,7 @@ import { CajasDomainFilter } from './cajas-domain.filter.js';
 
 const ROLES_ADMIN      = ['ADMIN_SISTEMA', 'ADMIN_NACIONAL'];                              // CRUD estructural de cajas (sin apertura de dinero)
 const ROLES_GESTOR     = ['SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL'];       // listar y actualizar cajas
-const ROLES_SUPERVISOR = ['SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA'];                         // apertura/cierre de turnos y asignación de dinero
+const ROLES_SUPERVISOR = ['SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA'];                         // apertura/cierre de sesiones y asignación de dinero
 const ROLES_CAJERO     = ['CAJERO', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA'];
 const ROLES_TESORERIA  = ['TESORERIA', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA'];
 const ROLES_READ       = ['CAJERO', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL', 'TESORERIA'];
@@ -121,6 +123,14 @@ export class CajasController {
   async getPanelAdmin(@CurrentUser() user: AuthUser) {
     const regionalId = user.rol === 'SUPERVISOR_REGIONAL' ? (user.regional_id ?? undefined) : undefined;
     return this.service.getPanelAdmin(regionalId);
+  }
+
+  @Get('consolidado-comercio')
+  @Roles(...ROLES_TESORERIA)
+  @ApiOperation({ summary: 'Consolidado financiero nacional por medio de pago agrupado por regional' })
+  @ApiQuery({ name: 'comercioId', type: Number, required: false, description: 'ID del comercio (default: 1)' })
+  async getConsolidadoComercio(@Query('comercioId') comercioId?: string) {
+    return this.service.getConsolidadoComercio(Number(comercioId ?? 1));
   }
 
   @Patch('panel-admin/:sucursalId/servicios/:servicioId')
@@ -217,7 +227,7 @@ export class CajasController {
 
   @Get('auxiliares/:cajaId/sesion-activa')
   @Roles(...ROLES_READ)
-  @ApiOperation({ summary: 'Sesión activa de una caja auxiliar (null si no tiene turno abierto)' })
+  @ApiOperation({ summary: 'Sesión activa de una caja auxiliar (null si no tiene sesión abierta)' })
   @ApiParam({ name: 'cajaId', type: Number })
   async getSesionActiva(@Param('cajaId', ParseIntPipe) cajaId: number) {
     const sesion = await this.service.getSesionActivaByCaja(cajaId);
@@ -280,13 +290,13 @@ export class CajasController {
     return CajasPresenter.toStatus(status);
   }
 
-  @Post('principales/:cajaPadreId/turno/abrir')
+  @Post('principales/:cajaPadreId/sesion/abrir')
   @Roles(...ROLES_SUPERVISOR)
-  @ApiOperation({ summary: 'Iniciar turno principal (abre sesión en la Caja Fuerte)' })
+  @ApiOperation({ summary: 'Abrir sesión principal (Caja Fuerte)' })
   @ApiParam({ name: 'cajaPadreId', type: Number })
-  @ApiResponse({ status: 201, description: 'Turno principal iniciado' })
-  @ApiResponse({ status: 409, description: 'Ya existe un turno activo' })
-  async abrirTurnoPrincipal(
+  @ApiResponse({ status: 201, description: 'Sesión principal abierta' })
+  @ApiResponse({ status: 409, description: 'Ya existe una sesión activa' })
+  async abrirSesionPrincipal(
     @Param('cajaPadreId', ParseIntPipe) cajaPadreId: number,
     @Body() body: unknown,
     @CurrentUser() user: { id: number },
@@ -294,24 +304,24 @@ export class CajasController {
     const parsed = AperturaPrincipalSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
     return CajasPresenter.toSesion(
-      await this.service.abrirTurnoPrincipal(cajaPadreId, parsed.data, user.id),
+      await this.service.abrirSesionPrincipal(cajaPadreId, parsed.data, user.id),
     );
   }
 
-  @Post('principales/:sesionId/turno/cerrar')
+  @Post('principales/:sesionId/sesion/cerrar')
   @Roles(...ROLES_SUPERVISOR)
-  @ApiOperation({ summary: 'Cerrar turno principal con arqueo — requiere todas las auxiliares cerradas' })
+  @ApiOperation({ summary: 'Cerrar sesión principal con arqueo — requiere todas las cajas auxiliares cerradas' })
   @ApiParam({ name: 'sesionId', type: Number, description: 'Sesión de la caja principal' })
-  @ApiResponse({ status: 200, description: 'Turno cerrado. Diferencia registrada automáticamente si no cuadra.' })
-  @ApiResponse({ status: 409, description: 'Hay auxiliares con sesión abierta o la sesión ya está cerrada' })
-  async cerrarTurnoPrincipal(
+  @ApiResponse({ status: 200, description: 'Sesión cerrada. Diferencia registrada automáticamente si no cuadra.' })
+  @ApiResponse({ status: 409, description: 'Hay cajas auxiliares con sesión abierta o la sesión ya está cerrada' })
+  async cerrarSesionPrincipal(
     @Param('sesionId', ParseIntPipe) sesionId: number,
     @Body() body: unknown,
     @CurrentUser() user: { id: number },
   ) {
     const parsed = CierreCajaSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
-    const result = await this.service.cerrarTurnoPrincipal(sesionId, parsed.data, user.id);
+    const result = await this.service.cerrarSesionPrincipal(sesionId, parsed.data, user.id);
     return { ...CajasPresenter.toSesion(result.sesion), diferenciaCierre: result.diferenciaCierre };
   }
 
@@ -351,9 +361,24 @@ export class CajasController {
     );
   }
 
+  @Post('principales/:sesionId/moneda-circulante')
+  @Roles(...ROLES_SUPERVISOR)
+  @ApiOperation({ summary: 'Registrar ajuste de moneda circulante (redondeos CIPOS)' })
+  @ApiParam({ name: 'sesionId', type: Number })
+  @ApiResponse({ status: 201, description: 'Ajuste registrado o null si monto = 0' })
+  async registrarMonedaCirculante(
+    @Param('sesionId', ParseIntPipe) sesionId: number,
+    @Body() body: unknown,
+  ) {
+    const parsed = z.object({ acumuladoCentavos: z.string() }).safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    const mov = await this.service.registrarAjusteMonedaCirculante(sesionId, parsed.data.acumuladoCentavos);
+    return mov ? CajasPresenter.toMovimiento(mov) : { ajuste: null, mensaje: 'Sin ajuste (monto 0)' };
+  }
+
   @Post('principales/:sesionId/diferencia')
-  @Roles(...ROLES_CAJERO)
-  @ApiOperation({ summary: 'Registrar diferencia (sobrante o faltante) en caja principal' })
+  @Roles(...ROLES_SUPERVISOR)
+  @ApiOperation({ summary: 'Registrar diferencia (sobrante o faltante) en caja principal — RF-1.03 SoD: solo supervisor' })
   @ApiParam({ name: 'sesionId', type: Number })
   async registrarDiferenciaPrincipal(
     @Param('sesionId', ParseIntPipe) sesionId: number,
@@ -461,8 +486,8 @@ export class CajasController {
   }
 
   @Post('punto/:sesionId/diferencia')
-  @Roles(...ROLES_CAJERO)
-  @ApiOperation({ summary: 'Registrar diferencia en caja auxiliar' })
+  @Roles(...ROLES_SUPERVISOR)
+  @ApiOperation({ summary: 'Registrar diferencia en caja auxiliar — RF-1.03 SoD: solo supervisor' })
   @ApiParam({ name: 'sesionId', type: Number })
   async registrarDiferenciaAuxiliar(
     @Param('sesionId', ParseIntPipe) sesionId: number,
@@ -477,6 +502,41 @@ export class CajasController {
     );
   }
 
+  @Post('punto/:sesionId/traslado-boveda')
+  @Roles(...ROLES_CAJERO)
+  @ApiOperation({ summary: 'Traslado de efectivo a bóveda física durante la sesión (RF-2.02 tope máximo)' })
+  @ApiParam({ name: 'sesionId', type: Number, description: 'Sesión activa del cajero' })
+  @ApiResponse({ status: 201, description: 'Movimiento registrado. Incluye saldo antes/después y alertas activas.' })
+  @ApiResponse({ status: 400, description: 'Monto supera saldo disponible o dejaría saldo bajo el mínimo operativo' })
+  async registrarTrasladoBoveda(
+    @Param('sesionId', ParseIntPipe) sesionId: number,
+    @Body() body: unknown,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.assertSesionAccess(user, sesionId);
+    const parsed = z.object({
+      monto: z.string().regex(/^\d+(\.\d{1,2})?$/, 'Monto debe ser numérico positivo'),
+    }).safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    const result = await this.service.registrarTrasladoBoveda(sesionId, parsed.data.monto, user.id);
+    return { ...CajasPresenter.toMovimiento(result.movimiento), saldoAntes: result.saldoAntes, saldoDespues: result.saldoDespues, alertas: result.alertas };
+  }
+
+  @Post('principales/:cajaPadreId/reset-automatico')
+  @Roles(...ROLES_SUPERVISOR)
+  @ApiOperation({ summary: 'Reset automático del punto — cierra forzadamente todas las sesiones auxiliares abiertas' })
+  @ApiParam({ name: 'cajaPadreId', type: Number })
+  @ApiResponse({ status: 200, description: 'Sesiones cerradas. Estado forzada en cada una para auditoría (RNF-5.01).' })
+  @ApiResponse({ status: 404, description: 'CajaPadre no encontrada' })
+  async resetAutomaticoPunto(
+    @Param('cajaPadreId', ParseIntPipe) cajaPadreId: number,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const cajaPadre = await this.service.getCajaPadre(cajaPadreId);
+    await this.assertSucursalAccess(user, cajaPadre.sucursalId);
+    return this.service.resetAutomaticoPunto(cajaPadreId, user.id);
+  }
+
   @Get('principales/:cajaPadreId/capacidad')
   @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Capacidad del punto: cuántas auxiliares más pueden abrir según la base disponible' })
@@ -489,6 +549,60 @@ export class CajasController {
     const cajaPadre = await this.service.getCajaPadre(cajaPadreId);
     await this.assertSucursalAccess(user, cajaPadre.sucursalId);
     return this.service.getCapacidadPunto(cajaPadreId);
+  }
+
+  // ── RF-4.01 Fase 2: confirmar recepción de remesa ────────────────────────────
+
+  @Post('reposiciones/:codigo/confirmar')
+  @Roles(...ROLES_CAJERO)
+  @ApiOperation({ summary: 'RF-4.01 Fase 2: confirmar recepción física de la remesa e ingresar al saldo destino' })
+  @ApiParam({ name: 'codigo', type: String, description: 'Código de remesa generado en la fase 1 (cambioCustodia)' })
+  @ApiResponse({ status: 200, description: 'Confirmado — dinero acreditado en sesión destino' })
+  @ApiResponse({ status: 409, description: 'Reposición ya procesada' })
+  @ApiResponse({ status: 422, description: 'Discrepancia: monto recibido ≠ monto emitido — se abre incidente' })
+  async confirmarCustodia(
+    @Param('codigo') codigo: string,
+    @Body() body: unknown,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const parsed = ConfirmarCustodiaSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    return this.service.confirmarCustodia(codigo, parsed.data.montoRecibido, user.id);
+  }
+
+  // ── RF-3.03: resolver diferencias pendientes ──────────────────────────────
+
+  @Get('diferencias/:id')
+  @Roles(...ROLES_SUPERVISOR)
+  @ApiOperation({ summary: 'Obtener diferencia de caja por ID' })
+  @ApiParam({ name: 'id', type: Number })
+  async getDiferencia(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const diferencia = await this.service.getDiferencia(id);
+    await this.assertSesionAccess(user, diferencia.sesionCajaId);
+    return diferencia;
+  }
+
+  @Patch('diferencias/:id/resolver')
+  @Roles(...ROLES_SUPERVISOR)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'RF-3.03 + RF-1.03: supervisor aprueba o rechaza una diferencia pendiente (SoD: aprobador ≠ custodio)' })
+  @ApiParam({ name: 'id', type: Number })
+  @ApiResponse({ status: 200, description: 'Diferencia resuelta. Si aprobada, el movimiento contable queda registrado.' })
+  @ApiResponse({ status: 403, description: 'RF-1.03 SoD: el aprobador es el mismo custodio responsable' })
+  @ApiResponse({ status: 409, description: 'Diferencia ya fue procesada anteriormente' })
+  async resolverDiferencia(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: unknown,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const diferencia = await this.service.getDiferencia(id);
+    await this.assertSesionAccess(user, diferencia.sesionCajaId);
+    const parsed = ResolverDiferenciaSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    return this.service.resolverDiferencia(id, user.id, parsed.data.estado, parsed.data.observaciones);
   }
 
   // ── Helpers de autorización ───────────────────────────────────────────────
@@ -519,6 +633,13 @@ export class CajasController {
 
   private async assertSesionAccess(user: AuthUser, sesionId: number): Promise<void> {
     if (user.rol === 'ADMIN_SISTEMA' || user.rol === 'ADMIN_NACIONAL') return;
+
+    // RF-1.01: SUPERVISOR_REGIONAL solo puede operar sesiones dentro de su regional/sucursal
+    if (user.rol === 'SUPERVISOR_REGIONAL') {
+      const sucursalId = await this.service.getSucursalIdDeSesion(sesionId);
+      if (sucursalId != null) await this.assertSucursalAccess(user, sucursalId);
+      return;
+    }
 
     if (user.rol === 'CAJERO') {
       const esPropietario = await this.service.esPropietarioDeSesion(sesionId, user.id);

@@ -4,7 +4,7 @@ export type TipoCaja = (typeof TIPOS_VALIDOS)[number];
 export interface CajaInfo {
   cajaId: number;
   tipo: string;
-  activaEnTurno: boolean;
+  activaEnSesion: boolean;
 }
 
 export interface GrupoCajas {
@@ -23,7 +23,7 @@ export function calcularCajasHabilitadas(
     const tipo = c.tipo as TipoCaja;
     if (!TIPOS_VALIDOS.includes(tipo)) continue;
     resultado[tipo].cajas.push(c);
-    if (c.activaEnTurno) resultado[tipo].activas++;
+    if (c.activaEnSesion) resultado[tipo].activas++;
   }
   return resultado;
 }

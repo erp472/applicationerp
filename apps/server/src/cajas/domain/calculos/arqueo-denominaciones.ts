@@ -3,6 +3,11 @@ export interface Denominacion {
   cantidad: number;
 }
 
+// RF-3.01: desglose tipado por billete/moneda (exigido por auditoría)
+export interface DenominacionTipada extends Denominacion {
+  tipo: 'billete' | 'moneda';
+}
+
 export interface DesgloseDenominacion {
   denominacion: number;
   cantidad: number;
@@ -12,6 +17,12 @@ export interface DesgloseDenominacion {
 export interface ArqueoResult {
   total: string;
   desglose: DesgloseDenominacion[];
+}
+
+// RF-3.01: resultado con totales separados de billetes y monedas
+export interface ArqueoDesglosadoResult extends ArqueoResult {
+  totalBilletes: string;
+  totalMonedas: string;
 }
 
 export interface ArqueoComparacionResult extends ArqueoResult {
@@ -29,6 +40,25 @@ export function calcularArqueo(denominaciones: Denominacion[]): ArqueoResult {
     return { denominacion: d.denominacion, cantidad: d.cantidad, subtotal: subtotal.toFixed(2) };
   });
   return { total: total.toFixed(2), desglose };
+}
+
+// RF-3.01: calcula con desglose obligatorio por tipo (billetes y monedas separados)
+export function calcularArqueoDesglosado(denominaciones: DenominacionTipada[]): ArqueoDesglosadoResult {
+  let totalBilletes = 0;
+  let totalMonedas = 0;
+  const desglose: DesgloseDenominacion[] = denominaciones.map(d => {
+    const subtotal = d.denominacion * d.cantidad;
+    if (d.tipo === 'billete') totalBilletes += subtotal;
+    else totalMonedas += subtotal;
+    return { denominacion: d.denominacion, cantidad: d.cantidad, subtotal: subtotal.toFixed(2) };
+  });
+  const total = totalBilletes + totalMonedas;
+  return {
+    total: total.toFixed(2),
+    totalBilletes: totalBilletes.toFixed(2),
+    totalMonedas: totalMonedas.toFixed(2),
+    desglose,
+  };
 }
 
 // Compara el total físico contra el saldo esperado del sistema

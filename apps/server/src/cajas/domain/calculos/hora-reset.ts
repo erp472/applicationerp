@@ -3,7 +3,7 @@ export interface HoraResetResult {
   horaReset: string;
 }
 
-// Determina si el turno debe cerrarse y reabrirse por reset diario.
+// Determina si la sesión debe cerrarse y reabrirse por reset diario.
 // horaActual y horaReset en formato "HH:MM" — comparación lexicográfica.
 export function evaluarHoraReset(horaActual: string, horaReset: string): HoraResetResult {
   return {

@@ -1,0 +1,50 @@
+# Filebeat — recolector de logs de contenedores Docker
+# Autodiscover: detecta automáticamente nuevos contenedores
+
+filebeat.autodiscover:
+  providers:
+    - type: docker
+      # Recolectar todos los contenedores; filtrar en Logstash
+      hints.enabled: true
+      hints.default_config:
+        type: container
+        paths:
+          - /var/lib/docker/containers/${data.docker.container.id}/*.log
+
+processors:
+  - add_docker_metadata:
+      host: "unix:///var/run/docker.sock"
+  - add_host_metadata: ~
+  - decode_json_fields:
+      fields: ["message"]
+      target: ""
+      overwrite_keys: false
+      expand_keys: true
+      process_array: false
+      max_depth: 2
+
+# Enviar a Logstash (no directo a ES — Logstash hace el enriquecimiento)
+output.logstash:
+  hosts: ["logstash:5044"]
+  bulk_max_size: 1024
+
+# Cola interna para no perder eventos si Logstash se cae
+queue.mem:
+  events: 4096
+  flush.min_events: 512
+  flush.timeout: 5s
+
+logging.level: warning
+logging.to_files: false
+
+# Evitar recolectar los logs del propio ELK (ruido)
+filebeat.inputs:
+  - type: container
+    paths:
+      - /var/lib/docker/containers/*/*.log
+    exclude_lines:
+      - '"container.name":"elk_'
+      - '"container.name":"elk_logstash'
+      - '"container.name":"elk_elasticsearch'
+      - '"container.name":"elk_kibana'
+      - '"container.name":"elk_filebeat'

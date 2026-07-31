@@ -1,31 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import type { ISesionesCajaRepository, CrearSesionData, CerrarSesionData, RegistrarMovimientoData, CrearReposicionData, CrearConsignacionData, AprobarConsignacionData } from '../domain/sesion-caja.repository.js';
+import type { ISesionesCajaRepository, CrearSesionData, CerrarSesionData, RegistrarMovimientoData, CrearReposicionData, CrearConsignacionData, AprobarConsignacionData, CrearDiferenciaData, AprobarDiferenciaData } from '../domain/sesion-caja.repository.js';
 import type {
   SesionCajaEntity,
   MovimientoCajaEntity,
   ConsignacionEntity,
   ReposicionCajaEntity,
+  DiferenciaCajaEntity,
   CardAuxiliar,
   StatusPunto,
   TipoAlerta,
 } from '../domain/caja.entity.js';
-import { evaluarAlertas } from '../domain/business-rules.js';
-
-const TIPOS_ENTRADA = new Set([
-  'cambio_custodia_in', 'reposicion',
-  'venta_producto', 'venta_servicio', 'venta_estampilla',
-  'giro_emision_cobro', 'recaudo', 'diferencia_sobrante',
-  'moneda_circulante', 'apartado_postal',
-]);
-
-// traslado_caja_fuerte: el cajero entrega físicamente a bóveda — reduce saldo del cajón
-const TIPOS_SALIDA = new Set([
-  'cambio_custodia_out', 'giro_pago', 'consignacion',
-  'diferencia_faltante', 'pago_administrativo', 'anulacion',
-  'traslado_caja_fuerte',
-]);
+import { evaluarAlertas, TIPOS_MOVIMIENTO_ENTRADA, TIPOS_MOVIMIENTO_SALIDA } from '../domain/business-rules.js';
+import { calcularSaldoPorMedioPago } from '../domain/calculos/saldo-por-medio-pago.js';
+import { componerPanelStatus } from '../domain/calculos/panel-status-punto.js';
+import { evaluarHoraReset } from '../domain/calculos/hora-reset.js';
 
 const SELECT_SESION = {
   idsesiones_caja:                            true,
@@ -41,6 +31,7 @@ const SELECT_SESION = {
   cierre_forzadosesiones_caja:                true,
   estadosesiones_caja:                        true,
   observacionessesiones_caja:                 true,
+  arqueo_denominacionessesiones_caja:         true,
 } satisfies Prisma.SesionCajaSelect;
 
 type SesionRow = Prisma.SesionCajaGetPayload<{ select: typeof SELECT_SESION }>;
@@ -149,11 +140,22 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
     return row ? toSesionEntity(row) : null;
   }
 
-  async findAbiertasByPunto(sucursalId: number): Promise<SesionCajaEntity[]> {
+  async findAbiertaByCajero(cajeroId: number): Promise<SesionCajaEntity | null> {
+    const row = await this.prisma.sesionCaja.findFirst({
+      where: {
+        usuarios_idusuarios_cajero_asignado: cajeroId,
+        estadosesiones_caja: 'abierta',
+      },
+      select: SELECT_SESION,
+    });
+    return row ? toSesionEntity(row) : null;
+  }
+
+  async findAbiertasByPunto(cajaPadreId: number): Promise<SesionCajaEntity[]> {
     const rows = await this.prisma.sesionCaja.findMany({
       where: {
         estadosesiones_caja: 'abierta',
-        caja: { sucursales_idsucursales: sucursalId },
+        caja: { cajas_padres_idcajas_padres: cajaPadreId },
       },
       select: SELECT_SESION,
     });
@@ -172,8 +174,8 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
     let saldo = Number(sesion.monto_aperturasesiones_caja);
     for (const m of sesion.movimientosCaja) {
       const monto = Number(m.montomovimientos_caja);
-      if (TIPOS_ENTRADA.has(m.tipomovimientos_caja)) saldo += monto;
-      else if (TIPOS_SALIDA.has(m.tipomovimientos_caja)) saldo -= monto;
+      if (TIPOS_MOVIMIENTO_ENTRADA.has(m.tipomovimientos_caja)) saldo += monto;
+      else if (TIPOS_MOVIMIENTO_SALIDA.has(m.tipomovimientos_caja)) saldo -= monto;
     }
     return saldo.toFixed(2);
   }
@@ -198,8 +200,8 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
       let saldo = Number(s.monto_aperturasesiones_caja);
       for (const m of s.movimientosCaja) {
         const monto = Number(m.montomovimientos_caja);
-        if (TIPOS_ENTRADA.has(m.tipomovimientos_caja)) saldo += monto;
-        else if (TIPOS_SALIDA.has(m.tipomovimientos_caja)) saldo -= monto;
+        if (TIPOS_MOVIMIENTO_ENTRADA.has(m.tipomovimientos_caja)) saldo += monto;
+        else if (TIPOS_MOVIMIENTO_SALIDA.has(m.tipomovimientos_caja)) saldo -= monto;
       }
       if (s.caja.tipocajas === 'pagos') pagos += saldo;
       else general += saldo;
@@ -228,7 +230,8 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
         usuarios_idusuarios_cierre:           data.usuarioCierreId,
         monto_cierrasesiones_caja:            data.montoCierre,
         fecha_cierrasesiones_caja:            new Date(),
-        estadosesiones_caja:                  'cerrada',
+        cierre_forzadosesiones_caja:          data.forzado ?? false,
+        estadosesiones_caja:                  data.forzado ? 'forzada' : 'cerrada',
         observacionessesiones_caja:           data.observaciones,
         arqueo_denominacionessesiones_caja:   data.arqueo ? (data.arqueo as object) : undefined,
       },
@@ -253,6 +256,56 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
     return toMovEntity(row);
   }
 
+  // RNF-5.02: ambas patas de una transferencia se persisten en una única transacción ACID.
+  // Si cualquiera falla, ninguna se escribe — conservación de masa garantizada.
+  async registrarTransferenciaAtomica(
+    salida: RegistrarMovimientoData,
+    entrada: RegistrarMovimientoData,
+  ): Promise<[MovimientoCajaEntity, MovimientoCajaEntity]> {
+    const buildData = (d: RegistrarMovimientoData) => ({
+      sesiones_caja_idsesiones_caja:   d.sesionCajaId,
+      tipomovimientos_caja:            d.tipo,
+      montomovimientos_caja:           d.monto,
+      medio_pagomovimientos_caja:      d.medioPago,
+      referencia_idmovimientos_caja:   d.referenciaId,
+      referencia_tipomovimientos_caja: d.referenciaTipo,
+      descripcionmovimientos_caja:     d.descripcion,
+    });
+
+    const [mov1, mov2] = await this.prisma.$transaction([
+      this.prisma.movimientoCaja.create({ data: buildData(salida),  select: SELECT_MOV }),
+      this.prisma.movimientoCaja.create({ data: buildData(entrada), select: SELECT_MOV }),
+    ]);
+
+    return [toMovEntity(mov1), toMovEntity(mov2)];
+  }
+
+  private readonly SELECT_REPOSICION = {
+    idreposiciones_caja:                          true,
+    sesiones_caja_idsesiones_caja_origen:         true,
+    sesiones_caja_idsesiones_caja_destino:        true,
+    montoreposiciones_caja:                       true,
+    usuarios_idusuarios:                          true,
+    estadoreposiciones_caja:                      true,
+    motivoreposiciones_caja:                      true,
+    codigo_remesareposiciones_caja:               true,
+    created_atreposiciones_caja:                  true,
+  } satisfies Prisma.ReposicionCajaSelect;
+
+  private toReposicionEntity(row: Prisma.ReposicionCajaGetPayload<{ select: PrismaSesionesCajaRepository['SELECT_REPOSICION'] }>): ReposicionCajaEntity {
+    return {
+      id:             row.idreposiciones_caja,
+      sesionOrigenId: row.sesiones_caja_idsesiones_caja_origen,
+      sesionDestinoId:row.sesiones_caja_idsesiones_caja_destino,
+      monto:          row.montoreposiciones_caja.toString(),
+      usuarioId:      row.usuarios_idusuarios,
+      estado:         row.estadoreposiciones_caja as ReposicionCajaEntity['estado'],
+      motivo:         row.motivoreposiciones_caja,
+      codigoRemesa:   row.codigo_remesareposiciones_caja,
+      createdAt:      row.created_atreposiciones_caja,
+    };
+  }
+
   async crearReposicion(data: CrearReposicionData): Promise<ReposicionCajaEntity> {
     const row = await this.prisma.reposicionCaja.create({
       data: {
@@ -262,28 +315,65 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
         usuarios_idusuarios:                   data.usuarioId,
         estadoreposiciones_caja:               data.estado,
         motivoreposiciones_caja:               data.motivo,
+        codigo_remesareposiciones_caja:        data.codigoRemesa,
       },
-      select: {
-        idreposiciones_caja:                          true,
-        sesiones_caja_idsesiones_caja_origen:         true,
-        sesiones_caja_idsesiones_caja_destino:        true,
-        montoreposiciones_caja:                       true,
-        usuarios_idusuarios:                          true,
-        estadoreposiciones_caja:                      true,
-        motivoreposiciones_caja:                      true,
-        created_atreposiciones_caja:                  true,
-      },
+      select: this.SELECT_REPOSICION,
     });
-    return {
-      id:               row.idreposiciones_caja,
-      sesionOrigenId:   row.sesiones_caja_idsesiones_caja_origen,
-      sesionDestinoId:  row.sesiones_caja_idsesiones_caja_destino,
-      monto:            row.montoreposiciones_caja.toString(),
-      usuarioId:        row.usuarios_idusuarios,
-      estado:           row.estadoreposiciones_caja as ReposicionCajaEntity['estado'],
-      motivo:           row.motivoreposiciones_caja,
-      createdAt:        row.created_atreposiciones_caja,
-    };
+    return this.toReposicionEntity(row);
+  }
+
+  async findReposicionById(id: number): Promise<ReposicionCajaEntity | null> {
+    const row = await this.prisma.reposicionCaja.findFirst({
+      where:  { idreposiciones_caja: id },
+      select: this.SELECT_REPOSICION,
+    });
+    return row ? this.toReposicionEntity(row) : null;
+  }
+
+  async findReposicionByCodigo(codigo: string): Promise<ReposicionCajaEntity | null> {
+    const row = await this.prisma.reposicionCaja.findFirst({
+      where:  { codigo_remesareposiciones_caja: codigo },
+      select: this.SELECT_REPOSICION,
+    });
+    return row ? this.toReposicionEntity(row) : null;
+  }
+
+  async confirmarReposicion(id: number, aprobadorId: number): Promise<ReposicionCajaEntity> {
+    const row = await this.prisma.reposicionCaja.update({
+      where:  { idreposiciones_caja: id },
+      data:   { estadoreposiciones_caja: 'confirmada', usuarios_idusuarios: aprobadorId },
+      select: this.SELECT_REPOSICION,
+    });
+    return this.toReposicionEntity(row);
+  }
+
+  // RNF-5.02: el acredito (cambio_custodia_in) y la confirmación de la reposición
+  // se persisten en una única transacción — si cualquiera falla ninguna se escribe.
+  async confirmarCustodiaAtomica(
+    reposicionId: number,
+    movimientoEntrada: RegistrarMovimientoData,
+    receptorId: number,
+  ): Promise<ReposicionCajaEntity> {
+    const buildData = (d: RegistrarMovimientoData) => ({
+      sesiones_caja_idsesiones_caja:   d.sesionCajaId,
+      tipomovimientos_caja:            d.tipo,
+      montomovimientos_caja:           d.monto,
+      medio_pagomovimientos_caja:      d.medioPago,
+      referencia_idmovimientos_caja:   d.referenciaId,
+      referencia_tipomovimientos_caja: d.referenciaTipo,
+      descripcionmovimientos_caja:     d.descripcion,
+    });
+
+    const [, reposicion] = await this.prisma.$transaction([
+      this.prisma.movimientoCaja.create({ data: buildData(movimientoEntrada), select: { idmovimientos_caja: true } }),
+      this.prisma.reposicionCaja.update({
+        where:  { idreposiciones_caja: reposicionId },
+        data:   { estadoreposiciones_caja: 'confirmada', usuarios_idusuarios: receptorId },
+        select: this.SELECT_REPOSICION,
+      }),
+    ]);
+
+    return this.toReposicionEntity(reposicion);
   }
 
   async crearConsignacion(data: CrearConsignacionData): Promise<ConsignacionEntity> {
@@ -325,6 +415,67 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
     return toConsigEntity(row);
   }
 
+  private readonly SELECT_DIFERENCIA = {
+    iddiferencias_caja:            true,
+    sesiones_caja_idsesiones_caja: true,
+    tipo_diferencia:               true,
+    monto_diferencia:              true,
+    custodio_id:                   true,
+    estado:                        true,
+    aprobador_id:                  true,
+    observaciones:                 true,
+    created_at:                    true,
+  } satisfies Prisma.DiferenciaCajaSelect;
+
+  private toDiferenciaEntity(row: Prisma.DiferenciaCajaGetPayload<{ select: PrismaSesionesCajaRepository['SELECT_DIFERENCIA'] }>): DiferenciaCajaEntity {
+    return {
+      id:              row.iddiferencias_caja,
+      sesionCajaId:    row.sesiones_caja_idsesiones_caja,
+      tipoDiferencia:  row.tipo_diferencia as DiferenciaCajaEntity['tipoDiferencia'],
+      monto:           row.monto_diferencia.toString(),
+      custodioId:      row.custodio_id,
+      estado:          row.estado as DiferenciaCajaEntity['estado'],
+      aprobadorId:     row.aprobador_id,
+      observaciones:   row.observaciones,
+      createdAt:       row.created_at,
+    };
+  }
+
+  async crearDiferencia(data: CrearDiferenciaData): Promise<DiferenciaCajaEntity> {
+    const row = await this.prisma.diferenciaCaja.create({
+      data: {
+        sesiones_caja_idsesiones_caja: data.sesionCajaId,
+        tipo_diferencia:               data.tipoDiferencia,
+        monto_diferencia:              data.monto,
+        custodio_id:                   data.custodioId,
+        observaciones:                 data.observaciones,
+      },
+      select: this.SELECT_DIFERENCIA,
+    });
+    return this.toDiferenciaEntity(row);
+  }
+
+  async findDiferenciaById(id: number): Promise<DiferenciaCajaEntity | null> {
+    const row = await this.prisma.diferenciaCaja.findFirst({
+      where:  { iddiferencias_caja: id },
+      select: this.SELECT_DIFERENCIA,
+    });
+    return row ? this.toDiferenciaEntity(row) : null;
+  }
+
+  async resolverDiferencia(id: number, data: AprobarDiferenciaData): Promise<DiferenciaCajaEntity> {
+    const row = await this.prisma.diferenciaCaja.update({
+      where:  { iddiferencias_caja: id },
+      data: {
+        estado:        data.estado,
+        aprobador_id:  data.aprobadorId,
+        observaciones: data.observaciones,
+      },
+      select: this.SELECT_DIFERENCIA,
+    });
+    return this.toDiferenciaEntity(row);
+  }
+
   async getMovimientos(sesionId: number): Promise<MovimientoCajaEntity[]> {
     const rows = await this.prisma.movimientoCaja.findMany({
       where: { sesiones_caja_idsesiones_caja: sesionId },
@@ -338,9 +489,10 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
     const cajaPadre = await this.prisma.cajaPadre.findFirst({
       where: { idcajas_padres: cajaPadreId, deleted_atcajas_padres: null },
       select: {
-        idcajas_padres:           true,
-        sucursales_idsucursales:  true,
-        base_generalcajas_padres: true,
+        idcajas_padres:            true,
+        sucursales_idsucursales:   true,
+        base_generalcajas_padres:  true,
+        hora_resetcajas_padres:    true,
         cajas: {
           where: { activocajas: true, deleted_atcajas: null },
           select: {
@@ -350,6 +502,7 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
             tipocajas:          true,
             base_diacajas:      true,
             limite_alertacajas: true,
+            t_targetcajas:      true,
             sesiones: {
               where: { estadosesiones_caja: 'abierta' },
               take: 1,
@@ -359,7 +512,7 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
                 usuarios_idusuarios_cajero_asignado:     true,
                 monto_aperturasesiones_caja:             true,
                 movimientosCaja: {
-                  select: { tipomovimientos_caja: true, montomovimientos_caja: true },
+                  select: { tipomovimientos_caja: true, montomovimientos_caja: true, medio_pagomovimientos_caja: true },
                 },
                 giros: {
                   where: { operaciongiros: 'pago' },
@@ -376,7 +529,7 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
       return {
         sucursalId:  0,
         cajaPadreId,
-        panel: { baseGeneral: '0', cajaGeneral: '0', cajaFuerteGeneral: '0', basePagos: '0', cajaPagos: '0', cajaFuertePagos: '0', acumuladoMonedaCirculante: '0' },
+        panel: { baseGeneral: '0', cajaGeneral: '0', cajaFuerteGeneral: '0', basePagos: '0', cajaPagos: '0', cajaFuertePagos: '0', acumuladoMonedaCirculante: '0', tTransito: '0', debeReset: false, horaReset: null },
         cajas: [],
       };
     }
@@ -401,11 +554,13 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
           cajeroId:     null,
           estado:       'sin_sesion' as const,
           saldoActual:  null,
-          cajaFuerte:   '0',
           baseDia:      caja.base_diacajas.toString(),
           limiteAlerta: caja.limite_alertacajas?.toString() ?? null,
-          ingresosTurno: '0',
-          egresosTurno:  '0',
+          tTarget:      caja.t_targetcajas?.toString() ?? null,
+          deltaReposicion: null,
+          ingresosSesion:    '0',
+          egresosSesion:     '0',
+          saldoPorMedioPago: calcularSaldoPorMedioPago([]),
           girosCount:    0,
           girosValor:    '0',
           alertas:       [],
@@ -420,11 +575,26 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
 
       for (const m of sesionActiva.movimientosCaja) {
         const monto = Number(m.montomovimientos_caja);
-        if (TIPOS_ENTRADA.has(m.tipomovimientos_caja)) { saldo += monto; ingresos += monto; }
-        else if (TIPOS_SALIDA.has(m.tipomovimientos_caja)) { saldo -= monto; egresos += monto; }
+        if (TIPOS_MOVIMIENTO_ENTRADA.has(m.tipomovimientos_caja)) { saldo += monto; ingresos += monto; }
+        else if (TIPOS_MOVIMIENTO_SALIDA.has(m.tipomovimientos_caja)) { saldo -= monto; egresos += monto; }
         if (m.tipomovimientos_caja === 'moneda_circulante') monedaCirculante += monto;
         if (m.tipomovimientos_caja === 'traslado_caja_fuerte') trasladoVault += monto;
       }
+
+      // RF-3.02: excluir movimientos neutros (ej. 'apertura') que no son entrada ni salida.
+      // Incluirlos con esEntrada=false haría que restaran de efectivo incorrectamente.
+      const saldoPorMedioPago = calcularSaldoPorMedioPago(
+        sesionActiva.movimientosCaja
+          .filter(m =>
+            TIPOS_MOVIMIENTO_ENTRADA.has(m.tipomovimientos_caja) ||
+            TIPOS_MOVIMIENTO_SALIDA.has(m.tipomovimientos_caja),
+          )
+          .map(m => ({
+            medioPago:  m.medio_pagomovimientos_caja ?? undefined,
+            monto:      m.montomovimientos_caja.toString(),
+            esEntrada:  TIPOS_MOVIMIENTO_ENTRADA.has(m.tipomovimientos_caja),
+          })),
+      );
 
       acumuladoMoneda += monedaCirculante;
 
@@ -433,7 +603,12 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
 
       const baseDia     = caja.base_diacajas.toString();
       const limiteAlerta = caja.limite_alertacajas?.toString() ?? null;
+      const tTarget     = caja.t_targetcajas?.toString() ?? null;
       const alertas: TipoAlerta[] = evaluarAlertas(saldo.toFixed(2), baseDia, limiteAlerta);
+      // RF-2.01: ΔQ = T_target − B_i(t), solo cuando hay alerta de reposición y tTarget está configurado
+      const deltaReposicion = (alertas.includes('reposicion_caja') && tTarget)
+        ? Math.max(0, Number(tTarget) - saldo).toFixed(2)
+        : null;
 
       if (caja.tipocajas === 'pagos') {
         cajonPagosTotal      += saldo;
@@ -460,29 +635,61 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
         cajeroId:      sesionActiva.usuarios_idusuarios_cajero_asignado ?? sesionActiva.usuarios_idusuarios_apertura,
         estado:        'abierta' as const,
         saldoActual:   saldo.toFixed(2),
-        cajaFuerte:    trasladoVault.toFixed(2),
         baseDia,
         limiteAlerta,
-        ingresosTurno: ingresos.toFixed(2),
-        egresosTurno:  egresos.toFixed(2),
+        tTarget,
+        deltaReposicion,
+        ingresosSesion:    ingresos.toFixed(2),
+        egresosSesion:     egresos.toFixed(2),
+        saldoPorMedioPago,
         girosCount,
         girosValor:    girosValor.toFixed(2),
         alertas,
       };
     });
 
+    // RF-4.01: T_transito — efectivo en tránsito entre cajas del punto
+    const sesionIdsDelPunto = cajaPadre.cajas
+      .flatMap(c => c.sesiones.map(s => s.idsesiones_caja));
+
+    const transitoAgg = sesionIdsDelPunto.length > 0
+      ? await this.prisma.reposicionCaja.aggregate({
+          where: {
+            estadoreposiciones_caja: 'en_transito',
+            sesiones_caja_idsesiones_caja_origen: { in: sesionIdsDelPunto },
+          },
+          _sum: { montoreposiciones_caja: true },
+        })
+      : null;
+
+    const tTransito = (transitoAgg?._sum?.montoreposiciones_caja ?? 0).toString();
+
     return {
       sucursalId:  cajaPadre.sucursales_idsucursales,
       cajaPadreId: cajaPadre.idcajas_padres,
-      panel: {
-        baseGeneral:               cajaPadre.base_generalcajas_padres.toString(),
-        cajaGeneral:               cajonGeneralTotal.toFixed(2),
-        cajaFuerteGeneral:         fuerteGeneralTotal.toFixed(2),   // C5: saldo general + traslados mid-turn de aux
-        basePagos,
-        cajaPagos:                 cajonPagosTotal.toFixed(2),
-        cajaFuertePagos:           cajaFuertePagosTotal.toFixed(2), // C6: traslados a bóveda desde pagos
-        acumuladoMonedaCirculante: acumuladoMoneda.toFixed(2),
-      },
+      panel: (() => {
+        const horaResetDb = cajaPadre.hora_resetcajas_padres;
+        const horaResetStr = horaResetDb
+          ? `${String(horaResetDb.getHours()).padStart(2, '0')}:${String(horaResetDb.getMinutes()).padStart(2, '0')}`
+          : null;
+        const ahora = new Date();
+        const horaAhora = `${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`;
+        const { debeResetear } = horaResetStr
+          ? evaluarHoraReset(horaAhora, horaResetStr)
+          : { debeResetear: false };
+        return componerPanelStatus(
+          cajaPadre.base_generalcajas_padres.toString(),
+          cajonGeneralTotal.toFixed(2),
+          fuerteGeneralTotal.toFixed(2),
+          basePagos,
+          cajonPagosTotal.toFixed(2),
+          cajaFuertePagosTotal.toFixed(2),
+          acumuladoMoneda.toFixed(2),
+          tTransito,
+          debeResetear,
+          horaResetStr,
+        );
+      })(),
       cajas: cards,
     };
   }
@@ -494,5 +701,61 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
       select: SELECT_SESION,
     });
     return toSesionEntity(row);
+  }
+
+  async getConsolidadoPorRegional(): Promise<{ regionalId: number; porMedio: Record<string, string> }[]> {
+    // Traverse the working hierarchy: cajaPadre → cajas → sesiones(abierta) → movimientosCaja
+    const padres = await this.prisma.cajaPadre.findMany({
+      where: { deleted_atcajas_padres: null },
+      select: {
+        sucursales_idsucursales: true,
+        cajas: {
+          where: { deleted_atcajas: null },
+          select: {
+            sesiones: {
+              where: { estadosesiones_caja: 'abierta' },
+              select: {
+                movimientosCaja: {
+                  where: { tipomovimientos_caja: { in: [...TIPOS_MOVIMIENTO_ENTRADA] as any[] } },
+                  select: {
+                    montomovimientos_caja:      true,
+                    medio_pagomovimientos_caja: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Get regional for each sucursal
+    const sucursalIds = [...new Set(padres.map(p => p.sucursales_idsucursales))];
+    const sucursales = await this.prisma.sucursal.findMany({
+      where:  { idsucursales: { in: sucursalIds }, deleted_atsucursales: null },
+      select: { idsucursales: true, regionales_idregionales: true },
+    });
+    const sucursalToRegional = new Map(sucursales.map(s => [s.idsucursales, s.regionales_idregionales]));
+
+    const byRegional = new Map<number, Record<string, number>>();
+    for (const padre of padres) {
+      const regionalId = sucursalToRegional.get(padre.sucursales_idsucursales);
+      if (!regionalId) continue;
+      if (!byRegional.has(regionalId)) byRegional.set(regionalId, {});
+      const entry = byRegional.get(regionalId)!;
+      for (const caja of padre.cajas) {
+        for (const sesion of caja.sesiones) {
+          for (const m of sesion.movimientosCaja) {
+            const medio = (m.medio_pagomovimientos_caja as string | null) ?? 'efectivo';
+            entry[medio] = (entry[medio] ?? 0) + Number(m.montomovimientos_caja);
+          }
+        }
+      }
+    }
+
+    return Array.from(byRegional.entries()).map(([regionalId, totales]) => ({
+      regionalId,
+      porMedio: Object.fromEntries(Object.entries(totales).map(([k, v]) => [k, v.toFixed(2)])),
+    }));
   }
 }

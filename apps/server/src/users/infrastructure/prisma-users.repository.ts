@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '../../../generated/prisma/client.js';
+import type { tipo_documento_identidad } from '../../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { IUsersRepository } from '../domain/users.repository.js';
 import { UserEntity } from '../domain/user.entity.js';
@@ -11,6 +12,8 @@ const SELECT = {
   nombreusuarios:                true,
   emailusuarios:                 true,
   telefonousuarios:              true,
+  tipo_documentousuarios:        true,
+  numero_documentousuarios:      true,
   sucursales_idsucursales:       true,
   paises_idpaises:               true,
   departamentos_iddepartamentos: true,
@@ -39,13 +42,15 @@ type UsuarioRow = Prisma.UsuarioGetPayload<{ select: typeof SELECT }>;
 
 function toEntity(row: UsuarioRow): UserEntity {
   return {
-    id:             row.idusuarios,
-    nombre:         row.nombreusuarios,
-    email:          row.emailusuarios,
-    rol:            row.rol.codigoroles,
-    sucursalId:     row.sucursales_idsucursales ?? null,
-    telefono:       row.telefonousuarios ?? null,
-    paisId:         row.paises_idpaises ?? null,
+    id:              row.idusuarios,
+    nombre:          row.nombreusuarios,
+    email:           row.emailusuarios,
+    rol:             row.rol.codigoroles,
+    sucursalId:      row.sucursales_idsucursales ?? null,
+    telefono:        row.telefonousuarios ?? null,
+    tipoDocumento:   row.tipo_documentousuarios ?? null,
+    numeroDocumento: row.numero_documentousuarios ?? null,
+    paisId:          row.paises_idpaises ?? null,
     departamentoId: row.departamentos_iddepartamentos ?? null,
     ciudadId:       row.ciudades_idciudades ?? null,
     activo:         row.activousuarios,
@@ -73,10 +78,12 @@ export class PrismaUsersRepository implements IUsersRepository {
   async create(dto: CreateUserDto, passwordHash: string): Promise<UserEntity> {
     const row = await this.prisma.usuario.create({
       data: {
-        nombreusuarios:        dto.nombre,
-        emailusuarios:         dto.email,
-        password_hashusuarios: passwordHash,
-        telefonousuarios:      dto.telefono ?? null,
+        nombreusuarios:           dto.nombre,
+        emailusuarios:            dto.email,
+        password_hashusuarios:    passwordHash,
+        telefonousuarios:         dto.telefono ?? null,
+        tipo_documentousuarios:   (dto.tipo_documento ?? null) as tipo_documento_identidad | null,
+        numero_documentousuarios: dto.numero_documento ?? null,
         rol:                   { connect: { codigoroles: dto.rol } },
         ...(dto.sucursal_id    != null && { sucursal:     { connect: { idsucursales:     dto.sucursal_id    } } }),
         ...(dto.pais_id        != null && { pais:         { connect: { idpaises:         dto.pais_id        } } }),

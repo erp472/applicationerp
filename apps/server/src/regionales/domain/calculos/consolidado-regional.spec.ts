@@ -26,7 +26,8 @@ const SUCURSALES: SaldoSucursal[] = [
 
 describe('consolidarRegional', () => {
   it('suma saldos correctamente', () => {
-    const r = consolidarRegional(SUCURSALES);
+    const r = consolidarRegional(10, SUCURSALES);
+    expect(r.regionalId).toBe(10);
     expect(r.numSucursales).toBe(2);
     expect(r.porMedio.efectivo).toBe('180000');
     expect(r.porMedio.tarjetaDebito).toBe('90000');
@@ -39,13 +40,15 @@ describe('consolidarRegional', () => {
   });
 
   it('lista vacía', () => {
-    const r = consolidarRegional([]);
+    const r = consolidarRegional(10, []);
+    expect(r.regionalId).toBe(10);
     expect(r.numSucursales).toBe(0);
     expect(r.total).toBe('0');
   });
 
   it('una sucursal', () => {
-    const r = consolidarRegional([SUCURSALES[0]]);
+    const r = consolidarRegional(10, [SUCURSALES[0]]);
+    expect(r.regionalId).toBe(10);
     expect(r.numSucursales).toBe(1);
     expect(r.porMedio.efectivo).toBe('100000');
   });

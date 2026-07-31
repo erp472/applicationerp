@@ -497,6 +497,18 @@ export class PrismaVentasRepository implements IVentasRepository {
     return toApartadoEntity(row);
   }
 
+  async renovarApartado(id: number, data: { nuevaFechaFin: Date; monto: number; sesionCajaId: number }): Promise<ApartadoPostalEntity> {
+    const row = await this.prisma.apartadoPostal.update({
+      where: { idapartados_postales: id },
+      data: {
+        fecha_finapartados_postales:   data.nuevaFechaFin,
+        valorapartados_postales:       data.monto,
+        sesiones_caja_idsesiones_caja: data.sesionCajaId,
+      },
+    });
+    return toApartadoEntity(row);
+  }
+
   async findAllApartadosAdmin(filters: { sucursalId?: number; estado?: string; tamano?: string }): Promise<ApartadoAdminItem[]> {
     const rows = await this.prisma.apartadoPostal.findMany({
       where: {
@@ -584,22 +596,86 @@ export class PrismaVentasRepository implements IVentasRepository {
     return row ? toServicioEntity(row) : null;
   }
 
-  async findTarifaEnvio(servicioId: number, pesoKg: number, paisDestino: string): Promise<TarifaEnvioEntity | null> {
+  async findTarifaEnvio(servicioId: number, pesoKg: number, paisDestino: string, ciudadDestino?: string): Promise<TarifaEnvioEntity | null> {
+    const pesoWhere = {
+      servicios_idservicios:        servicioId,
+      activatarifas_servicio:       true,
+      deleted_attarifas_servicio:   null,
+      pais_destinotarifas_servicio: paisDestino,
+      peso_min_kgtarifas_servicio:  { lte: pesoKg },
+      OR: [
+        { peso_max_kgtarifas_servicio: null as null },
+        { peso_max_kgtarifas_servicio: { gte: pesoKg } },
+      ],
+    };
+
+    if (ciudadDestino) {
+      const specific = await this.prisma.tarifaServicio.findFirst({
+        where:   { ...pesoWhere, ciudad_destinotarifas_servicio: ciudadDestino },
+        orderBy: { peso_min_kgtarifas_servicio: 'desc' },
+      });
+      if (specific) return toTarifaEntity(specific);
+    }
+
     const row = await this.prisma.tarifaServicio.findFirst({
+      where:   { ...pesoWhere, ciudad_destinotarifas_servicio: null },
+      orderBy: { peso_min_kgtarifas_servicio: 'desc' },
+    });
+    return row ? toTarifaEntity(row) : null;
+  }
+
+  async findTarifasEnvioByPais(servicioId: number, paisDestino: string): Promise<TarifaEnvioEntity[]> {
+    const rows = await this.prisma.tarifaServicio.findMany({
       where: {
         servicios_idservicios:        servicioId,
         activatarifas_servicio:       true,
         deleted_attarifas_servicio:   null,
         pais_destinotarifas_servicio: paisDestino,
-        peso_min_kgtarifas_servicio:  { lte: pesoKg },
-        OR: [
-          { peso_max_kgtarifas_servicio: null },
-          { peso_max_kgtarifas_servicio: { gte: pesoKg } },
-        ],
+        ciudad_destinotarifas_servicio: null,
       },
-      orderBy: { peso_min_kgtarifas_servicio: 'desc' },
+      orderBy: { peso_min_kgtarifas_servicio: 'asc' },
     });
-    return row ? toTarifaEntity(row) : null;
+    return rows.map(toTarifaEntity);
+  }
+
+  async findPaisesDestinoByServicio(servicioId: number): Promise<string[]> {
+    const rows = await this.prisma.tarifaServicio.findMany({
+      where: {
+        servicios_idservicios:      servicioId,
+        activatarifas_servicio:     true,
+        deleted_attarifas_servicio: null,
+      },
+      select:   { pais_destinotarifas_servicio: true },
+      distinct: ['pais_destinotarifas_servicio'],
+      orderBy:  { pais_destinotarifas_servicio: 'asc' },
+    });
+    return rows.map(r => r.pais_destinotarifas_servicio);
+  }
+
+  async findEstampillasConStock(sucursalId: number): Promise<{ denominacion: string; stock: number }[]> {
+    const rows = await this.prisma.producto.findMany({
+      where: {
+        tipoproductos:       'estampilla',
+        activoproductos:     true,
+        deleted_atproductos: null,
+        productosSucursal:   { some: { sucursales_idsucursales: sucursalId, activoproductos_sucursal: true } },
+      },
+      select: {
+        precioproductos: true,
+        inventarioSucursal: {
+          where:  { sucursales_idsucursales: sucursalId },
+          select: { cantidad_actualinventario_sucursal: true },
+          take:   1,
+        },
+      },
+      orderBy: { precioproductos: 'desc' },
+    });
+    return rows
+      .filter(r => (r.inventarioSucursal[0]?.cantidad_actualinventario_sucursal ?? 0) > 0)
+      .map(r => ({
+        denominacion: String(Math.round(Number(r.precioproductos))),
+        stock:        r.inventarioSucursal[0]?.cantidad_actualinventario_sucursal ?? 0,
+      }));
   }
 
   async crearEnvio(data: CrearEnvioData): Promise<EnvioEntity> {
@@ -654,130 +730,6 @@ export class PrismaVentasRepository implements IVentasRepository {
     return toEnvioEntity(row);
   }
 
-  // ── Inventario servicios especiales ──────────────────────────────────────────
-
-  async getStockActual(productoId: number, sucursalId: number): Promise<number | null> {
-    const row = await this.prisma.inventarioSucursal.findUnique({
-      where: {
-        sucursales_idsucursales_productos_idproductos: {
-          sucursales_idsucursales: sucursalId,
-          productos_idproductos:   productoId,
-        },
-      },
-      select: { cantidad_actualinventario_sucursal: true },
-    });
-    return row?.cantidad_actualinventario_sucursal ?? null;
-  }
-
-  async descontarInventario(params: {
-    productoId: number; sucursalId: number; cantidad: number;
-    ventaId: number; usuarioId: number;
-  }): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      const inv = await tx.inventarioSucursal.findUnique({
-        where: {
-          sucursales_idsucursales_productos_idproductos: {
-            sucursales_idsucursales: params.sucursalId,
-            productos_idproductos:   params.productoId,
-          },
-        },
-      });
-      const cantidadAnterior = inv?.cantidad_actualinventario_sucursal ?? 0;
-
-      // Re-validate inside transaction to prevent TOCTOU race condition
-      if (cantidadAnterior < params.cantidad) {
-        throw Object.assign(
-          new Error(`Stock insuficiente para producto ${params.productoId}: disponible ${cantidadAnterior}, requerido ${params.cantidad}`),
-          { code: 'STOCK_INSUFICIENTE', stockActual: cantidadAnterior, cantidadRequerida: params.cantidad },
-        );
-      }
-
-      const cantidadPosterior = cantidadAnterior - params.cantidad;
-
-      await tx.inventarioSucursal.upsert({
-        where: {
-          sucursales_idsucursales_productos_idproductos: {
-            sucursales_idsucursales: params.sucursalId,
-            productos_idproductos:   params.productoId,
-          },
-        },
-        update: {
-          cantidad_actualinventario_sucursal: { decrement: params.cantidad },
-          updated_atinventario_sucursal: new Date(),
-        },
-        create: {
-          sucursales_idsucursales:            params.sucursalId,
-          productos_idproductos:              params.productoId,
-          cantidad_actualinventario_sucursal: -params.cantidad,
-        },
-      });
-
-      await tx.movimientoInventario.create({
-        data: {
-          sucursales_idsucursales:                 params.sucursalId,
-          productos_idproductos:                   params.productoId,
-          tipomovimientos_inventario:              'salida',
-          cantidadmovimientos_inventario:          params.cantidad,
-          cantidad_anteriormovimientos_inventario:  cantidadAnterior,
-          cantidad_posteriormovimientos_inventario: cantidadPosterior,
-          referencia_idmovimientos_inventario:      params.ventaId,
-          referencia_tipomovimientos_inventario:    'Venta',
-          usuarios_idusuarios:                     params.usuarioId,
-        },
-      });
-    });
-  }
-
-  async restaurarInventario(params: {
-    productoId: number; sucursalId: number; cantidad: number;
-    ventaId: number; usuarioId: number;
-  }): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      const inv = await tx.inventarioSucursal.findUnique({
-        where: {
-          sucursales_idsucursales_productos_idproductos: {
-            sucursales_idsucursales: params.sucursalId,
-            productos_idproductos:   params.productoId,
-          },
-        },
-      });
-      const cantidadAnterior  = inv?.cantidad_actualinventario_sucursal ?? 0;
-      const cantidadPosterior = cantidadAnterior + params.cantidad;
-
-      await tx.inventarioSucursal.upsert({
-        where: {
-          sucursales_idsucursales_productos_idproductos: {
-            sucursales_idsucursales: params.sucursalId,
-            productos_idproductos:   params.productoId,
-          },
-        },
-        update: {
-          cantidad_actualinventario_sucursal: { increment: params.cantidad },
-          updated_atinventario_sucursal: new Date(),
-        },
-        create: {
-          sucursales_idsucursales:            params.sucursalId,
-          productos_idproductos:              params.productoId,
-          cantidad_actualinventario_sucursal: params.cantidad,
-        },
-      });
-
-      await tx.movimientoInventario.create({
-        data: {
-          sucursales_idsucursales:                 params.sucursalId,
-          productos_idproductos:                   params.productoId,
-          tipomovimientos_inventario:              'devolucion',
-          cantidadmovimientos_inventario:          params.cantidad,
-          cantidad_anteriormovimientos_inventario:  cantidadAnterior,
-          cantidad_posteriormovimientos_inventario: cantidadPosterior,
-          referencia_idmovimientos_inventario:      params.ventaId,
-          referencia_tipomovimientos_inventario:    'VentaAnulada',
-          usuarios_idusuarios:                     params.usuarioId,
-        },
-      });
-    });
-  }
-
   // ── Resumen de turno ──────────────────────────────────────────────────────────
 
   async getResumenSesion(sesionCajaId: number): Promise<ResumenTurno> {
@@ -819,5 +771,13 @@ export class PrismaVentasRepository implements IVentasRepository {
       orderBy: { min_cantidadtarifas_especial: 'asc' },
     });
     return rows.map(toTarifaEspecialEntity);
+  }
+
+  async nextConsecutivoGuia(): Promise<number> {
+    const last = await this.prisma.envio.findFirst({
+      orderBy: { idenvios: 'desc' },
+      select:  { idenvios: true },
+    });
+    return (last?.idenvios ?? 0) + 1;
   }
 }

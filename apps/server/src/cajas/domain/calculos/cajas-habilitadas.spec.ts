@@ -4,11 +4,11 @@ import { calcularCajasHabilitadas } from './cajas-habilitadas.js';
 describe('calcularCajasHabilitadas', () => {
   it('agrupa por tipo', () => {
     const cajas = [
-      { cajaId: 1, tipo: 'general', activaEnTurno: true },
-      { cajaId: 2, tipo: 'general', activaEnTurno: false },
-      { cajaId: 3, tipo: 'pos', activaEnTurno: true },
-      { cajaId: 4, tipo: 'pagos', activaEnTurno: false },
-      { cajaId: 5, tipo: 'menor', activaEnTurno: true },
+      { cajaId: 1, tipo: 'general', activaEnSesion: true },
+      { cajaId: 2, tipo: 'general', activaEnSesion: false },
+      { cajaId: 3, tipo: 'pos', activaEnSesion: true },
+      { cajaId: 4, tipo: 'pagos', activaEnSesion: false },
+      { cajaId: 5, tipo: 'menor', activaEnSesion: true },
     ];
     const r = calcularCajasHabilitadas(cajas);
     expect(r.general.cajas).toHaveLength(2);
@@ -23,8 +23,8 @@ describe('calcularCajasHabilitadas', () => {
 
   it('ignora tipo inválido', () => {
     const r = calcularCajasHabilitadas([
-      { cajaId: 1, tipo: 'general', activaEnTurno: true },
-      { cajaId: 2, tipo: 'DESCONOCIDO', activaEnTurno: true },
+      { cajaId: 1, tipo: 'general', activaEnSesion: true },
+      { cajaId: 2, tipo: 'DESCONOCIDO', activaEnSesion: true },
     ]);
     expect(r.general.cajas).toHaveLength(1);
     expect('DESCONOCIDO' in r).toBe(false);
@@ -40,8 +40,8 @@ describe('calcularCajasHabilitadas', () => {
 
   it('todas inactivas', () => {
     const r = calcularCajasHabilitadas([
-      { cajaId: 1, tipo: 'pos', activaEnTurno: false },
-      { cajaId: 2, tipo: 'pos', activaEnTurno: false },
+      { cajaId: 1, tipo: 'pos', activaEnSesion: false },
+      { cajaId: 2, tipo: 'pos', activaEnSesion: false },
     ]);
     expect(r.pos.activas).toBe(0);
     expect(r.pos.cajas).toHaveLength(2);

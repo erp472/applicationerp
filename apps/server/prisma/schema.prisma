@@ -109,6 +109,8 @@ enum estado_aprobacion {
   pendiente
   aprobada
   rechazada
+  en_transito
+  confirmada
 }
 
 enum estado_venta {
@@ -289,8 +291,13 @@ enum plataforma_feature_flag {
 // ══════════════════════════════════════════════════════════════════════════════
 
 model Pais {
-  idpaises     Int    @id
-  nombrepaises String @db.VarChar(100)
+  idpaises     Int     @id
+  nombrepaises String  @db.VarChar(100)
+  iso2         String? @db.VarChar(2)
+  iso3         String? @db.VarChar(3)
+  phonecode    String? @db.VarChar(10)
+  region       String? @db.VarChar(50)
+  activo       Boolean @default(true)
 
   departamentos Departamento[]
   sucursales    Sucursal[]
@@ -300,9 +307,10 @@ model Pais {
 }
 
 model Departamento {
-  iddepartamentos     Int    @id
+  iddepartamentos     Int     @id
   paises_idpaises     Int
-  nombredepartamentos String @db.VarChar(100)
+  nombredepartamentos String  @db.VarChar(100)
+  activo              Boolean @default(true)
 
   pais       Pais       @relation(fields: [paises_idpaises], references: [idpaises])
   ciudades   Ciudad[]
@@ -313,9 +321,10 @@ model Departamento {
 }
 
 model Ciudad {
-  idciudades                    Int    @id
+  idciudades                    Int     @id
   departamentos_iddepartamentos Int
-  nombreciudades                String @db.VarChar(100)
+  nombreciudades                String  @db.VarChar(100)
+  activo                        Boolean @default(true)
 
   departamento Departamento @relation(fields: [departamentos_iddepartamentos], references: [iddepartamentos])
   sucursales   Sucursal[]
@@ -408,7 +417,7 @@ model Sucursal {
 model EquipoAutorizado {
   idequipos_autorizados                Int                       @id @default(autoincrement())
   sucursales_idsucursales              Int
-  mac_addressequipos_autorizados       String                    @unique @db.VarChar(30)
+  mac_addressequipos_autorizados       String                    @db.VarChar(30)
   nombreequipos_autorizados            String?                   @db.VarChar(100)
   sistema_operativoequipos_autorizados sistema_operativo_equipo?
   activoequipos_autorizados            Boolean                   @default(true)
@@ -417,6 +426,7 @@ model EquipoAutorizado {
 
   sucursal Sucursal @relation(fields: [sucursales_idsucursales], references: [idsucursales])
 
+  @@unique([mac_addressequipos_autorizados, sucursales_idsucursales], name: "equipos_autorizados_mac_sucursal_key")
   @@map("equipos_autorizados")
 }
 
@@ -495,7 +505,9 @@ model Usuario {
   nombreusuarios                String    @db.VarChar(200)
   emailusuarios                 String    @unique @db.VarChar(200)
   password_hashusuarios         String    @db.VarChar(500)
-  telefonousuarios              String?   @db.VarChar(20)
+  telefonousuarios              String?                  @db.VarChar(20)
+  tipo_documentousuarios        tipo_documento_identidad?
+  numero_documentousuarios      String?                  @db.VarChar(30)
   activousuarios                Boolean   @default(true)
   ultimo_loginusuarios          DateTime? @db.Timestamptz(6)
   created_atusuarios            DateTime  @default(now()) @db.Timestamptz(6)
@@ -524,9 +536,11 @@ model Usuario {
   ordenesConfirmadas      OrdenInventario[]     @relation("OrdenInventarioConfirmador")
   alertasCreadas          Alerta[]              @relation("AlertaCreador")
   alertasResueltas        Alerta[]              @relation("AlertaResolutor")
-  anulacionesSolicitadas  Anulacion[]           @relation("AnulacionSolicitante")
-  anulacionesAprobadas    Anulacion[]           @relation("AnulacionAprobador")
-  eventosAuditoria        EventoAuditoria[]
+  anulacionesSolicitadas   Anulacion[]           @relation("AnulacionSolicitante")
+  anulacionesAprobadas     Anulacion[]           @relation("AnulacionAprobador")
+  diferenciasComoCustodio  DiferenciaCaja[]      @relation("DiferenciaCustodio")
+  diferenciasComoAprobador DiferenciaCaja[]      @relation("DiferenciaAprobador")
+  eventosAuditoria         EventoAuditoria[]
   consultasInspektor      ConsultaInspektor[]
   featureFlagsUsuarios    FeatureFlagUsuario[]
 
@@ -772,6 +786,7 @@ model Caja {
   tipocajas                   tipo_caja
   base_diacajas               Decimal   @default(0) @db.Decimal(18, 2)
   limite_alertacajas          Decimal?  @db.Decimal(18, 2)
+  t_targetcajas               Decimal?  @db.Decimal(18, 2)
   activocajas                 Boolean   @default(true)
   created_atcajas             DateTime  @default(now()) @db.Timestamptz(6)
   deleted_atcajas             DateTime? @db.Timestamptz(6)
@@ -809,6 +824,7 @@ model SesionCaja {
   consignaciones   Consignacion[]
   reposicionesOrigen  ReposicionCaja[] @relation("ReposicionOrigen")
   reposicionesDestino ReposicionCaja[] @relation("ReposicionDestino")
+  diferencias      DiferenciaCaja[]
   ventas           Venta[]
   envios           Envio[]
   sacas            Saca[]
@@ -873,6 +889,7 @@ model ReposicionCaja {
   usuarios_idusuarios                   Int?
   estadoreposiciones_caja               estado_aprobacion @default(pendiente)
   motivoreposiciones_caja               String?
+  codigo_remesareposiciones_caja        String?           @unique
   created_atreposiciones_caja           DateTime          @default(now()) @db.Timestamptz(6)
 
   sesionOrigen  SesionCaja @relation("ReposicionOrigen", fields: [sesiones_caja_idsesiones_caja_origen], references: [idsesiones_caja])
@@ -880,6 +897,25 @@ model ReposicionCaja {
   usuario       Usuario?   @relation(fields: [usuarios_idusuarios], references: [idusuarios])
 
   @@map("reposiciones_caja")
+}
+
+model DiferenciaCaja {
+  iddiferencias_caja            Int               @id @default(autoincrement())
+  sesiones_caja_idsesiones_caja Int
+  tipo_diferencia               String            @db.VarChar(10)
+  monto_diferencia              Decimal           @db.Decimal(18, 2)
+  custodio_id                   Int?
+  estado                        estado_aprobacion @default(pendiente)
+  aprobador_id                  Int?
+  observaciones                 String?
+  created_at                    DateTime          @default(now()) @db.Timestamptz(6)
+
+  sesionCaja SesionCaja @relation(fields: [sesiones_caja_idsesiones_caja], references: [idsesiones_caja])
+  custodio   Usuario?   @relation("DiferenciaCustodio", fields: [custodio_id], references: [idusuarios])
+  aprobador  Usuario?   @relation("DiferenciaAprobador", fields: [aprobador_id], references: [idusuarios])
+
+  @@index([sesiones_caja_idsesiones_caja], map: "idx_diferencias_caja_sesion")
+  @@map("diferencias_caja")
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

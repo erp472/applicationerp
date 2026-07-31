@@ -1,6 +1,6 @@
 export interface TarifaEspecialCantidad {
   minCantidad: number;
-  maxCantidad: number;
+  maxCantidad: number | null; // null = sin límite superior (tramo abierto)
   precioUnitario: string;
 }
 
@@ -9,7 +9,9 @@ export function calcularPrecioPorCantidad(
   tarifas: TarifaEspecialCantidad[],
   cantidad: number,
 ): string {
-  const tarifa = tarifas.find(t => t.minCantidad <= cantidad && cantidad <= t.maxCantidad);
+  const tarifa = tarifas.find(
+    t => t.minCantidad <= cantidad && (t.maxCantidad === null || cantidad <= t.maxCantidad),
+  );
   if (!tarifa) {
     throw new Error(
       `Cantidad ${cantidad} no está cubierta por ningún tramo de tarifa. ` +

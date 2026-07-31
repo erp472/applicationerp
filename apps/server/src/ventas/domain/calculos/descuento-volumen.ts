@@ -1,6 +1,6 @@
 export interface TarifaCantidad {
   minCantidad: number;
-  maxCantidad: number;
+  maxCantidad: number | null; // null = sin límite superior (tramo abierto)
   precioUnitario: string;
 }
 
@@ -10,6 +10,8 @@ export function calcularDescuentoVolumen(
   cantidad: number,
   precioBase: string,
 ): string {
-  const tarifa = tarifas.find(t => t.minCantidad <= cantidad && cantidad <= t.maxCantidad);
+  const tarifa = tarifas.find(
+    t => t.minCantidad <= cantidad && (t.maxCantidad === null || cantidad <= t.maxCantidad),
+  );
   return tarifa ? tarifa.precioUnitario : precioBase;
 }

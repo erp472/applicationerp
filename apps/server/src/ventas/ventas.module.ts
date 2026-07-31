@@ -4,9 +4,10 @@ import { VentasController }            from './infrastructure/ventas.controller.
 import { PrismaVentasRepository }      from './infrastructure/prisma-ventas.repository.js';
 import { VENTAS_REPOSITORY }           from './domain/venta.repository.js';
 import { CajasModule }                 from '../cajas/cajas.module.js';
+import { InventarioModule }            from '../inventario/inventario.module.js';
 
 @Module({
-  imports:     [CajasModule],
+  imports:     [CajasModule, InventarioModule],
   controllers: [VentasController],
   providers: [
     VentasService,

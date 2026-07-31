@@ -115,6 +115,7 @@ export interface IVentasRepository {
   findApartadoByNumero(sucursalId: number, numero: string): Promise<ApartadoPostalEntity | null>;
   contratarApartado(data: ContratarApartadoData): Promise<ApartadoPostalEntity>;
   liberarApartado(id: number): Promise<ApartadoPostalEntity>;
+  renovarApartado(id: number, data: { nuevaFechaFin: Date; monto: number; sesionCajaId: number }): Promise<ApartadoPostalEntity>;
 
   // Apartado Postal — admin CRUD
   findAllApartadosAdmin(filters: { sucursalId?: number; estado?: string; tamano?: string }): Promise<ApartadoAdminItem[]>;
@@ -127,29 +128,18 @@ export interface IVentasRepository {
   findServiciosBySucursal(sucursalId: number): Promise<ServicioCatalogoEntity[]>;
   findServicioById(servicioId: number): Promise<ServicioCatalogoEntity | null>;
   findTarifaEnvio(servicioId: number, pesoKg: number, paisDestino: string, ciudadDestino?: string): Promise<TarifaEnvioEntity | null>;
+  findTarifasEnvioByPais(servicioId: number, paisDestino: string): Promise<TarifaEnvioEntity[]>;
+  findPaisesDestinoByServicio(servicioId: number): Promise<string[]>;
+  findEstampillasConStock(sucursalId: number): Promise<{ denominacion: string; stock: number }[]>;
   crearEnvio(data: CrearEnvioData): Promise<EnvioEntity>;
   anularEnvio(id: number): Promise<EnvioEntity>;
 
   // Tarifas servicios especiales (por rango de cantidad)
   findTarifasEspecial(productoId: number): Promise<TarifaEspecialEntity[]>;
 
-  // Inventario servicios especiales
-  getStockActual(productoId: number, sucursalId: number): Promise<number | null>;
-  descontarInventario(params: {
-    productoId:   number;
-    sucursalId:   number;
-    cantidad:     number;
-    ventaId:      number;
-    usuarioId:    number;
-  }): Promise<void>;
-  restaurarInventario(params: {
-    productoId:   number;
-    sucursalId:   number;
-    cantidad:     number;
-    ventaId:      number;
-    usuarioId:    number;
-  }): Promise<void>;
-
   // Resumen de turno
   getResumenSesion(sesionCajaId: number): Promise<ResumenTurno>;
+
+  // Consecutivo para número de guía (MAX id de envios + 1)
+  nextConsecutivoGuia(): Promise<number>;
 }

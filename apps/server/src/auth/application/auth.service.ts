@@ -122,12 +122,13 @@ export class AuthService {
     sucursalId: number | null,
     rol: string,
   ) {
+    // Admins nacionales/sistema no requieren validación de equipo
     if (rol === 'ADMIN_SISTEMA' || rol === 'ADMIN_NACIONAL') return;
 
-    // CAJERO: debe venir de Tauri con MAC aprobada (en producción)
-    if (rol === 'CAJERO') {
+    // Roles operativos de sucursal (cajero auxiliar y principal): solo Tauri + equipo registrado
+    if (rol === 'CAJERO' || rol === 'SUPERVISOR_REGIONAL') {
       if (process.env.NODE_ENV === 'development') return;
-      this.logger.log(`[CAJERO login] plataforma=${plataforma} mac=${mac}`);
+      this.logger.log(`[${rol} login] plataforma=${plataforma} mac=${mac}`);
       if (plataforma !== 'tauri') {
         throw new UnauthorizedException('El acceso de cajero solo está permitido desde la aplicación de escritorio.');
       }
@@ -140,7 +141,7 @@ export class AuthService {
           activoequipos_autorizados: true,
         },
       });
-      if (!equipo) throw new UnauthorizedException('Este equipo no está autorizado para este cajero. Contáctese con soporte: applicationerp472@gmail.com');
+      if (!equipo) throw new UnauthorizedException('Este equipo no está autorizado para este usuario. Contáctese con soporte: applicationerp472@gmail.com');
       return;
     }
 

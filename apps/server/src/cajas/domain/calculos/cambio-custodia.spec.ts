@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import {
-  calcularCambioCustodiaMidTurno,
+  calcularCambioCustodiaEnSesion,
   buildDebitoPrincipalPorApertura,
   buildCreditoAuxiliarPorApertura,
 } from './cambio-custodia.js';
 
-describe('calcularCambioCustodiaMidTurno', () => {
+describe('calcularCambioCustodiaEnSesion', () => {
   it('genera par de movimientos correctos', () => {
-    const result = calcularCambioCustodiaMidTurno('100000', '500000');
+    const result = calcularCambioCustodiaEnSesion('100000', '500000');
     expect(result.monto).toBe('100000');
     expect(result.movimientoPrincipal.tipoMovimiento).toBe('cambio_custodia_out');
     expect(result.movimientoPrincipal.esEntrada).toBe(false);
@@ -17,16 +17,16 @@ describe('calcularCambioCustodiaMidTurno', () => {
   });
 
   it('monto exactamente igual al saldo', () => {
-    const result = calcularCambioCustodiaMidTurno('500000', '500000');
+    const result = calcularCambioCustodiaEnSesion('500000', '500000');
     expect(result.monto).toBe('500000');
   });
 
   it('monto cero lanza error', () => {
-    expect(() => calcularCambioCustodiaMidTurno('0', '500000')).toThrow('mayor a cero');
+    expect(() => calcularCambioCustodiaEnSesion('0', '500000')).toThrow('mayor a cero');
   });
 
   it('monto excede saldo lanza error', () => {
-    expect(() => calcularCambioCustodiaMidTurno('600000', '500000')).toThrow('supera saldo');
+    expect(() => calcularCambioCustodiaEnSesion('600000', '500000')).toThrow('supera saldo');
   });
 });
 

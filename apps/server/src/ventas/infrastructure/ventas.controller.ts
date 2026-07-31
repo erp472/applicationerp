@@ -12,6 +12,7 @@ import { AgregarProductoSchema }     from '../dto/agregar-producto.dto.js';
 import { ConfirmarVentaSchema }      from '../dto/confirmar-venta.dto.js';
 import { AnularVentaSchema }         from '../dto/anular-venta.dto.js';
 import { ContratarApartadoSchema }   from '../dto/contratar-apartado.dto.js';
+import { RenovarApartadoSchema }     from '../dto/renovar-apartado.dto.js';
 import { CrearApartadoAdminSchema }  from '../dto/crear-apartado-admin.dto.js';
 import { UpdateApartadoAdminSchema } from '../dto/update-apartado-admin.dto.js';
 import { CrearEnvioSchema }          from '../dto/crear-envio.dto.js';
@@ -228,6 +229,31 @@ export class VentasController {
     };
   }
 
+  @Post('punto/:cajaId/apartado/:id/renovar')
+  @Roles(...ROLES_CAJERO)
+  @ApiOperation({ summary: 'Renovar apartado postal — extiende fechaFin y registra cobro en caja' })
+  @ApiParam({ name: 'cajaId', type: Number })
+  @ApiParam({ name: 'id', type: Number })
+  @ApiResponse({ status: 201, description: 'Apartado renovado y movimiento registrado' })
+  @ApiResponse({ status: 404, description: 'Apartado no encontrado' })
+  @ApiResponse({ status: 409, description: 'Apartado no está ocupado' })
+  async renovarApartado(
+    @Param('cajaId', ParseIntPipe) cajaId:     number,
+    @Param('id',     ParseIntPipe) apartadoId: number,
+    @Body() body: unknown,
+  ) {
+    const parsed = RenovarApartadoSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    const result = await this.service.renovarApartado(cajaId, apartadoId, parsed.data);
+    return {
+      apartado:    result.apartado,
+      renovacion:  result.renovacion,
+      movimiento:  result.movimiento,
+      saldoActual: result.saldoActual,
+      alertas:     result.alertas,
+    };
+  }
+
   // ── Servicios Postales ────────────────────────────────────────────────────────
 
   @Get('servicios-postales')
@@ -238,6 +264,26 @@ export class VentasController {
     return this.service.getServiciosPostales(sucursalId);
   }
 
+  @Get('servicios-postales/:servicioId/paises-destino')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Lista de países de destino con tarifas configuradas para el servicio' })
+  @ApiParam({ name: 'servicioId', type: Number })
+  async getPaisesDestino(@Param('servicioId', ParseIntPipe) servicioId: number) {
+    return this.service.getPaisesDestinoByServicio(servicioId);
+  }
+
+  @Get('conversion-moneda')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Convertir COP a USD usando TRM del día' })
+  @ApiQuery({ name: 'valorCop', type: Number, required: true })
+  @ApiQuery({ name: 'trmDia',   type: Number, required: true })
+  conversionMoneda(
+    @Query('valorCop') valorCopS: string,
+    @Query('trmDia')   trmDiaS:   string,
+  ) {
+    return this.service.conversionMoneda(Number(valorCopS), Number(trmDiaS));
+  }
+
   @Get('servicios-postales/cotizar')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Cotizar tarifa de envío según servicio, peso y dimensiones' })
@@ -246,14 +292,20 @@ export class VentasController {
   @ApiQuery({ name: 'altoCm',       type: Number,  required: false })
   @ApiQuery({ name: 'anchoCm',      type: Number,  required: false })
   @ApiQuery({ name: 'largoCm',      type: Number,  required: false })
-  @ApiQuery({ name: 'paisDestino',  required: false })
+  @ApiQuery({ name: 'paisDestino',       required: false })
+  @ApiQuery({ name: 'ciudadDestino',     required: false })
+  @ApiQuery({ name: 'porcentajeArancel', type: Number, required: false, description: 'Porcentaje arancel destino — retorna estimado aduana en USD' })
+  @ApiQuery({ name: 'trmDia',            type: Number, required: false, description: 'TRM del día para conversión COP→USD en estimado de aduana' })
   async cotizarEnvio(
-    @Query('servicioId',   ParseIntPipe)  servicioId:   number,
-    @Query('pesoFisicoKg') pesoFisicoKgS: string,
-    @Query('altoCm')       altoCmS?:      string,
-    @Query('anchoCm')      anchoCmS?:     string,
-    @Query('largoCm')      largoCmS?:     string,
-    @Query('paisDestino')  paisDestino = 'CO',
+    @Query('servicioId',      ParseIntPipe)  servicioId:     number,
+    @Query('pesoFisicoKg')   pesoFisicoKgS: string,
+    @Query('altoCm')          altoCmS?:      string,
+    @Query('anchoCm')         anchoCmS?:     string,
+    @Query('largoCm')         largoCmS?:     string,
+    @Query('paisDestino')     paisDestino = 'CO',
+    @Query('ciudadDestino')   ciudadDestino?: string,
+    @Query('porcentajeArancel') porcentajeArancelS?: string,
+    @Query('trmDia')            trmDiaS?:            string,
   ) {
     return this.service.cotizarEnvio(
       servicioId,
@@ -262,6 +314,9 @@ export class VentasController {
       anchoCmS ? Number(anchoCmS) : undefined,
       largoCmS ? Number(largoCmS) : undefined,
       paisDestino,
+      ciudadDestino,
+      porcentajeArancelS ? Number(porcentajeArancelS) : undefined,
+      trmDiaS            ? Number(trmDiaS)            : undefined,
     );
   }
 

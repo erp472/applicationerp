@@ -11,16 +11,18 @@ const MEDIOS = [
 export type MedioPago = (typeof MEDIOS)[number];
 
 export interface RegionalConsolidado {
+  regionalId: number;
   porMedio: Record<MedioPago, string>;
 }
 
 export interface ConsolidadoComercioResult {
+  comercioId: number;
   total: string;
   porMedio: Record<MedioPago, string>;
   numRegionales: number;
 }
 
-export function consolidarComercio(regionales: RegionalConsolidado[]): ConsolidadoComercioResult {
+export function consolidarComercio(comercioId: number, regionales: RegionalConsolidado[]): ConsolidadoComercioResult {
   const totales = Object.fromEntries(MEDIOS.map((m) => [m, 0])) as Record<MedioPago, number>;
   for (const r of regionales) {
     for (const m of MEDIOS) {
@@ -29,6 +31,7 @@ export function consolidarComercio(regionales: RegionalConsolidado[]): Consolida
   }
   const totalGeneral = Object.values(totales).reduce((a, b) => a + b, 0);
   return {
+    comercioId,
     total: String(totalGeneral),
     porMedio: Object.fromEntries(MEDIOS.map((m) => [m, String(totales[m])])) as Record<
       MedioPago,

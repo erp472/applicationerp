@@ -58,8 +58,8 @@ describe('Ventas business rules', () => {
     it('calcula correctamente precio × cantidad − descuento', () => {
       expect(calcularSubtotalDetalle(5000, 2, 1000)).toBe(9000);
     });
-    it('no permite subtotal negativo', () => {
-      expect(calcularSubtotalDetalle(100, 1, 500)).toBe(0);
+    it('no permite subtotal negativo (lanza error)', () => {
+      expect(() => calcularSubtotalDetalle(100, 1, 500)).toThrow('El descuento supera el subtotal');
     });
     it('sin descuento devuelve precio × cantidad', () => {
       expect(calcularSubtotalDetalle(3000, 3, 0)).toBe(9000);

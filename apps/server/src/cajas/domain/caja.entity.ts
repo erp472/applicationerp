@@ -7,13 +7,15 @@ export type TipoMovimientoCaja =
   | 'consignacion' | 'reposicion'
   | 'cambio_custodia_in' | 'cambio_custodia_out'
   | 'diferencia_faltante' | 'diferencia_sobrante'
-  | 'anulacion' | 'recaudo' | 'moneda_circulante'
-  | 'pago_administrativo' | 'traslado_caja_fuerte';
+  | 'anulacion' | 'recaudo'
+  | 'pago_administrativo' | 'traslado_caja_fuerte'
+  | 'moneda_circulante';
 export type MedioPago = 'efectivo' | 'tarjeta_debito' | 'tarjeta_credito' | 'transferencia' | 'consignacion' | 'preporteado' | 'mixto_preporteado';
 export type MedioConsignacion = 'banco' | 'transportadora';
 export type TipoCuentaBancaria = 'ahorros' | 'corriente';
-export type EstadoAprobacion = 'pendiente' | 'aprobada' | 'rechazada';
-export type TipoAlerta = 'reposicion_caja' | 'limite_efectivo_caja';
+export type EstadoAprobacion = 'pendiente' | 'aprobada' | 'rechazada' | 'en_transito' | 'confirmada';
+export type TipoDiferencia  = 'faltante' | 'sobrante';
+export type TipoAlerta = 'reposicion_caja' | 'limite_efectivo_caja' | 'cierre_automatico';
 
 export class CajaEntity {
   id: number;
@@ -24,6 +26,7 @@ export class CajaEntity {
   tipo: TipoCaja;
   baseDia: string;
   limiteAlerta: string | null;
+  tTarget: string | null;
   activo: boolean;
 }
 
@@ -49,6 +52,7 @@ export class SesionCajaEntity {
   cierreForzado: boolean;
   estado: EstadoSesionCaja;
   observaciones: string | null;
+  arqueo?: ArqueoDenominacion[] | null;
   // populated on demand
   saldoActual?: string;
   alertas?: TipoAlerta[];
@@ -92,6 +96,19 @@ export class ReposicionCajaEntity {
   usuarioId: number | null;
   estado: EstadoAprobacion;
   motivo: string | null;
+  codigoRemesa: string | null;
+  createdAt: Date;
+}
+
+export class DiferenciaCajaEntity {
+  id: number;
+  sesionCajaId: number;
+  tipoDiferencia: TipoDiferencia;
+  monto: string;
+  custodioId: number | null;
+  estado: EstadoAprobacion;
+  aprobadorId: number | null;
+  observaciones: string | null;
   createdAt: Date;
 }
 
@@ -110,6 +127,10 @@ export interface PanelPunto {
   cajaPagos: string;
   cajaFuertePagos: string;
   acumuladoMonedaCirculante: string;
+  /** Σ montos de reposiciones con estado=en_transito en este punto (RF-4.01) */
+  tTransito: string;
+  debeReset: boolean;
+  horaReset: string | null;
 }
 
 export interface CardAuxiliar {
@@ -124,8 +145,13 @@ export interface CardAuxiliar {
   saldoActual: string | null;
   baseDia: string;
   limiteAlerta: string | null;
-  ingresosTurno: string;
-  egresosTurno: string;
+  /** Nivel óptimo de liquidez configurado por tesorería (T_target, RF-2.01) */
+  tTarget: string | null;
+  /** Monto recomendado para reposición: tTarget − saldoActual. null si no aplica alerta o no hay tTarget */
+  deltaReposicion: string | null;
+  ingresosSesion: string;
+  egresosSesion: string;
+  saldoPorMedioPago: Record<MedioPago, string>;
   girosCount: number;
   girosValor: string;
   alertas: TipoAlerta[];

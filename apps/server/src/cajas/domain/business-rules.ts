@@ -5,8 +5,23 @@ import {
   BaseMinimaVioladaError,
   ConsignacionEstadoInvalidoError,
   MontoInvalidoError,
+  CajeroYaAsignadoError,
 } from './caja.errors.js';
 import type { TipoAlerta, EstadoSesionCaja, EstadoAprobacion } from './caja.entity.js';
+
+export const TIPOS_MOVIMIENTO_ENTRADA = new Set([
+  'cambio_custodia_in', 'reposicion',
+  'venta_producto', 'venta_servicio', 'venta_estampilla',
+  'giro_emision_cobro', 'recaudo', 'diferencia_sobrante',
+  'apartado_postal',
+]);
+
+// traslado_caja_fuerte: el cajero entrega físicamente a bóveda — reduce saldo del cajón
+export const TIPOS_MOVIMIENTO_SALIDA = new Set([
+  'cambio_custodia_out', 'giro_pago', 'consignacion',
+  'diferencia_faltante', 'pago_administrativo', 'anulacion',
+  'traslado_caja_fuerte',
+]);
 
 // BR-CAJ-001
 export function validarUnicidadSesion(cajaId: number, sesionAbierta: boolean): void {
@@ -50,6 +65,11 @@ export function validarMontoPositivo(monto: string, label: string): void {
 export function computarArqueo(denominaciones: Array<{ denominacion: number; cantidad: number }> | undefined): number | null {
   if (!denominaciones || denominaciones.length === 0) return null;
   return denominaciones.reduce((sum, d) => sum + d.denominacion * d.cantidad, 0);
+}
+
+// BR-CAJ-008: un cajero solo puede ser custodio responsable de una caja auxiliar abierta a la vez
+export function validarUnicidadCustodio(cajeroId: number, tieneSesionAbierta: boolean): void {
+  if (tieneSesionAbierta) throw new CajeroYaAsignadoError(cajeroId);
 }
 
 // BR-CAJ-006: evalúa alertas después de registrar un movimiento

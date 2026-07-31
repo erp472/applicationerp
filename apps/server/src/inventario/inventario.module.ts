@@ -1,12 +1,17 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module.js';
-import { InventarioService } from './inventario.service.js';
-import { InventarioController } from './inventario.controller.js';
+import { INVENTARIO_REPOSITORY } from './domain/inventario.repository.js';
+import { InventarioService } from './application/inventario.service.js';
+import { PrismaInventarioRepository } from './infrastructure/prisma-inventario.repository.js';
+import { InventarioController } from './infrastructure/inventario.controller.js';
 
 @Module({
   imports:     [PrismaModule],
-  providers:   [InventarioService],
   controllers: [InventarioController],
-  exports:     [InventarioService],
+  providers: [
+    InventarioService,
+    { provide: INVENTARIO_REPOSITORY, useClass: PrismaInventarioRepository },
+  ],
+  exports: [InventarioService],
 })
 export class InventarioModule {}

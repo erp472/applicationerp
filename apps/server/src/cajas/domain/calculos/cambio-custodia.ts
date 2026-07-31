@@ -10,8 +10,8 @@ export interface CambioCustodiaResult {
   movimientoAuxiliar: MovimientoCambio;
 }
 
-// Traspaso de fondos principal → auxiliar a mitad del turno
-export function calcularCambioCustodiaMidTurno(
+// Traspaso de fondos principal → auxiliar durante la sesión
+export function calcularCambioCustodiaEnSesion(
   monto: string,
   saldoPrincipal: string,
 ): CambioCustodiaResult {

@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { calcularCierreTurno, calcularDiferenciaCierre } from './cierre-turno.js';
+import { calcularCierreSesion, calcularDiferenciaCierre } from './cierre-sesion.js';
 
-describe('calcularCierreTurno', () => {
+describe('calcularCierreSesion', () => {
   it('cuadre perfecto — diferencia 0', () => {
-    const result = calcularCierreTurno('250000', [
+    const result = calcularCierreSesion('250000', [
       { denominacion: 50000, cantidad: 4 },
       { denominacion: 10000, cantidad: 5 },
     ]);
@@ -15,19 +15,19 @@ describe('calcularCierreTurno', () => {
   });
 
   it('sobrante — arqueo mayor al esperado', () => {
-    const result = calcularCierreTurno('200000', [{ denominacion: 50000, cantidad: 5 }]);
+    const result = calcularCierreSesion('200000', [{ denominacion: 50000, cantidad: 5 }]);
     expect(result.diferencia).toBe('50000.00');
     expect(result.tieneDiferencia).toBe(true);
   });
 
   it('faltante — arqueo menor al esperado', () => {
-    const result = calcularCierreTurno('50000', [{ denominacion: 10000, cantidad: 3 }]);
+    const result = calcularCierreSesion('50000', [{ denominacion: 10000, cantidad: 3 }]);
     expect(result.diferencia).toBe('-20000.00');
     expect(result.tieneDiferencia).toBe(true);
   });
 
   it('denominaciones vacías — arqueo 0', () => {
-    const result = calcularCierreTurno('0', []);
+    const result = calcularCierreSesion('0', []);
     expect(result.totalArqueo).toBe('0.00');
     expect(result.tieneDiferencia).toBe(false);
   });

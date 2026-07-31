@@ -506,6 +506,76 @@ async function main() {
   }
   console.log('✓ Tarifas servicio nacional estándar')
 
+  // ── 13b. TARIFAS INTERNACIONALES EMS (muestra — actualizar con tabla UPU oficial) ─────
+  // Tasas aproximadas en COP (1 USD ≈ 4 200 COP, tarifas UPU zona América/Europa)
+  const tarifasIntlMs: { pais: string; peso_min: number; peso_max?: number; tarifa: number; tarifa_kg_adic?: number }[] = [
+    // Estados Unidos (US)
+    { pais: 'US', peso_min: 0,   peso_max: 0.5, tarifa: 80000 },
+    { pais: 'US', peso_min: 0.5, peso_max: 1,   tarifa: 110000 },
+    { pais: 'US', peso_min: 1,   peso_max: 2,   tarifa: 150000, tarifa_kg_adic: 45000 },
+    { pais: 'US', peso_min: 2,   peso_max: 30,  tarifa: 200000, tarifa_kg_adic: 40000 },
+    // España (ES)
+    { pais: 'ES', peso_min: 0,   peso_max: 0.5, tarifa: 90000 },
+    { pais: 'ES', peso_min: 0.5, peso_max: 1,   tarifa: 125000 },
+    { pais: 'ES', peso_min: 1,   peso_max: 2,   tarifa: 170000, tarifa_kg_adic: 50000 },
+    { pais: 'ES', peso_min: 2,   peso_max: 30,  tarifa: 220000, tarifa_kg_adic: 48000 },
+    // Brasil (BR)
+    { pais: 'BR', peso_min: 0,   peso_max: 0.5, tarifa: 70000 },
+    { pais: 'BR', peso_min: 0.5, peso_max: 1,   tarifa: 95000 },
+    { pais: 'BR', peso_min: 1,   peso_max: 2,   tarifa: 130000, tarifa_kg_adic: 38000 },
+    { pais: 'BR', peso_min: 2,   peso_max: 30,  tarifa: 175000, tarifa_kg_adic: 35000 },
+    // México (MX)
+    { pais: 'MX', peso_min: 0,   peso_max: 0.5, tarifa: 75000 },
+    { pais: 'MX', peso_min: 0.5, peso_max: 1,   tarifa: 100000 },
+    { pais: 'MX', peso_min: 1,   peso_max: 2,   tarifa: 135000, tarifa_kg_adic: 40000 },
+    { pais: 'MX', peso_min: 2,   peso_max: 30,  tarifa: 180000, tarifa_kg_adic: 37000 },
+    // Alemania (DE)
+    { pais: 'DE', peso_min: 0,   peso_max: 0.5, tarifa: 90000 },
+    { pais: 'DE', peso_min: 0.5, peso_max: 1,   tarifa: 125000 },
+    { pais: 'DE', peso_min: 1,   peso_max: 2,   tarifa: 170000, tarifa_kg_adic: 50000 },
+    { pais: 'DE', peso_min: 2,   peso_max: 30,  tarifa: 220000, tarifa_kg_adic: 48000 },
+    // Francia (FR)
+    { pais: 'FR', peso_min: 0,   peso_max: 0.5, tarifa: 92000 },
+    { pais: 'FR', peso_min: 0.5, peso_max: 1,   tarifa: 128000 },
+    { pais: 'FR', peso_min: 1,   peso_max: 2,   tarifa: 172000, tarifa_kg_adic: 50000 },
+    { pais: 'FR', peso_min: 2,   peso_max: 30,  tarifa: 222000, tarifa_kg_adic: 48000 },
+    // Canada (CA)
+    { pais: 'CA', peso_min: 0,   peso_max: 0.5, tarifa: 82000 },
+    { pais: 'CA', peso_min: 0.5, peso_max: 1,   tarifa: 112000 },
+    { pais: 'CA', peso_min: 1,   peso_max: 2,   tarifa: 152000, tarifa_kg_adic: 45000 },
+    { pais: 'CA', peso_min: 2,   peso_max: 30,  tarifa: 202000, tarifa_kg_adic: 40000 },
+    // Ecuador (EC)
+    { pais: 'EC', peso_min: 0,   peso_max: 0.5, tarifa: 65000 },
+    { pais: 'EC', peso_min: 0.5, peso_max: 1,   tarifa: 88000 },
+    { pais: 'EC', peso_min: 1,   peso_max: 2,   tarifa: 120000, tarifa_kg_adic: 35000 },
+    { pais: 'EC', peso_min: 2,   peso_max: 30,  tarifa: 160000, tarifa_kg_adic: 32000 },
+    // Perú (PE)
+    { pais: 'PE', peso_min: 0,   peso_max: 0.5, tarifa: 67000 },
+    { pais: 'PE', peso_min: 0.5, peso_max: 1,   tarifa: 90000 },
+    { pais: 'PE', peso_min: 1,   peso_max: 2,   tarifa: 122000, tarifa_kg_adic: 35000 },
+    { pais: 'PE', peso_min: 2,   peso_max: 30,  tarifa: 163000, tarifa_kg_adic: 32000 },
+    // Venezuela (VE)
+    { pais: 'VE', peso_min: 0,   peso_max: 0.5, tarifa: 63000 },
+    { pais: 'VE', peso_min: 0.5, peso_max: 1,   tarifa: 85000 },
+    { pais: 'VE', peso_min: 1,   peso_max: 2,   tarifa: 115000, tarifa_kg_adic: 33000 },
+    { pais: 'VE', peso_min: 2,   peso_max: 30,  tarifa: 153000, tarifa_kg_adic: 30000 },
+  ]
+
+  for (const t of tarifasIntlMs) {
+    await prisma.tarifaServicio.create({
+      data: {
+        servicios_idservicios:                servicios['INT-MS'].idservicios,
+        pais_destinotarifas_servicio:         t.pais,
+        peso_min_kgtarifas_servicio:          t.peso_min,
+        peso_max_kgtarifas_servicio:          t.peso_max ?? null,
+        tarifatarifas_servicio:               t.tarifa,
+        tarifa_kg_adicionaltarifas_servicio:  t.tarifa_kg_adic ?? null,
+        activatarifas_servicio:               true,
+      },
+    })
+  }
+  console.log(`✓ Tarifas internacionales EMS: ${tarifasIntlMs.length} filas (10 países)`)
+
   // ── 14. INVENTARIO INICIAL ────────────────────────────────────────────────
   const estampillas = Object.entries(productos).filter(([k]) => k.startsWith('EST-'))
   for (const suc of sucursales) {

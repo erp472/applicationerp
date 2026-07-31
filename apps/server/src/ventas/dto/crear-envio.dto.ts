@@ -26,6 +26,11 @@ export const CrearEnvioSchema = z.object({
   contenido:        z.string().max(200).optional(),
   observaciones:    z.string().max(500).optional(),
   medioPago:        z.enum(['efectivo', 'tarjeta_debito', 'tarjeta_credito', 'transferencia', 'consignacion', 'preporteado', 'mixto_preporteado']),
+  // preporteado / mixto_preporteado breakdown (required when medioPago uses estampillas)
+  montoEstampillas: z.number().positive().optional(),
+  montoEfectivo:    z.number().positive().optional(),
+  // international CP guide (format: LLddddddddLL)
+  guiaCp:           z.string().regex(/^[A-Z]{2}\d{8}[A-Z]{2}$/, 'Formato esperado: LLddddddddLL').optional(),
 });
 
 export type CrearEnvioDto = z.infer<typeof CrearEnvioSchema>;

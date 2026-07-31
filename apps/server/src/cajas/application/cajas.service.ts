@@ -1,4 +1,5 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, BadRequestException } from '@nestjs/common';
+import crypto from 'crypto';
 import { CAJAS_REPOSITORY } from '../domain/caja.repository.js';
 import type { ICajasRepository } from '../domain/caja.repository.js';
 import { SESIONES_CAJA_REPOSITORY } from '../domain/sesion-caja.repository.js';
@@ -8,7 +9,14 @@ import {
   CajaPadreNoEncontradaError,
   SesionNoEncontradaError,
   ConsignacionNoEncontradaError,
+  DiferenciaNoEncontradaError,
+  DiferenciaEstadoInvalidoError,
+  SoDViolacionError,
+  ReposicionNoEncontradaError,
+  ReposicionEstadoInvalidoError,
+  DiscrepanciaTransitoError,
   AuxiliaresAbiertasError,
+  TopeMaximoEfectivoError,
 } from '../domain/caja.errors.js';
 import type { CreateCajaDto } from '../dto/create-caja.dto.js';
 import type { UpdateCajaDto } from '../dto/update-caja.dto.js';
@@ -16,17 +24,29 @@ import type { CreateCajaPadreDto } from '../dto/create-caja-padre.dto.js';
 import type { UpdateCajaPadreDto } from '../dto/update-caja-padre.dto.js';
 import {
   validarUnicidadSesion,
+  validarUnicidadCustodio,
   validarSesionAbierta,
   validarSaldoSuficiente,
   validarConsignacionPendiente,
   evaluarAlertas,
+  TIPOS_MOVIMIENTO_ENTRADA,
+  TIPOS_MOVIMIENTO_SALIDA,
 } from '../domain/business-rules.js';
-import { calcularCierreTurno } from '../domain/calculos/cierre-turno.js';
+import { calcularCierreSesion } from '../domain/calculos/cierre-sesion.js';
+import { compararArqueoConSaldo } from '../domain/calculos/arqueo-denominaciones.js';
+import { calcularMonedaCirculante } from '../domain/calculos/moneda-circulante.js';
+import { consolidarComercio } from '../domain/calculos/consolidado-comercio.js';
 import { calcularCapacidadPunto } from '../domain/calculos/capacidad-punto.js';
 import { buildBaseAperturaPrincipal, calcularBaseAsignadaAuxiliar } from '../domain/calculos/base-apertura.js';
-import { buildDebitoPrincipalPorApertura, buildCreditoAuxiliarPorApertura, calcularCambioCustodiaMidTurno } from '../domain/calculos/cambio-custodia.js';
-import { calcularDiferenciaFaltante, calcularDiferenciaSobrante } from '../domain/calculos/diferencia-saldo.js';
+import { buildDebitoPrincipalPorApertura, buildCreditoAuxiliarPorApertura, calcularCambioCustodiaEnSesion } from '../domain/calculos/cambio-custodia.js';
 import { buildPagoAdministrativo } from '../domain/calculos/pago-administrativo-calc.js';
+import {
+  validarMontoConsignacion,
+  buildImpactoConsignacionAprobada,
+} from '../domain/calculos/consignacion.js';
+import { calcularSaldoPorMedioPago } from '../domain/calculos/saldo-por-medio-pago.js';
+import { evaluarCierreForzado } from '../domain/calculos/cierre-forzado.js';
+import { calcularTrasladoCajaFuerte } from '../domain/calculos/traslado-caja-fuerte.js';
 import type { AperturaAuxiliarDto } from '../dto/apertura-auxiliar.dto.js';
 import type { AperturaPrincipalDto } from '../dto/apertura-principal.dto.js';
 import type { CierreCajaDto } from '../dto/cierre-caja.dto.js';
@@ -127,7 +147,7 @@ export class CajasService {
       return {
         sucursalId,
         cajaPadreId: 0,
-        panel: { baseGeneral: '0', cajaGeneral: '0', cajaFuerteGeneral: '0', basePagos: '0', cajaPagos: '0', cajaFuertePagos: '0', acumuladoMonedaCirculante: '0' },
+        panel: { baseGeneral: '0', cajaGeneral: '0', cajaFuerteGeneral: '0', basePagos: '0', cajaPagos: '0', cajaFuertePagos: '0', acumuladoMonedaCirculante: '0', tTransito: '0', debeReset: false, horaReset: null },
         cajas: [],
       };
     }
@@ -142,10 +162,25 @@ export class CajasService {
     const caja = await this.cajasRepo.findById(sesion.cajaId);
     if (!caja) throw new CajaNoEncontradaError(sesion.cajaId);
 
-    const saldo = await this.sesionesRepo.calcularSaldo(sesionId);
+    const [saldo, movimientos] = await Promise.all([
+      this.sesionesRepo.calcularSaldo(sesionId),
+      this.sesionesRepo.getMovimientos(sesionId),
+    ]);
     const alertas = evaluarAlertas(saldo, caja.baseDia, caja.limiteAlerta);
+    const saldoPorMedio = calcularSaldoPorMedioPago(
+      movimientos
+        .filter(m =>
+          TIPOS_MOVIMIENTO_ENTRADA.has(m.tipo) ||
+          TIPOS_MOVIMIENTO_SALIDA.has(m.tipo),
+        )
+        .map(m => ({
+          medioPago: m.medioPago ?? undefined,
+          monto:     m.monto,
+          esEntrada: TIPOS_MOVIMIENTO_ENTRADA.has(m.tipo),
+        })),
+    );
 
-    return { ...sesion, saldoActual: saldo, alertas };
+    return { ...sesion, saldoActual: saldo, alertas, saldoPorMedio };
   }
 
   async getMovimientos(sesionId: number) {
@@ -154,9 +189,9 @@ export class CajasService {
     return this.sesionesRepo.getMovimientos(sesionId);
   }
 
-  // ── Apertura del turno principal (Caja Fuerte) ─────────────────────────────
+  // ── Apertura de sesión principal (Caja Fuerte) ──────────────────────────────
 
-  async abrirTurnoPrincipal(cajaPadreId: number, dto: AperturaPrincipalDto, usuarioId: number) {
+  async abrirSesionPrincipal(cajaPadreId: number, dto: AperturaPrincipalDto, usuarioId: number) {
     const padre = await this.cajasRepo.findPadreById(cajaPadreId);
     if (!padre) throw new CajaPadreNoEncontradaError(cajaPadreId);
 
@@ -178,7 +213,7 @@ export class CajasService {
       sesionCajaId: sesion.id,
       tipo:         baseApertura.tipoMovimiento,
       monto:        baseApertura.saldoInicial,
-      descripcion:  'Apertura turno principal',
+      descripcion:  'Apertura caja principal',
     });
 
     return sesion;
@@ -192,6 +227,11 @@ export class CajasService {
 
     const sesionExistente = await this.sesionesRepo.findAbiertaByCaja(cajaId);
     validarUnicidadSesion(cajaId, !!sesionExistente);
+
+    if (dto.cajeroAsignadoId) {
+      const sesionCajero = await this.sesionesRepo.findAbiertaByCajero(dto.cajeroAsignadoId);
+      validarUnicidadCustodio(dto.cajeroAsignadoId, !!sesionCajero);
+    }
 
     const sesion = await this.sesionesRepo.crearSesion({
       cajaId,
@@ -224,33 +264,40 @@ export class CajasService {
     const sesionExistente = await this.sesionesRepo.findAbiertaByCaja(dto.cajaAuxiliarId);
     validarUnicidadSesion(dto.cajaAuxiliarId, !!sesionExistente);
 
+    if (dto.cajeroAsignadoId) {
+      const sesionCajero = await this.sesionesRepo.findAbiertaByCajero(dto.cajeroAsignadoId);
+      validarUnicidadCustodio(dto.cajeroAsignadoId, !!sesionCajero);
+    }
+
     const saldoPrincipal = await this.sesionesRepo.calcularSaldo(sesionPrincipalId);
     const baseResult   = calcularBaseAsignadaAuxiliar(saldoPrincipal, dto.baseAsignada, false);
     const debito       = buildDebitoPrincipalPorApertura(baseResult.baseAsignada);
     const credito      = buildCreditoAuxiliarPorApertura(baseResult.baseAsignada);
 
+    // RF-3.02: monto_apertura='0' porque el saldo inicial llega vía cambio_custodia_in.
+    // Si se pusiera baseAsignada aquí Y en el movimiento, calcularSaldo daría 2×base.
     const nuevaSesion = await this.sesionesRepo.crearSesion({
       cajaId:            dto.cajaAuxiliarId,
       usuarioAperturaId: usuarioId,
       cajeroAsignadoId:  dto.cajeroAsignadoId,
       equipoMac:         dto.equipoMac,
-      montoApertura:     baseResult.baseAsignada,
+      montoApertura:     '0',
     });
 
-    await Promise.all([
-      this.sesionesRepo.registrarMovimiento({
+    await this.sesionesRepo.registrarTransferenciaAtomica(
+      {
         sesionCajaId: sesionPrincipalId,
         tipo:         debito.tipoMovimiento,
         monto:        debito.monto,
         descripcion:  `Apertura caja auxiliar ${caja.codigo}`,
-      }),
-      this.sesionesRepo.registrarMovimiento({
+      },
+      {
         sesionCajaId: nuevaSesion.id,
         tipo:         credito.tipoMovimiento,
         monto:        credito.monto,
         descripcion:  `Base asignada desde principal`,
-      }),
-    ]);
+      },
+    );
 
     await this.sesionesRepo.crearReposicion({
       sesionOrigenId:  sesionPrincipalId,
@@ -276,10 +323,15 @@ export class CajasService {
     validarSesionAbierta(sesionAuxiliarId, sesion.estado);
 
     const saldoEsperado = await this.sesionesRepo.calcularSaldo(sesionAuxiliarId);
-    const totalArqueo = dto.denominaciones?.length
-      ? calcularCierreTurno(saldoEsperado, dto.denominaciones).totalArqueo
+    const arqueoComparacion = dto.denominaciones?.length
+      ? compararArqueoConSaldo(dto.denominaciones, saldoEsperado)
+      : null;
+    const totalArqueo = arqueoComparacion
+      ? arqueoComparacion.total
       : Number(dto.totalArqueo).toFixed(2);
     const diferencia = Number(totalArqueo) - Number(saldoEsperado);
+
+    const { debeForzar } = evaluarCierreForzado(sesion.fechaApertura, new Date(), 24);
 
     // Auto-find the Caja Fuerte (general) session for this punto
     let sesionGeneral: Awaited<ReturnType<typeof this.sesionesRepo.findById>> = null;
@@ -294,20 +346,20 @@ export class CajasService {
     if (sesionGeneral) {
       // C2: la devolución a principal usa el saldo electrónico (saldoEsperado),
       // no el arqueo físico declarado. La diferencia queda registrada aparte.
-      await Promise.all([
-        this.sesionesRepo.registrarMovimiento({
+      await this.sesionesRepo.registrarTransferenciaAtomica(
+        {
           sesionCajaId: sesionAuxiliarId,
           tipo:         'cambio_custodia_out',
           monto:        saldoEsperado,
           descripcion:  'Cierre auxiliar — entrega a principal',
-        }),
-        this.sesionesRepo.registrarMovimiento({
+        },
+        {
           sesionCajaId: sesionGeneral.id,
           tipo:         'cambio_custodia_in',
           monto:        saldoEsperado,
           descripcion:  `Cierre auxiliar ${sesion.cajaId} — recepción`,
-        }),
-      ]);
+        },
+      );
       await this.sesionesRepo.crearReposicion({
         sesionOrigenId:  sesionAuxiliarId,
         sesionDestinoId: sesionGeneral.id,
@@ -318,26 +370,21 @@ export class CajasService {
       });
     }
 
-    // C9: diferencia registrada en libros para cuadre; pendiente aprobación supervisor
-    let diferenciaCierre: { tipo: 'sobrante' | 'faltante'; monto: string } | null = null;
-    if (diferencia > 0.01) {
-      const dif = calcularDiferenciaSobrante(saldoEsperado, totalArqueo);
-      await this.sesionesRepo.registrarMovimiento({
-        sesionCajaId: sesionAuxiliarId,
-        tipo:         dif.tipoMovimiento,
-        monto:        dif.sobrante,
-        descripcion:  `PENDIENTE APROBACIÓN: diferencia de cierre auxiliar. Esperado $${saldoEsperado}, arqueo $${totalArqueo}`,
+    // RF-3.03: diferencia NO se aplica al saldo inmediatamente — queda pendiente de
+    // aprobación del supervisor (SoD: aprobador ≠ custodio). El movimiento se registra
+    // en la sesión cerrada solo cuando el supervisor resuelve la DiferenciaCaja.
+    let diferenciaCierre: { id: number; tipo: 'sobrante' | 'faltante'; monto: string } | null = null;
+    if (Math.abs(diferencia) > 0.01) {
+      const tipoDif = diferencia > 0 ? 'sobrante' : 'faltante';
+      const montoDif = Math.abs(diferencia).toFixed(2);
+      const registro = await this.sesionesRepo.crearDiferencia({
+        sesionCajaId:  sesionAuxiliarId,
+        tipoDiferencia: tipoDif,
+        monto:          montoDif,
+        custodioId:     sesion.cajeroAsignadoId ?? sesion.usuarioAperturaId,
+        observaciones:  `Cierre auxiliar — esperado $${saldoEsperado}, arqueo $${totalArqueo}`,
       });
-      diferenciaCierre = { tipo: 'sobrante', monto: dif.sobrante };
-    } else if (diferencia < -0.01) {
-      const dif = calcularDiferenciaFaltante(saldoEsperado, totalArqueo);
-      await this.sesionesRepo.registrarMovimiento({
-        sesionCajaId: sesionAuxiliarId,
-        tipo:         dif.tipoMovimiento,
-        monto:        dif.faltante,
-        descripcion:  `PENDIENTE APROBACIÓN: diferencia de cierre auxiliar. Esperado $${saldoEsperado}, arqueo $${totalArqueo}`,
-      });
-      diferenciaCierre = { tipo: 'faltante', monto: dif.faltante };
+      diferenciaCierre = { id: registro.id, tipo: tipoDif, monto: montoDif };
     }
 
     const sesionCerrada = await this.sesionesRepo.cerrarSesion(sesionAuxiliarId, {
@@ -345,12 +392,15 @@ export class CajasService {
       montoCierre:     totalArqueo,
       arqueo:          dto.denominaciones,
       observaciones:   dto.observaciones,
+      forzado:         debeForzar,
     });
 
-    return { sesion: sesionCerrada, diferenciaCierre };
+    return { sesion: sesionCerrada, diferenciaCierre, forzado: debeForzar, arqueoComparacion };
   }
 
-  // ── Cambio de custodia ──────────────────────────────────────────────────────
+  // ── Cambio de custodia — RF-4.01 Two-Phase Transfer ─────────────────────────
+  // Fase 1 (EMITIR): El dinero sale del origen y queda en tránsito.
+  // Genera un codigo_remesa inmutable (RF-4.02) que el receptor debe ingresar.
 
   async cambioCustodia(sesionOrigenId: number, dto: CambioCustodiaDto, usuarioId: number) {
     const sesionOrigen = await this.sesionesRepo.findById(sesionOrigenId);
@@ -362,37 +412,86 @@ export class CajasService {
     validarSesionAbierta(dto.sesionDestinoId, sesionDestino.estado);
 
     const saldoOrigen = await this.sesionesRepo.calcularSaldo(sesionOrigenId);
-    const custodia = calcularCambioCustodiaMidTurno(dto.monto, saldoOrigen);
+    const custodia = calcularCambioCustodiaEnSesion(dto.monto, saldoOrigen);
 
-    await Promise.all([
-      this.sesionesRepo.registrarMovimiento({
-        sesionCajaId: sesionOrigenId,
-        tipo:         custodia.movimientoPrincipal.tipoMovimiento,
-        monto:        custodia.movimientoPrincipal.monto,
-        descripcion:  dto.motivo,
-      }),
-      this.sesionesRepo.registrarMovimiento({
-        sesionCajaId: dto.sesionDestinoId,
-        tipo:         custodia.movimientoAuxiliar.tipoMovimiento,
-        monto:        custodia.movimientoAuxiliar.monto,
-        descripcion:  dto.motivo,
-      }),
-    ]);
+    // RF-4.02: hash de 16 caracteres derivado de los parámetros del traspaso.
+    // Inmutable: se genera una sola vez y no puede modificarse (RNF-5.01).
+    const timestamp = Date.now();
+    const codigoRemesa = crypto
+      .createHash('sha256')
+      .update(`${sesionOrigenId}-${dto.sesionDestinoId}-${dto.monto}-${timestamp}`)
+      .digest('hex')
+      .substring(0, 16)
+      .toUpperCase();
 
-    await this.sesionesRepo.crearReposicion({
+    // Fase 1: solo se registra la SALIDA del origen; el destino recibe cuando confirme.
+    await this.sesionesRepo.registrarMovimiento({
+      sesionCajaId: sesionOrigenId,
+      tipo:         custodia.movimientoPrincipal.tipoMovimiento,
+      monto:        custodia.movimientoPrincipal.monto,
+      descripcion:  `[REMESA:${codigoRemesa}] ${dto.motivo ?? 'cambio_custodia'} — EN TRÁNSITO`,
+    });
+
+    const reposicion = await this.sesionesRepo.crearReposicion({
       sesionOrigenId,
       sesionDestinoId: dto.sesionDestinoId,
       monto:           dto.monto,
       usuarioId,
-      estado:          'aprobada',
+      estado:          'en_transito',
       motivo:          dto.motivo ?? 'cambio_custodia',
+      codigoRemesa,
     });
 
-    const caja = await this.cajasRepo.findById(sesionDestino.cajaId);
-    const nuevoSaldo = await this.sesionesRepo.calcularSaldo(dto.sesionDestinoId);
-    const alertas = evaluarAlertas(nuevoSaldo, caja?.baseDia ?? '0', caja?.limiteAlerta ?? null);
+    const saldoOrigen2 = await this.sesionesRepo.calcularSaldo(sesionOrigenId);
+    const cajaOrigen  = await this.cajasRepo.findById(sesionOrigen.cajaId);
+    const alertas = evaluarAlertas(saldoOrigen2, cajaOrigen?.baseDia ?? '0', cajaOrigen?.limiteAlerta ?? null);
 
-    return { monto: dto.monto, saldoDestino: nuevoSaldo, alertas };
+    return {
+      reposicionId:  reposicion.id,
+      codigoRemesa,
+      montoEmitido:  dto.monto,
+      saldoOrigen:   saldoOrigen2,
+      alertas,
+      estado:        'en_transito' as const,
+    };
+  }
+
+  // Fase 2 (CONFIRMAR): El receptor verifica el dinero físico e ingresa el código.
+  // RF-4.01 S3: si montoRecibido === montoEmitido → CONFIRMADO (saldo acreditado).
+  // Si hay discrepancia → DiscrepanciaTransitoError (queda en_transito para auditoría).
+
+  async confirmarCustodia(codigoRemesa: string, montoRecibido: string, receptorId: number) {
+    const reposicion = await this.sesionesRepo.findReposicionByCodigo(codigoRemesa);
+    if (!reposicion) throw new ReposicionNoEncontradaError(codigoRemesa);
+    if (reposicion.estado !== 'en_transito') throw new ReposicionEstadoInvalidoError(reposicion.estado);
+
+    if (Math.abs(Number(montoRecibido) - Number(reposicion.monto)) > 0.01) {
+      throw new DiscrepanciaTransitoError(reposicion.monto, montoRecibido);
+    }
+
+    const sesionDestino = await this.sesionesRepo.findById(reposicion.sesionDestinoId);
+    if (!sesionDestino) throw new SesionNoEncontradaError(reposicion.sesionDestinoId);
+    validarSesionAbierta(reposicion.sesionDestinoId, sesionDestino.estado);
+
+    // Acreditar en el destino y marcar confirmada en una sola transacción ACID (RNF-5.02).
+    // Si la BD cae entre los dos pasos, ninguno se aplica — la reposición permanece
+    // en_transito y puede reintentarse sin duplicar el crédito.
+    const confirmada = await this.sesionesRepo.confirmarCustodiaAtomica(
+      reposicion.id,
+      {
+        sesionCajaId: reposicion.sesionDestinoId,
+        tipo:         'cambio_custodia_in',
+        monto:        reposicion.monto,
+        descripcion:  `[REMESA:${codigoRemesa}] Recibido y confirmado por receptor ${receptorId}`,
+      },
+      receptorId,
+    );
+
+    const cajaDestino = await this.cajasRepo.findById(sesionDestino.cajaId);
+    const nuevoSaldo  = await this.sesionesRepo.calcularSaldo(reposicion.sesionDestinoId);
+    const alertas = evaluarAlertas(nuevoSaldo, cajaDestino?.baseDia ?? '0', cajaDestino?.limiteAlerta ?? null);
+
+    return { reposicion: confirmada, saldoDestino: nuevoSaldo, alertas };
   }
 
   // ── Consignación ─────────────────────────────────────────────────────────────
@@ -401,6 +500,13 @@ export class CajasService {
     const sesion = await this.sesionesRepo.findById(sesionId);
     if (!sesion) throw new SesionNoEncontradaError(sesionId);
     validarSesionAbierta(sesionId, sesion.estado);
+
+    const saldo = await this.sesionesRepo.calcularSaldo(sesionId);
+    try {
+      validarMontoConsignacion(dto.monto, saldo);
+    } catch (e: unknown) {
+      throw new BadRequestException(e instanceof Error ? e.message : 'Monto inválido');
+    }
 
     return this.sesionesRepo.crearConsignacion({
       sesionCajaId: sesionId,
@@ -426,10 +532,15 @@ export class CajasService {
     });
 
     if (dto.estado === 'aprobada') {
+      const impacto = buildImpactoConsignacionAprobada(
+        consignacion.monto,
+        consignacion.sesionCajaId,
+        new Date(),
+      );
       await this.sesionesRepo.registrarMovimiento({
-        sesionCajaId: consignacion.sesionCajaId,
-        tipo:         'consignacion',
-        monto:        consignacion.monto,
+        sesionCajaId: impacto.sesionCajaId,
+        tipo:         impacto.tipoMovimiento,
+        monto:        impacto.monto,
         descripcion:  `Consignación aprobada #${id}`,
       });
     }
@@ -452,6 +563,26 @@ export class CajasService {
     });
   }
 
+  // ── Ajuste por moneda circulante (redondeos CIPOS acumulados) ───────────────
+
+  async registrarAjusteMonedaCirculante(sesionId: number, acumuladoCentavos: string) {
+    const sesion = await this.sesionesRepo.findById(sesionId);
+    if (!sesion) throw new SesionNoEncontradaError(sesionId);
+    validarSesionAbierta(sesionId, sesion.estado);
+
+    const ajuste = calcularMonedaCirculante(acumuladoCentavos);
+    if (Number(ajuste.monto) === 0) {
+      return null;
+    }
+
+    return this.sesionesRepo.registrarMovimiento({
+      sesionCajaId: sesionId,
+      tipo:         ajuste.tipoMovimiento,
+      monto:        ajuste.monto,
+      descripcion:  `Ajuste moneda circulante CIPOS: ${ajuste.esEntrada ? '+' : '-'}${ajuste.monto}`,
+    });
+  }
+
   // ── Pago administrativo ──────────────────────────────────────────────────────
 
   async registrarPagoAdministrativo(sesionId: number, dto: PagoAdministrativoDto) {
@@ -471,9 +602,9 @@ export class CajasService {
     });
   }
 
-  // ── Cierre de turno principal ────────────────────────────────────────────────
+  // ── Cierre de sesión principal ───────────────────────────────────────────────
 
-  async cerrarTurnoPrincipal(sesionPrincipalId: number, dto: CierreCajaDto, usuarioId: number) {
+  async cerrarSesionPrincipal(sesionPrincipalId: number, dto: CierreCajaDto, usuarioId: number) {
     const sesion = await this.sesionesRepo.findById(sesionPrincipalId);
     if (!sesion) throw new SesionNoEncontradaError(sesionPrincipalId);
     validarSesionAbierta(sesionPrincipalId, sesion.estado);
@@ -481,47 +612,43 @@ export class CajasService {
     const caja = await this.cajasRepo.findById(sesion.cajaId);
     if (!caja) throw new CajaNoEncontradaError(sesion.cajaId);
 
-    const sesionesAbiertas = await this.sesionesRepo.findAbiertasByPunto(caja.sucursalId);
+    const sesionesAbiertas = await this.sesionesRepo.findAbiertasByPunto(caja.cajaPadreId!);
     const auxiliaresAbiertas = sesionesAbiertas.filter(s => s.id !== sesionPrincipalId);
     if (auxiliaresAbiertas.length > 0) {
       throw new AuxiliaresAbiertasError(auxiliaresAbiertas.length);
     }
 
     const saldoEsperado = await this.sesionesRepo.calcularSaldo(sesionPrincipalId);
-    const totalArqueo = dto.denominaciones?.length
-      ? calcularCierreTurno(saldoEsperado, dto.denominaciones).totalArqueo
+    const arqueoComparacion = dto.denominaciones?.length
+      ? compararArqueoConSaldo(dto.denominaciones, saldoEsperado)
+      : null;
+    const totalArqueo = arqueoComparacion
+      ? arqueoComparacion.total
       : Number(dto.totalArqueo).toFixed(2);
     const diferencia = Number(totalArqueo) - Number(saldoEsperado);
+
+    const { debeForzar } = evaluarCierreForzado(sesion.fechaApertura, new Date(), 24);
 
     await this.sesionesRepo.registrarMovimiento({
       sesionCajaId: sesionPrincipalId,
       tipo:         'cierre',
       monto:        totalArqueo,
-      descripcion:  'Cierre de turno principal',
+      descripcion:  'Cierre de caja principal',
     });
 
-    // C9: la diferencia se registra en libros para cuadre, pero queda pendiente de
-    // aprobación por tesorería. El supervisor debe usar registrarDiferencia() para
-    // formalizar el impacto (absorción de pérdida o depósito de sobrante).
-    let diferenciaCierre: { tipo: 'sobrante' | 'faltante'; monto: string } | null = null;
-    if (diferencia > 0.01) {
-      const dif = calcularDiferenciaSobrante(saldoEsperado, totalArqueo);
-      await this.sesionesRepo.registrarMovimiento({
-        sesionCajaId: sesionPrincipalId,
-        tipo:         dif.tipoMovimiento,
-        monto:        dif.sobrante,
-        descripcion:  `PENDIENTE APROBACIÓN: diferencia de cierre principal. Esperado $${saldoEsperado}, arqueo $${totalArqueo}`,
+    // RF-3.03: la diferencia queda en estado pendiente hasta aprobación del supervisor.
+    let diferenciaCierre: { id: number; tipo: 'sobrante' | 'faltante'; monto: string } | null = null;
+    if (Math.abs(diferencia) > 0.01) {
+      const tipoDif = diferencia > 0 ? 'sobrante' : 'faltante';
+      const montoDif = Math.abs(diferencia).toFixed(2);
+      const registro = await this.sesionesRepo.crearDiferencia({
+        sesionCajaId:   sesionPrincipalId,
+        tipoDiferencia: tipoDif,
+        monto:           montoDif,
+        custodioId:      sesion.cajeroAsignadoId ?? sesion.usuarioAperturaId,
+        observaciones:   `Cierre principal — esperado $${saldoEsperado}, arqueo $${totalArqueo}`,
       });
-      diferenciaCierre = { tipo: 'sobrante', monto: dif.sobrante };
-    } else if (diferencia < -0.01) {
-      const dif = calcularDiferenciaFaltante(saldoEsperado, totalArqueo);
-      await this.sesionesRepo.registrarMovimiento({
-        sesionCajaId: sesionPrincipalId,
-        tipo:         dif.tipoMovimiento,
-        monto:        dif.faltante,
-        descripcion:  `PENDIENTE APROBACIÓN: diferencia de cierre principal. Esperado $${saldoEsperado}, arqueo $${totalArqueo}`,
-      });
-      diferenciaCierre = { tipo: 'faltante', monto: dif.faltante };
+      diferenciaCierre = { id: registro.id, tipo: tipoDif, monto: montoDif };
     }
 
     const sesionCerrada = await this.sesionesRepo.cerrarSesion(sesionPrincipalId, {
@@ -529,9 +656,10 @@ export class CajasService {
       montoCierre:     totalArqueo,
       arqueo:          dto.denominaciones,
       observaciones:   dto.observaciones,
+      forzado:         debeForzar,
     });
 
-    return { sesion: sesionCerrada, diferenciaCierre };
+    return { sesion: sesionCerrada, diferenciaCierre, forzado: debeForzar, arqueoComparacion };
   }
 
   // ── Sesión activa por cajaId (para integración con ventas) ──────────────────
@@ -560,6 +688,22 @@ export class CajasService {
     if (!sesion) throw new SesionNoEncontradaError(params.sesionCajaId);
     validarSesionAbierta(params.sesionCajaId, sesion.estado);
 
+    // RF-2.02: bloquear ingresos de efectivo cuando (saldo + monto) > tope_max.
+    // La guarda se aplica sobre el saldo resultante, no solo el actual,
+    // para que una sola transacción grande no cruce el tope sin control.
+    const esEntradaEfectivo =
+      TIPOS_MOVIMIENTO_ENTRADA.has(params.tipo) &&
+      (!params.medioPago || params.medioPago === 'efectivo');
+    if (esEntradaEfectivo) {
+      const caja = await this.cajasRepo.findById(sesion.cajaId);
+      if (caja?.limiteAlerta) {
+        const saldoActual = await this.sesionesRepo.calcularSaldo(params.sesionCajaId);
+        if (Number(saldoActual) + Number(params.monto) > Number(caja.limiteAlerta)) {
+          throw new TopeMaximoEfectivoError(saldoActual, caja.limiteAlerta);
+        }
+      }
+    }
+
     const movimiento = await this.sesionesRepo.registrarMovimiento({
       sesionCajaId:   params.sesionCajaId,
       tipo:           params.tipo,
@@ -574,6 +718,68 @@ export class CajasService {
     const alertas = evaluarAlertas(saldo, caja?.baseDia ?? '0', caja?.limiteAlerta ?? null);
 
     return { movimiento, saldoActual: saldo, alertas };
+  }
+
+  // ── Diferencias de caja — RF-3.03 ───────────────────────────────────────────
+
+  async getDiferencia(id: number) {
+    const d = await this.sesionesRepo.findDiferenciaById(id);
+    if (!d) throw new DiferenciaNoEncontradaError(id);
+    return d;
+  }
+
+  async resolverDiferencia(
+    id: number,
+    aprobadorId: number,
+    estado: 'aprobada' | 'rechazada',
+    observaciones?: string,
+  ) {
+    const diferencia = await this.sesionesRepo.findDiferenciaById(id);
+    if (!diferencia) throw new DiferenciaNoEncontradaError(id);
+    if (diferencia.estado !== 'pendiente') throw new DiferenciaEstadoInvalidoError(diferencia.estado);
+
+    // RF-1.03 SoD: el supervisor aprobador no puede ser el custodio responsable
+    if (diferencia.custodioId !== null && aprobadorId === diferencia.custodioId) {
+      throw new SoDViolacionError();
+    }
+
+    const resuelta = await this.sesionesRepo.resolverDiferencia(id, {
+      aprobadorId,
+      estado,
+      observaciones,
+    });
+
+    // Si aprobada: registrar el movimiento contable en la sesión (ya cerrada) para audit trail
+    if (estado === 'aprobada') {
+      const tipo = diferencia.tipoDiferencia === 'faltante' ? 'diferencia_faltante' : 'diferencia_sobrante';
+      await this.sesionesRepo.registrarMovimiento({
+        sesionCajaId: diferencia.sesionCajaId,
+        tipo,
+        monto:        diferencia.monto,
+        descripcion:  `RF-3.03 aprobado por supervisor ${aprobadorId}${observaciones ? ` — ${observaciones}` : ''}`,
+      });
+    }
+
+    return resuelta;
+  }
+
+  // ── Consolidado comercio (todas las regionales) ──────────────────────────────
+
+  async getConsolidadoComercio(comercioId: number) {
+    const porRegional = await this.sesionesRepo.getConsolidadoPorRegional();
+    const regionales = porRegional.map(r => ({
+      regionalId: r.regionalId,
+      porMedio: {
+        efectivo:          r.porMedio['efectivo']          ?? '0',
+        tarjetaDebito:     r.porMedio['tarjeta_debito']    ?? '0',
+        tarjetaCredito:    r.porMedio['tarjeta_credito']   ?? '0',
+        transferencia:     r.porMedio['transferencia']     ?? '0',
+        consignacion:      r.porMedio['consignacion']      ?? '0',
+        preporteado:       r.porMedio['preporteado']       ?? '0',
+        mixtoPreporteado:  r.porMedio['mixto_preporteado'] ?? '0',
+      },
+    }));
+    return consolidarComercio(comercioId, regionales);
   }
 
   // ── Panel admin ──────────────────────────────────────────────────────────────
@@ -596,6 +802,14 @@ export class CajasService {
       || (sesion.cajeroAsignadoId === null && sesion.usuarioAperturaId === userId);
   }
 
+  // RF-1.01: retorna la sucursalId de la caja asociada a una sesión (para scope de acceso)
+  async getSucursalIdDeSesion(sesionId: number): Promise<number | null> {
+    const sesion = await this.sesionesRepo.findById(sesionId);
+    if (!sesion) throw new SesionNoEncontradaError(sesionId);
+    const caja = await this.cajasRepo.findById(sesion.cajaId);
+    return caja?.sucursalId ?? null;
+  }
+
   async getSucursalRegionalId(sucursalId: number): Promise<number | null> {
     return this.cajasRepo.findSucursalRegionalId(sucursalId);
   }
@@ -616,7 +830,124 @@ export class CajasService {
     const sesion = await this.sesionesRepo.findById(sesionId);
     if (!sesion) throw new SesionNoEncontradaError(sesionId);
     validarSesionAbierta(sesionId, sesion.estado);
+
+    if (cajeroId !== null) {
+      const sesionCajero = await this.sesionesRepo.findAbiertaByCajero(cajeroId);
+      if (sesionCajero && sesionCajero.id !== sesionId) {
+        validarUnicidadCustodio(cajeroId, true);
+      }
+    }
+
     return this.sesionesRepo.updateCajeroAsignado(sesionId, cajeroId);
+  }
+
+  // ── Reset automático del punto (hora_reset diario — RF-3 / RNF-5.02) ────────
+  // Cierra forzadamente todas las sesiones auxiliares abiertas del punto,
+  // devolviendo su saldo contable a la caja fuerte principal. Las diferencias
+  // de arqueo se omiten (el reset no hace arqueo físico) y las sesiones quedan
+  // en estado 'forzada' para auditoría (RNF-5.01 ledger immutable).
+
+  async resetAutomaticoPunto(cajaPadreId: number, usuarioId: number) {
+    const padre = await this.cajasRepo.findPadreById(cajaPadreId);
+    if (!padre) throw new CajaPadreNoEncontradaError(cajaPadreId);
+
+    const cajaGeneral = await this.cajasRepo.findCajaGeneralByPadre(cajaPadreId);
+    const sesionGeneral = cajaGeneral
+      ? await this.sesionesRepo.findAbiertaByCaja(cajaGeneral.id)
+      : null;
+
+    const sesionesAbiertas = await this.sesionesRepo.findAbiertasByPunto(cajaPadreId);
+    const auxiliaresAbiertas = sesionesAbiertas.filter(s => s.id !== sesionGeneral?.id);
+
+    const cierres: Array<{
+      sesionId: number;
+      cajaId: number;
+      saldoDevuelto: string;
+    }> = [];
+
+    for (const sesionAux of auxiliaresAbiertas) {
+      const saldoAux = await this.sesionesRepo.calcularSaldo(sesionAux.id);
+      const timestamp = new Date().toISOString();
+
+      if (sesionGeneral && Number(saldoAux) > 0) {
+        // Movimientos pareados: auxiliar entrega a principal (RF-4.01 conservación de masa)
+        await this.sesionesRepo.registrarTransferenciaAtomica(
+          {
+            sesionCajaId: sesionAux.id,
+            tipo:         'cambio_custodia_out',
+            monto:        saldoAux,
+            descripcion:  `RESET AUTOMÁTICO ${timestamp} — entrega a principal`,
+          },
+          {
+            sesionCajaId: sesionGeneral.id,
+            tipo:         'cambio_custodia_in',
+            monto:        saldoAux,
+            descripcion:  `RESET AUTOMÁTICO ${timestamp} — recepción de caja ${sesionAux.cajaId}`,
+          },
+        );
+
+        await this.sesionesRepo.crearReposicion({
+          sesionOrigenId:  sesionAux.id,
+          sesionDestinoId: sesionGeneral.id,
+          monto:           saldoAux,
+          usuarioId,
+          estado:          'aprobada',
+          motivo:          'reset_automatico',
+        });
+      }
+
+      // Estado 'forzada' deja trazabilidad diferenciada del cierre manual (RNF-5.01)
+      await this.sesionesRepo.cerrarSesion(sesionAux.id, {
+        usuarioCierreId: usuarioId,
+        montoCierre:     saldoAux,
+        forzado:         true,
+        observaciones:   `Reset automático ${timestamp}`,
+      });
+
+      cierres.push({ sesionId: sesionAux.id, cajaId: sesionAux.cajaId, saldoDevuelto: saldoAux });
+    }
+
+    return { cajaPadreId, auxiliaresCerradas: cierres.length, cierres };
+  }
+
+  // ── Traslado a bóveda física (mid-session, RF-2.02 / RNF-5.02) ──────────────
+  // El cajero mueve efectivo de su cajón a la bóveda física durante la sesión
+  // (sin cerrar). Reduce el saldo operativo. Inmutable: solo append en MovimientoCaja
+  // (RNF-5.01). Valida tope mínimo: no puede quedar por debajo de base_diacajas.
+
+  async registrarTrasladoBoveda(sesionId: number, monto: string, usuarioId: number) {
+    const sesion = await this.sesionesRepo.findById(sesionId);
+    if (!sesion) throw new SesionNoEncontradaError(sesionId);
+    validarSesionAbierta(sesionId, sesion.estado);
+
+    const saldo = await this.sesionesRepo.calcularSaldo(sesionId);
+
+    let trasladoResult: ReturnType<typeof calcularTrasladoCajaFuerte>;
+    try {
+      trasladoResult = calcularTrasladoCajaFuerte(monto, saldo);
+    } catch (e: unknown) {
+      throw new BadRequestException(e instanceof Error ? e.message : 'Monto inválido para traslado');
+    }
+
+    const caja = await this.cajasRepo.findById(sesion.cajaId);
+
+    // RF-2.02: el saldo resultante no puede caer por debajo del tope mínimo operativo
+    if (caja && Number(trasladoResult.saldoDespues) < Number(caja.baseDia)) {
+      throw new BadRequestException(
+        `El traslado dejaría el saldo (${trasladoResult.saldoDespues}) por debajo del mínimo operativo (${caja.baseDia})`,
+      );
+    }
+
+    const movimiento = await this.sesionesRepo.registrarMovimiento({
+      sesionCajaId: sesionId,
+      tipo:         'traslado_caja_fuerte',
+      monto:        trasladoResult.monto,
+      descripcion:  `Traslado a bóveda — usuario ${usuarioId} — ${new Date().toISOString()}`,
+    });
+
+    const alertas = evaluarAlertas(trasladoResult.saldoDespues, caja?.baseDia ?? '0', caja?.limiteAlerta ?? null);
+
+    return { movimiento, saldoAntes: saldo, saldoDespues: trasladoResult.saldoDespues, alertas };
   }
 
   // ── Capacidad del punto ──────────────────────────────────────────────────────
@@ -628,7 +959,7 @@ export class CajasService {
     const todasCajas = await this.cajasRepo.findBySucursal(padre.sucursalId);
     const auxiliares = todasCajas.filter(c => c.cajaPadreId === cajaPadreId && c.tipo !== 'general');
 
-    const sesionesAbiertas = await this.sesionesRepo.findAbiertasByPunto(padre.sucursalId);
+    const sesionesAbiertas = await this.sesionesRepo.findAbiertasByPunto(cajaPadreId);
     const auxiliaresAbiertas = sesionesAbiertas.filter(
       s => auxiliares.some(c => c.id === s.cajaId),
     ).length;

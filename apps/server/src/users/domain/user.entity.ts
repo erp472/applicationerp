@@ -4,8 +4,10 @@ export class UserEntity {
   email:       string;
   rol:         string;
   sucursalId:  number | null;
-  telefono:    string | null;
-  paisId:      number | null;
+  telefono:        string | null;
+  tipoDocumento:   string | null;
+  numeroDocumento: string | null;
+  paisId:          number | null;
   departamentoId: number | null;
   ciudadId:    number | null;
   activo:      boolean;

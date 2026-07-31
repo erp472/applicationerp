@@ -141,6 +141,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get movimientoCaja()  { return this.client.movimientoCaja; }
   get consignacion()    { return this.client.consignacion; }
   get reposicionCaja()  { return this.client.reposicionCaja; }
+  get diferenciaCaja()  { return this.client.diferenciaCaja; }
 
   // ── 10. Ventas ─────────────────────────────────────────────────────────────
   get venta()           { return this.client.venta; }

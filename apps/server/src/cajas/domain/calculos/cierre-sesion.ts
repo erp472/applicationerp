@@ -1,6 +1,6 @@
 import { calcularArqueo, type Denominacion } from './arqueo-denominaciones.js';
 
-export interface CierreTurnoResult {
+export interface CierreSesionResult {
   saldoEsperado: string;
   totalArqueo: string;
   diferencia: string;
@@ -16,11 +16,11 @@ export interface DiferenciaCierreResult {
   estado: 'pendiente' | 'cuadre';
 }
 
-// Cierre de turno principal o auxiliar con arqueo server-side
-export function calcularCierreTurno(
+// Cierre de sesión principal o de caja auxiliar con arqueo server-side
+export function calcularCierreSesion(
   saldoEsperado: string,
   denominaciones: Denominacion[],
-): CierreTurnoResult {
+): CierreSesionResult {
   const { total } = calcularArqueo(denominaciones);
   const diff = Number(total) - Number(saldoEsperado);
   return {

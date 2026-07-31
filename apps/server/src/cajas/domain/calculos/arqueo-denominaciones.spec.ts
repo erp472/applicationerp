@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calcularArqueo, compararArqueoConSaldo } from './arqueo-denominaciones.js';
+import { calcularArqueo, calcularArqueoDesglosado, compararArqueoConSaldo } from './arqueo-denominaciones.js';
 
 describe('calcularArqueo', () => {
   it('suma denominacion × cantidad para cada billete', () => {
@@ -70,5 +70,46 @@ describe('compararArqueoConSaldo', () => {
     const result = compararArqueoConSaldo([{ denominacion: 20000, cantidad: 2 }], '40000');
     expect(result.desglose[0].subtotal).toBe('40000.00');
     expect(result.desglose[0].cantidad).toBe(2);
+  });
+});
+
+// RF-3.01: desglose obligatorio por tipo billete/moneda
+describe('calcularArqueoDesglosado', () => {
+  it('separa billetes y monedas en totales independientes', () => {
+    const result = calcularArqueoDesglosado([
+      { denominacion: 50000, cantidad: 3, tipo: 'billete' },
+      { denominacion: 20000, cantidad: 2, tipo: 'billete' },
+      { denominacion: 500,   cantidad: 4, tipo: 'moneda'  },
+      { denominacion: 200,   cantidad: 5, tipo: 'moneda'  },
+    ]);
+    expect(result.totalBilletes).toBe('190000.00');   // 150000 + 40000
+    expect(result.totalMonedas).toBe('3000.00');       // 2000 + 1000
+    expect(result.total).toBe('193000.00');
+    expect(result.desglose).toHaveLength(4);
+  });
+
+  it('solo billetes — totalMonedas en cero', () => {
+    const result = calcularArqueoDesglosado([
+      { denominacion: 100000, cantidad: 2, tipo: 'billete' },
+    ]);
+    expect(result.totalBilletes).toBe('200000.00');
+    expect(result.totalMonedas).toBe('0.00');
+    expect(result.total).toBe('200000.00');
+  });
+
+  it('solo monedas — totalBilletes en cero', () => {
+    const result = calcularArqueoDesglosado([
+      { denominacion: 1000, cantidad: 10, tipo: 'moneda' },
+      { denominacion: 500,  cantidad: 6,  tipo: 'moneda' },
+    ]);
+    expect(result.totalBilletes).toBe('0.00');
+    expect(result.totalMonedas).toBe('13000.00');
+  });
+
+  it('lista vacía — todos los totales en cero', () => {
+    const result = calcularArqueoDesglosado([]);
+    expect(result.total).toBe('0.00');
+    expect(result.totalBilletes).toBe('0.00');
+    expect(result.totalMonedas).toBe('0.00');
   });
 });

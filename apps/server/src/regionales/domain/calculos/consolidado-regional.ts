@@ -22,12 +22,13 @@ export interface SaldoSucursal {
 }
 
 export interface ConsolidadoResult {
+  regionalId: number;
   total: string;
   porMedio: Record<MedioPago, string>;
   numSucursales: number;
 }
 
-export function consolidarRegional(sucursales: SaldoSucursal[]): ConsolidadoResult {
+export function consolidarRegional(regionalId: number, sucursales: SaldoSucursal[]): ConsolidadoResult {
   const totales = Object.fromEntries(MEDIOS.map((m) => [m, 0])) as Record<MedioPago, number>;
   for (const s of sucursales) {
     totales.efectivo += Number(s.efectivo ?? 0);
@@ -40,6 +41,7 @@ export function consolidarRegional(sucursales: SaldoSucursal[]): ConsolidadoResu
   }
   const totalGeneral = Object.values(totales).reduce((a, b) => a + b, 0);
   return {
+    regionalId,
     total: String(totalGeneral),
     porMedio: Object.fromEntries(MEDIOS.map((m) => [m, String(totales[m])])) as Record<
       MedioPago,

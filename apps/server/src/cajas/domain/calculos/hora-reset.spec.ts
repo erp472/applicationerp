@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evaluarHoraReset } from './hora-reset-turno.js';
+import { evaluarHoraReset } from './hora-reset.js';
 
 describe('evaluarHoraReset', () => {
   it('debe resetear cuando hora actual supera la hora de reset', () => {

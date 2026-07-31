@@ -13,6 +13,7 @@ const SELECT_CAJA = {
   tipocajas:                   true,
   base_diacajas:               true,
   limite_alertacajas:          true,
+  t_targetcajas:               true,
   activocajas:                 true,
 } satisfies Prisma.CajaSelect;
 
@@ -27,7 +28,8 @@ function toEntity(row: CajaRow): CajaEntity {
     nombre:       row.nombrecajas,
     tipo:         row.tipocajas as CajaEntity['tipo'],
     baseDia:      row.base_diacajas.toString(),
-    limiteAlerta: row.limite_alertacajas ? row.limite_alertacajas.toString() : null,
+    limiteAlerta: row.limite_alertacajas?.toString() ?? null,
+    tTarget:      row.t_targetcajas?.toString() ?? null,
     activo:       row.activocajas,
   };
 }

@@ -85,7 +85,7 @@ export class CodigoCajaDuplicadoError extends CajaDomainError {
 export class AuxiliaresAbiertasError extends CajaDomainError {
   readonly statusCode = 409;
   constructor(cantidad: number) {
-    super(`No se puede cerrar el turno principal: hay ${cantidad} caja(s) auxiliar(es) con sesión abierta`);
+    super(`No se puede cerrar la sesión principal: hay ${cantidad} caja(s) auxiliar(es) con sesión abierta`);
     this.name = 'AuxiliaresAbiertasError';
   }
 }
@@ -95,5 +95,76 @@ export class MontoInvalidoError extends CajaDomainError {
   constructor(label: string) {
     super(`El monto de ${label} debe ser mayor a cero`);
     this.name = 'MontoInvalidoError';
+  }
+}
+
+export class CajeroYaAsignadoError extends CajaDomainError {
+  readonly statusCode = 409;
+  constructor(cajeroId: number) {
+    super(`El cajero ${cajeroId} ya es custodio responsable de otra caja abierta`);
+    this.name = 'CajeroYaAsignadoError';
+  }
+}
+
+export class DiferenciaNoEncontradaError extends CajaDomainError {
+  readonly statusCode = 404;
+  constructor(id: number) {
+    super(`Diferencia de caja ${id} no encontrada`);
+    this.name = 'DiferenciaNoEncontradaError';
+  }
+}
+
+export class DiferenciaEstadoInvalidoError extends CajaDomainError {
+  readonly statusCode = 409;
+  constructor(estado: string) {
+    super(`La diferencia ya fue procesada con estado: ${estado}`);
+    this.name = 'DiferenciaEstadoInvalidoError';
+  }
+}
+
+// RF-1.03: el aprobador de una diferencia no puede ser el custodio responsable de ella
+export class SoDViolacionError extends CajaDomainError {
+  readonly statusCode = 403;
+  constructor() {
+    super('RF-1.03: el aprobador no puede ser el mismo custodio responsable de la diferencia');
+    this.name = 'SoDViolacionError';
+  }
+}
+
+export class ReposicionNoEncontradaError extends CajaDomainError {
+  readonly statusCode = 404;
+  constructor(ref: string | number) {
+    super(`Reposición de caja ${ref} no encontrada`);
+    this.name = 'ReposicionNoEncontradaError';
+  }
+}
+
+export class ReposicionEstadoInvalidoError extends CajaDomainError {
+  readonly statusCode = 409;
+  constructor(estado: string) {
+    super(`La reposición ya fue procesada con estado: ${estado}`);
+    this.name = 'ReposicionEstadoInvalidoError';
+  }
+}
+
+// RF-4.01: monto confirmado difiere del emitido — se abre incidente de conciliación
+export class DiscrepanciaTransitoError extends CajaDomainError {
+  readonly statusCode = 422;
+  constructor(emitido: string, recibido: string) {
+    super(
+      `Discrepancia en tránsito: emitido $${emitido}, recibido $${recibido}. Se requiere intervención del supervisor.`,
+    );
+    this.name = 'DiscrepanciaTransitoError';
+  }
+}
+
+// RF-2.02: bloqueo operativo cuando saldo >= tope_max (remesa obligatoria)
+export class TopeMaximoEfectivoError extends CajaDomainError {
+  readonly statusCode = 422;
+  constructor(saldo: string, tope: string) {
+    super(
+      `Caja bloqueada para ingresos de efectivo: saldo $${saldo} alcanzó el tope máximo $${tope}. Realice un traslado a bóveda (RF-2.02) antes de continuar.`,
+    );
+    this.name = 'TopeMaximoEfectivoError';
   }
 }

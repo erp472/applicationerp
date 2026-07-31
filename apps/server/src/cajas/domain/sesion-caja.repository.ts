@@ -3,8 +3,10 @@ import type {
   MovimientoCajaEntity,
   ConsignacionEntity,
   ReposicionCajaEntity,
+  DiferenciaCajaEntity,
   StatusPunto,
   TipoMovimientoCaja,
+  TipoDiferencia,
   MedioPago,
   MedioConsignacion,
   TipoCuentaBancaria,
@@ -27,6 +29,7 @@ export interface CerrarSesionData {
   montoCierre: string;
   arqueo?: ArqueoDenominacion[];
   observaciones?: string;
+  forzado?: boolean;
 }
 
 export interface RegistrarMovimientoData {
@@ -46,6 +49,21 @@ export interface CrearReposicionData {
   usuarioId?: number;
   estado: EstadoAprobacion;
   motivo?: string;
+  codigoRemesa?: string;
+}
+
+export interface CrearDiferenciaData {
+  sesionCajaId: number;
+  tipoDiferencia: TipoDiferencia;
+  monto: string;
+  custodioId?: number;
+  observaciones?: string;
+}
+
+export interface AprobarDiferenciaData {
+  aprobadorId: number;
+  estado: 'aprobada' | 'rechazada';
+  observaciones?: string;
 }
 
 export interface CrearConsignacionData {
@@ -68,7 +86,8 @@ export interface AprobarConsignacionData {
 export interface ISesionesCajaRepository {
   findById(id: number): Promise<SesionCajaEntity | null>;
   findAbiertaByCaja(cajaId: number): Promise<SesionCajaEntity | null>;
-  findAbiertasByPunto(sucursalId: number): Promise<SesionCajaEntity[]>;
+  findAbiertaByCajero(cajeroId: number): Promise<SesionCajaEntity | null>;
+  findAbiertasByPunto(cajaPadreId: number): Promise<SesionCajaEntity[]>;
 
   calcularSaldo(sesionId: number): Promise<string>;
   calcularCajaGeneral(sucursalId: number): Promise<{ general: string; pagos: string }>;
@@ -77,13 +96,32 @@ export interface ISesionesCajaRepository {
   cerrarSesion(sesionId: number, data: CerrarSesionData): Promise<SesionCajaEntity>;
 
   registrarMovimiento(data: RegistrarMovimientoData): Promise<MovimientoCajaEntity>;
+  registrarTransferenciaAtomica(
+    salida: RegistrarMovimientoData,
+    entrada: RegistrarMovimientoData,
+  ): Promise<[MovimientoCajaEntity, MovimientoCajaEntity]>;
   crearReposicion(data: CrearReposicionData): Promise<ReposicionCajaEntity>;
 
   crearConsignacion(data: CrearConsignacionData): Promise<ConsignacionEntity>;
   findConsignacionById(id: number): Promise<ConsignacionEntity | null>;
   aprobarConsignacion(id: number, data: AprobarConsignacionData): Promise<ConsignacionEntity>;
 
+  crearDiferencia(data: CrearDiferenciaData): Promise<DiferenciaCajaEntity>;
+  findDiferenciaById(id: number): Promise<DiferenciaCajaEntity | null>;
+  resolverDiferencia(id: number, data: AprobarDiferenciaData): Promise<DiferenciaCajaEntity>;
+
+  findReposicionById(id: number): Promise<ReposicionCajaEntity | null>;
+  findReposicionByCodigo(codigo: string): Promise<ReposicionCajaEntity | null>;
+  confirmarReposicion(id: number, aprobadorId: number): Promise<ReposicionCajaEntity>;
+  // RNF-5.02: acreditar el IN y actualizar estado en una única transacción ACID
+  confirmarCustodiaAtomica(
+    reposicionId: number,
+    movimientoEntrada: RegistrarMovimientoData,
+    receptorId: number,
+  ): Promise<ReposicionCajaEntity>;
+
   getMovimientos(sesionId: number): Promise<MovimientoCajaEntity[]>;
   getStatusPunto(cajaPadreId: number): Promise<StatusPunto>;
   updateCajeroAsignado(sesionId: number, cajeroId: number | null): Promise<SesionCajaEntity>;
+  getConsolidadoPorRegional(): Promise<{ regionalId: number; porMedio: Record<string, string> }[]>;
 }
