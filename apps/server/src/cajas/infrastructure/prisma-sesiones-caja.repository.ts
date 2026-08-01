@@ -162,6 +162,46 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
     return rows.map(toSesionEntity);
   }
 
+  async findHistorialByCaja(cajaId: number, limit = 20): Promise<SesionCajaEntity[]> {
+    const rows = await this.prisma.sesionCaja.findMany({
+      where:   { cajas_idcajas: cajaId },
+      select:  SELECT_SESION,
+      orderBy: { idsesiones_caja: 'desc' },
+      take:    limit,
+    });
+    return rows.map(toSesionEntity);
+  }
+
+  async findHistorialConAlertas(cajaId: number, limit = 30) {
+    const rows = await this.prisma.sesionCaja.findMany({
+      where:   { cajas_idcajas: cajaId },
+      select:  {
+        ...SELECT_SESION,
+        diferencias: {
+          select: {
+            iddiferencias_caja: true,
+            tipo_diferencia:    true,
+            monto_diferencia:   true,
+            estado:             true,
+            created_at:         true,
+          },
+        },
+      },
+      orderBy: { idsesiones_caja: 'desc' },
+      take:    limit,
+    });
+    return rows.map(row => ({
+      ...toSesionEntity(row),
+      diferencias: row.diferencias.map(d => ({
+        id:        d.iddiferencias_caja,
+        tipo:      d.tipo_diferencia as 'faltante' | 'sobrante',
+        monto:     d.monto_diferencia.toString(),
+        estado:    d.estado as string,
+        createdAt: d.created_at.toISOString(),
+      })),
+    }));
+  }
+
   async calcularSaldo(sesionId: number): Promise<string> {
     const sesion = await this.prisma.sesionCaja.findUniqueOrThrow({
       where: { idsesiones_caja: sesionId },

@@ -16,7 +16,6 @@ import {
   ReposicionEstadoInvalidoError,
   DiscrepanciaTransitoError,
   AuxiliaresAbiertasError,
-  TopeMaximoEfectivoError,
 } from '../domain/caja.errors.js';
 import type { CreateCajaDto } from '../dto/create-caja.dto.js';
 import type { UpdateCajaDto } from '../dto/update-caja.dto.js';
@@ -662,6 +661,20 @@ export class CajasService {
     return { sesion: sesionCerrada, diferenciaCierre, forzado: debeForzar, arqueoComparacion };
   }
 
+  // ── Historial de sesiones por caja ───────────────────────────────────────────
+
+  async getHistorialSesiones(cajaId: number) {
+    const caja = await this.cajasRepo.findById(cajaId);
+    if (!caja) throw new CajaNoEncontradaError(cajaId);
+    return this.sesionesRepo.findHistorialByCaja(cajaId, 20);
+  }
+
+  async getHistorialAlertas(cajaId: number) {
+    const caja = await this.cajasRepo.findById(cajaId);
+    if (!caja) throw new CajaNoEncontradaError(cajaId);
+    return this.sesionesRepo.findHistorialConAlertas(cajaId, 30);
+  }
+
   // ── Sesión activa por cajaId (para integración con ventas) ──────────────────
 
   async getSesionActivaByCaja(cajaId: number) {
@@ -687,22 +700,6 @@ export class CajasService {
     const sesion = await this.sesionesRepo.findById(params.sesionCajaId);
     if (!sesion) throw new SesionNoEncontradaError(params.sesionCajaId);
     validarSesionAbierta(params.sesionCajaId, sesion.estado);
-
-    // RF-2.02: bloquear ingresos de efectivo cuando (saldo + monto) > tope_max.
-    // La guarda se aplica sobre el saldo resultante, no solo el actual,
-    // para que una sola transacción grande no cruce el tope sin control.
-    const esEntradaEfectivo =
-      TIPOS_MOVIMIENTO_ENTRADA.has(params.tipo) &&
-      (!params.medioPago || params.medioPago === 'efectivo');
-    if (esEntradaEfectivo) {
-      const caja = await this.cajasRepo.findById(sesion.cajaId);
-      if (caja?.limiteAlerta) {
-        const saldoActual = await this.sesionesRepo.calcularSaldo(params.sesionCajaId);
-        if (Number(saldoActual) + Number(params.monto) > Number(caja.limiteAlerta)) {
-          throw new TopeMaximoEfectivoError(saldoActual, caja.limiteAlerta);
-        }
-      }
-    }
 
     const movimiento = await this.sesionesRepo.registrarMovimiento({
       sesionCajaId:   params.sesionCajaId,

@@ -36,16 +36,18 @@ export class CajasPresenter {
 
   static toSesion(entity: SesionCajaEntity) {
     return {
-      id:               entity.id,
-      cajaId:           entity.cajaId,
+      id:                entity.id,
+      cajaId:            entity.cajaId,
       usuarioAperturaId: entity.usuarioAperturaId,
-      montoApertura:    entity.montoApertura,
-      montoCierre:      entity.montoCierre,
-      fechaApertura:    entity.fechaApertura.toISOString(),
-      fechaCierre:      entity.fechaCierre?.toISOString() ?? null,
-      estado:           entity.estado,
-      saldoActual:      entity.saldoActual ?? null,
-      alertas:          entity.alertas ?? [],
+      cajeroAsignadoId:  entity.cajeroAsignadoId ?? null,
+      montoApertura:     entity.montoApertura,
+      montoCierre:       entity.montoCierre,
+      fechaApertura:     entity.fechaApertura.toISOString(),
+      fechaCierre:       entity.fechaCierre?.toISOString() ?? null,
+      estado:            entity.estado,
+      observaciones:     entity.observaciones ?? null,
+      saldoActual:       entity.saldoActual ?? null,
+      alertas:           entity.alertas ?? [],
     };
   }
 

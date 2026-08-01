@@ -234,6 +234,27 @@ export class CajasController {
     return sesion ? CajasPresenter.toSesion(sesion) : null;
   }
 
+  @Get('auxiliares/:cajaId/historial')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Historial de sesiones de una caja auxiliar (últimas 20)' })
+  @ApiParam({ name: 'cajaId', type: Number })
+  async getHistorialSesiones(@Param('cajaId', ParseIntPipe) cajaId: number) {
+    const sesiones = await this.service.getHistorialSesiones(cajaId);
+    return sesiones.map(CajasPresenter.toSesion);
+  }
+
+  @Get('auxiliares/:cajaId/alertas')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Historial completo de alertas (diferencias de cierre) por caja auxiliar (últimas 30 sesiones)' })
+  @ApiParam({ name: 'cajaId', type: Number })
+  async getHistorialAlertas(@Param('cajaId', ParseIntPipe) cajaId: number) {
+    const sesiones = await this.service.getHistorialAlertas(cajaId);
+    return sesiones.map(s => ({
+      ...CajasPresenter.toSesion(s),
+      diferencias: s.diferencias,
+    }));
+  }
+
   @Post('auxiliares/:cajaId/abrir')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Abrir sesión en una caja auxiliar directamente' })

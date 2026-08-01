@@ -207,9 +207,9 @@ export class VentasService {
     if (!sesion) throw new SesionCajaInactivaError(cajaId);
     validarVentaEnSesion(ventaId, venta.sesionCajaId, sesion.id);
 
-    // Validar stock de servicios especiales antes de confirmar
-    const itemsServicio = (venta.detalle ?? []).filter(d => d.tipoProducto === 'otro');
-    for (const item of itemsServicio) {
+    // Validar stock para todos los productos que tienen inventario registrado
+    const todosItems = venta.detalle ?? [];
+    for (const item of todosItems) {
       const stock = await this.inventarioService.getStock(sesion.sucursalId, item.productoId);
       if (stock !== null && stock < item.cantidad) {
         throw new StockInsuficienteError(item.nombreProducto ?? `producto ${item.productoId}`, stock, item.cantidad);
@@ -226,8 +226,10 @@ export class VentasService {
       emailFactura:     dto.emailFactura ?? undefined,
     });
 
-    // Descontar inventario para cada servicio especial (validación atómica dentro de la transacción)
-    for (const item of itemsServicio) {
+    // Descontar inventario para todos los productos con registro de stock
+    for (const item of todosItems) {
+      const stock = await this.inventarioService.getStock(sesion.sucursalId, item.productoId);
+      if (stock === null) continue; // sin inventario → no descontar
       try {
         await this.inventarioService.descontarInventario({
           productoId:     item.productoId,
@@ -296,9 +298,10 @@ export class VentasService {
 
     const ventaAnulada = await this.repo.anularVenta(ventaId);
 
-    // Restaurar inventario de servicios especiales anulados
-    const itemsServicio = (venta.detalle ?? []).filter(d => d.tipoProducto === 'otro');
-    for (const item of itemsServicio) {
+    // Restaurar inventario para todos los productos con stock registrado
+    for (const item of venta.detalle ?? []) {
+      const stock = await this.inventarioService.getStock(sesion.sucursalId, item.productoId);
+      if (stock === null) continue;
       await this.inventarioService.restaurarInventario({
         productoId:     item.productoId,
         sucursalId:     sesion.sucursalId,

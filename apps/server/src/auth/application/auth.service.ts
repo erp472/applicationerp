@@ -125,9 +125,11 @@ export class AuthService {
     // Admins nacionales/sistema no requieren validación de equipo
     if (rol === 'ADMIN_SISTEMA' || rol === 'ADMIN_NACIONAL') return;
 
+    const skipMac = process.env.NODE_ENV === 'development' || process.env.SKIP_MAC_VALIDATION === 'true';
+
     // Roles operativos de sucursal (cajero auxiliar y principal): solo Tauri + equipo registrado
     if (rol === 'CAJERO' || rol === 'SUPERVISOR_REGIONAL') {
-      if (process.env.NODE_ENV === 'development') return;
+      if (skipMac) return;
       this.logger.log(`[${rol} login] plataforma=${plataforma} mac=${mac}`);
       if (plataforma !== 'tauri') {
         throw new UnauthorizedException('El acceso de cajero solo está permitido desde la aplicación de escritorio.');
@@ -145,7 +147,7 @@ export class AuthService {
       return;
     }
 
-    if (process.env.NODE_ENV === 'development') return;
+    if (skipMac) return;
 
     if (!mac) throw new UnauthorizedException('Este equipo no está autorizado. Contáctese con soporte: applicationerp472@gmail.com');
 

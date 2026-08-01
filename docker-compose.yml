@@ -9,6 +9,7 @@ services:
       - "3000:3000"
     environment:
       NODE_ENV: production
+      SKIP_MAC_VALIDATION: "true"
       DATABASE_URL: postgresql://postgres:123456@host.docker.internal:5432/pos_472?schema=public
       JWT_SECRET: dev_secret_change_in_prod
       JWT_EXPIRES_IN: 8h

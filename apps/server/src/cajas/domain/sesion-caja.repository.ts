@@ -88,6 +88,8 @@ export interface ISesionesCajaRepository {
   findAbiertaByCaja(cajaId: number): Promise<SesionCajaEntity | null>;
   findAbiertaByCajero(cajeroId: number): Promise<SesionCajaEntity | null>;
   findAbiertasByPunto(cajaPadreId: number): Promise<SesionCajaEntity[]>;
+  findHistorialByCaja(cajaId: number, limit?: number): Promise<SesionCajaEntity[]>;
+  findHistorialConAlertas(cajaId: number, limit?: number): Promise<(SesionCajaEntity & { diferencias: { id: number; tipo: 'faltante' | 'sobrante'; monto: string; estado: string; createdAt: string }[] })[]>;
 
   calcularSaldo(sesionId: number): Promise<string>;
   calcularCajaGeneral(sucursalId: number): Promise<{ general: string; pagos: string }>;
