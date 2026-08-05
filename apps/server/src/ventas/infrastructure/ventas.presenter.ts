@@ -22,6 +22,7 @@ export class VentasPresenter {
       estado:       entity.estado,
       createdAt:    entity.createdAt.toISOString(),
       detalle:      entity.detalle?.map(VentasPresenter.toDetalle) ?? [],
+      enviosPendientes: entity.envios?.map(VentasPresenter.toEnvio) ?? [],
     };
   }
 

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { PrismaModule } from './prisma/prisma.module.js';
@@ -23,10 +24,13 @@ import { ClientesModule } from './clientes/clientes.module.js';
 import { InventarioModule } from './inventario/inventario.module.js';
 import { GirosModule } from './giros/giros.module.js';
 import { RecaudosModule } from './recaudos/recaudos.module.js';
+import { RealtimeModule } from './realtime/realtime.module.js';
+import { SigmaModule } from './sigma/sigma.module.js';
+import { SacasModule } from './sacas/sacas.module.js';
 import { AuditContextInterceptor } from './common/interceptors/audit-context.interceptor.js';
 
 @Module({
-  imports: [PrismaModule, AuditModule, MetricsModule, AuthModule, UsersModule, DevicesModule, PermisosModule, FeatureFlagsModule, GeoModule, ComerciosModule, RegionalesModule, SucursalesModule, EquiposModule, ProductosModule, ServiciosModule, CajasModule, VentasModule, ClientesModule, InventarioModule, GirosModule, RecaudosModule],
+  imports: [ScheduleModule.forRoot(), PrismaModule, AuditModule, MetricsModule, AuthModule, UsersModule, DevicesModule, PermisosModule, FeatureFlagsModule, GeoModule, ComerciosModule, RegionalesModule, SucursalesModule, EquiposModule, ProductosModule, ServiciosModule, CajasModule, VentasModule, ClientesModule, InventarioModule, GirosModule, RecaudosModule, RealtimeModule, SigmaModule, SacasModule],
   controllers: [AppController],
   providers: [
     AppService,

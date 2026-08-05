@@ -26,7 +26,7 @@ const ROLES_CAJERO     = ['CAJERO', 'SUPERVISOR_REGIONAL', 'ADMIN_NACIONAL', 'AD
 @ApiBearerAuth()
 @Controller('clientes')
 @UseGuards(JwtAuthGuard, FeatureFlagGuard, RolesGuard)
-@Feature('modulo_clientes')
+@Feature('modulo:clientes')
 @UseFilters(new ClientesDomainFilter())
 export class ClientesController {
   constructor(private readonly service: ClientesService) {}

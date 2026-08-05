@@ -35,6 +35,7 @@ export class VentaEntity {
   updatedAt:     Date;
   // populated on demand
   detalle?:      VentaDetalleEntity[];
+  envios?:       EnvioEntity[];
 }
 
 export class ClienteResumenEntity {
@@ -133,6 +134,7 @@ export class TarifaEspecialEntity {
 
 export class EnvioEntity {
   id:                    number;
+  ventaId:               number | null;
   numeroGuia:            string;
   tipo:                  string;
   sucursalId:            number;

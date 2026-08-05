@@ -2,6 +2,7 @@ import { Injectable, Inject, ForbiddenException, ConflictException, NotFoundExce
 import { CajasService }       from '../../cajas/application/cajas.service.js';
 import { InventarioService }  from '../../inventario/application/inventario.service.js';
 import { AuditService }       from '../../audit/audit.service.js';
+import { PrismaService }      from '../../prisma/prisma.service.js';
 import { auditStore }     from '../../common/audit-context.js';
 import { VENTAS_REPOSITORY } from '../domain/venta.repository.js';
 import type { IVentasRepository } from '../domain/venta.repository.js';
@@ -75,6 +76,7 @@ export class VentasService {
     private readonly cajasService: CajasService,
     private readonly inventarioService: InventarioService,
     private readonly audit: AuditService,
+    private readonly prisma: PrismaService,
   ) {}
 
   // ── Catálogo ─────────────────────────────────────────────────────────────────
@@ -195,13 +197,147 @@ export class VentasService {
     await this._recalcularTotales(ventaId);
   }
 
+  // ── Agregar envío al carrito ──────────────────────────────────────────────────
+
+  async agregarEnvioAlCarrito(ventaId: number, cajaId: number, usuarioId: number, dto: CrearEnvioDto) {
+    const venta = await this.repo.findVentaById(ventaId);
+    if (!venta) throw new VentaNoEncontradaError(ventaId);
+    validarVentaActiva(ventaId, venta.estado);
+
+    const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
+    if (!sesion) throw new SesionCajaInactivaError(cajaId);
+    validarVentaEnSesion(ventaId, venta.sesionCajaId, sesion.id);
+
+    const cotizacion = await this.cotizarEnvio(
+      dto.servicioId,
+      dto.peseFisicoKg,
+      dto.altoCm,
+      dto.anchoCm,
+      dto.largoCm,
+      dto.destinatario.pais,
+      dto.destinatario.ciudad,
+    );
+
+    const valorSeguro = dto.seguroAdicional && dto.valorDeclarado
+      ? Number(calcularSeguroPostal(String(dto.valorDeclarado), '0.5'))
+      : 0;
+
+    const denominacionesEstampilla = cotizacion.servicio.requiereEstampilla
+      ? await this.repo.findEstampillasConStock(sesion.sucursalId)
+      : [];
+    const estampillasResult = calcularValorEstampillasRequeridas(
+      cotizacion.servicio.requiereEstampilla ?? false,
+      String(cotizacion.valorServicio),
+      denominacionesEstampilla,
+    );
+    const esInternacional = dto.destinatario.pais && dto.destinatario.pais !== 'CO';
+
+    if (esInternacional && dto.valorDeclarado) {
+      validarValorDeclaradoIntl(String(dto.valorDeclarado));
+    }
+
+    const valorTotal = esInternacional
+      ? Number(calcularTotalEnvioInternacional(
+          String(cotizacion.valorServicio),
+          String(valorSeguro),
+          estampillasResult.valorEstampillas,
+        ))
+      : Number(calcularTotalEnvioNacional(
+          String(cotizacion.valorServicio),
+          estampillasResult.valorEstampillas,
+          String(valorSeguro),
+        ));
+
+    if (dto.medioPago === 'preporteado') {
+      validarPreporteado(estampillasResult.valorEstampillas, String(cotizacion.valorServicio));
+    }
+    if (dto.medioPago === 'mixto_preporteado') {
+      if (!dto.montoEstampillas || !dto.montoEfectivo) {
+        throw new Error('mixto_preporteado requiere montoEstampillas y montoEfectivo');
+      }
+      buildMixtoPreporteado(
+        String(dto.montoEstampillas),
+        String(dto.montoEfectivo),
+        String(cotizacion.valorServicio),
+      );
+    }
+
+    if (esInternacional && dto.guiaCp) {
+      validarGuiaCp(dto.guiaCp, []);
+    }
+
+    const numeroGuia = await this._generarNumeroGuia();
+
+    const cliente = await this.repo.findClienteByDocumento(
+      dto.remitente.documento ? 'CC' : '', dto.remitente.documento ?? '',
+    );
+
+    const envio = await this.repo.crearEnvio({
+      ventaId,
+      sucursalId:           sesion.sucursalId,
+      sesionCajaId:         sesion.id,
+      usuarioId,
+      clienteId:            cliente?.id,
+      servicioId:           dto.servicioId,
+      tipo:                 cotizacion.servicio.tipo,
+      numeroGuia,
+      estado:               'pendiente',
+      remitenteNombre:      dto.remitente.nombre,
+      remitenteDocumento:   dto.remitente.documento,
+      remitenteEmail:       dto.remitente.email,
+      remitenteTelefono:    dto.remitente.telefono,
+      remitenteDireccion:   dto.remitente.direccion,
+      remitenteCiudad:      dto.remitente.ciudad,
+      remitenteCp:          dto.remitente.codigoPostal,
+      destinatarioNombre:   dto.destinatario.nombre,
+      destinatarioDocumento: dto.destinatario.documento,
+      destinatarioEmail:    dto.destinatario.email,
+      destinatarioTelefono: dto.destinatario.telefono,
+      destinatarioDireccion: dto.destinatario.direccion,
+      destinatarioCiudad:   dto.destinatario.ciudad,
+      destinatarioPais:     dto.destinatario.pais,
+      destinatarioCp:       dto.destinatario.codigoPostal,
+      pesoFisicoKg:         dto.peseFisicoKg,
+      altoCm:               dto.altoCm,
+      anchoCm:              dto.anchoCm,
+      largoCm:              dto.largoCm,
+      pesoVolumetricoKg:    cotizacion.pesoVolumetricoKg ?? undefined,
+      pesoTarificadoKg:     cotizacion.pesoTarificadoKg,
+      valorDeclarado:       dto.valorDeclarado,
+      valorServicio:        cotizacion.valorServicio,
+      valorEstampillas:     Number(estampillasResult.valorEstampillas),
+      valorSeguro,
+      valorTotal,
+      medioPago:            dto.medioPago as any,
+      contenido:            dto.contenido,
+      observaciones:        dto.observaciones,
+    });
+
+    await this._recalcularTotales(ventaId);
+
+    return { envio, cotizacion, numeroGuia };
+  }
+
+  async eliminarEnvioDelCarrito(ventaId: number, envioId: number) {
+    const venta = await this.repo.findVentaById(ventaId);
+    if (!venta) throw new VentaNoEncontradaError(ventaId);
+    validarVentaActiva(ventaId, venta.estado);
+
+    const enviosPendientes = await this.repo.findEnviosPendientesByVenta(ventaId);
+    const envio = enviosPendientes.find(e => e.id === envioId);
+    if (!envio) throw new ServicioNoEncontradoError(envioId);
+
+    await this.repo.anularEnvio(envioId);
+    await this._recalcularTotales(ventaId);
+  }
+
   // ── Confirmar venta ───────────────────────────────────────────────────────────
 
   async confirmarVenta(ventaId: number, dto: ConfirmarVentaDto, cajaId: number, usuarioId: number) {
     const venta = await this.repo.findVentaConDetalle(ventaId);
     if (!venta) throw new VentaNoEncontradaError(ventaId);
     validarVentaActiva(ventaId, venta.estado);
-    validarCarritoNoVacio(venta.detalle?.length ?? 0);
+    validarCarritoNoVacio(venta.detalle?.length ?? 0, venta.envios?.length ?? 0);
 
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
     if (!sesion) throw new SesionCajaInactivaError(cajaId);
@@ -252,8 +388,19 @@ export class VentasService {
       }
     }
 
+    // Finalizar envíos pendientes vinculados a esta venta (cambian de pendiente → facturado)
+    const enviosPendientes = await this.repo.findEnviosPendientesByVenta(ventaId);
+    const guiasGeneradas: import('../domain/venta.entity.js').EnvioEntity[] = [];
+    for (const envio of enviosPendientes) {
+      const envioFacturado = await this.repo.facturarEnvio(envio.id);
+      guiasGeneradas.push(envioFacturado);
+    }
+
     // Determinar el tipo de movimiento según los productos de la venta
-    const tipoMovimiento = this._resolverTipoMovimiento(venta.detalle ?? []);
+    const tieneEnvios = guiasGeneradas.length > 0;
+    const tipoMovimiento = tieneEnvios
+      ? 'venta_servicio' as const
+      : this._resolverTipoMovimiento(venta.detalle ?? []);
 
     const { movimiento, saldoActual, alertas } = await this.cajasService.registrarMovimientoVenta({
       sesionCajaId:   sesion.id,
@@ -272,17 +419,18 @@ export class VentasService {
     void this.audit.log({
       accion: 'UPDATE', entidad: 'venta', entidad_id: ventaId, usuario_id: userId, ip_origen: ip,
       datos_despues: {
-        evento:    'confirmar_pago',
-        total:     venta.total,
-        medioPago: dto.medioPago,
-        email:     dto.emailFactura,
+        evento:          'confirmar_pago',
+        total:           venta.total,
+        medioPago:       dto.medioPago,
+        email:           dto.emailFactura,
         cambio,
-        sesionCajaId: sesion!.id,
+        sesionCajaId:    sesion!.id,
         cajaId,
+        guiasGeneradas:  guiasGeneradas.map(g => g.numeroGuia),
       },
     });
 
-    return { venta: ventaActualizada, movimiento, saldoActual, alertas, cambio };
+    return { venta: ventaActualizada, movimiento, saldoActual, alertas, cambio, guias: guiasGeneradas };
   }
 
   // ── Anular venta ──────────────────────────────────────────────────────────────
@@ -295,6 +443,12 @@ export class VentasService {
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
     if (!sesion) throw new SesionCajaInactivaError(cajaId);
     validarVentaEnSesion(ventaId, venta.sesionCajaId, sesion.id);
+
+    // Anular envíos pendientes vinculados (no generaron guías aún)
+    const enviosPendientes = await this.repo.findEnviosPendientesByVenta(ventaId);
+    for (const envio of enviosPendientes) {
+      await this.repo.anularEnvio(envio.id);
+    }
 
     const ventaAnulada = await this.repo.anularVenta(ventaId);
 
@@ -321,6 +475,16 @@ export class VentasService {
       monto:          anulacion.movimientoCaja.monto,
       referenciaId:   ventaId,
       referenciaTipo: 'Venta',
+    });
+
+    await this.prisma.anulacion.create({
+      data: {
+        referencia_idanulaciones:     ventaId,
+        referencia_tipoanulaciones:   'Venta',
+        motivoanulaciones:            dto.motivo,
+        usuarios_idusuarios_solicitante: usuarioId,
+        estadoanulaciones:            'pendiente',
+      },
     });
 
     const { userId, ip } = auditStore.getStore() ?? {};
@@ -554,12 +718,16 @@ export class VentasService {
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
     if (!sesion) throw new SesionCajaInactivaError(cajaId);
 
+    if (dto.esCorrespondencia && dto.peseFisicoKg > 5) {
+      throw new Error('Correspondencia: peso máximo 5 kg (5000 g)');
+    }
+
     const cotizacion = await this.cotizarEnvio(
       dto.servicioId,
       dto.peseFisicoKg,
-      dto.altoCm,
-      dto.anchoCm,
-      dto.largoCm,
+      dto.esCorrespondencia ? undefined : dto.altoCm,
+      dto.esCorrespondencia ? undefined : dto.anchoCm,
+      dto.esCorrespondencia ? undefined : dto.largoCm,
       dto.destinatario.pais,
       dto.destinatario.ciudad,
     );
@@ -659,6 +827,7 @@ export class VentasService {
       medioPago:            dto.medioPago as any,
       contenido:            dto.contenido,
       observaciones:        dto.observaciones,
+      esCorrespondencia:    dto.esCorrespondencia,
     });
 
     const { movimiento, saldoActual, alertas } = await this.cajasService.registrarMovimientoVenta({
@@ -693,10 +862,10 @@ export class VentasService {
 
   private async _recalcularTotales(ventaId: number) {
     const ventaFull = await this.repo.findVentaConDetalle(ventaId);
-    if (!ventaFull?.detalle) return;
+    if (!ventaFull) return;
 
-    const totales = calcularTotalesCarrito(
-      ventaFull.detalle.map(d => ({
+    const totalesDetalle = calcularTotalesCarrito(
+      (ventaFull.detalle ?? []).map(d => ({
         precioUnitario: d.precioUnitario,
         cantidad:       d.cantidad,
         descuento:      d.descuento,
@@ -704,10 +873,19 @@ export class VentasService {
       })),
     );
 
+    // Sumar envíos pendientes vinculados al total de la venta
+    const totalEnviosPendientes = (ventaFull.envios ?? []).reduce(
+      (acc, e) => acc + e.valorTotal,
+      0,
+    );
+
     await this.repo.confirmarVenta(ventaId, {
       medioPago: ventaFull.medioPago,
-      ...totales as any,
-    });
+      subtotal:  totalesDetalle.subtotal,
+      descuento: totalesDetalle.descuento,
+      iva:       totalesDetalle.iva,
+      total:     totalesDetalle.total + totalEnviosPendientes,
+    } as any);
   }
 
   private _enriquecerApartado<T extends { fechaFin: Date | null; diasAlertaVencimiento: number; id: number; clienteId: number | null; sucursalId: number; estado: string }>(item: T) {
@@ -736,5 +914,82 @@ export class VentasService {
     if (tipos.some(t => t === 'otro'))                                    return 'venta_servicio'  as const;
     if (tipos.every(t => t === 'estampilla' || t === 'filatelia'))        return 'venta_estampilla' as const;
     return 'venta_producto' as const;
+  }
+
+  // ── Alertas: apartados por vencer y vencidos ──────────────────────────────
+
+  async getAlertasApartados(sucursalId?: number) {
+    const rows = await this.prisma.apartadoPostal.findMany({
+      where: {
+        deleted_atapartados_postales: null,
+        ...(sucursalId && { sucursales_idsucursales: sucursalId }),
+        estadoapartados_postales: { in: ['ocupado', 'vencido'] as any[] },
+      },
+      include: { sucursal: { select: { nombresucursales: true } } },
+      orderBy: { fecha_finapartados_postales: 'asc' },
+    });
+
+    const proximos: object[] = [];
+    const vencidos: object[] = [];
+
+    for (const r of rows) {
+      const fechaFin = r.fecha_finapartados_postales;
+      const diasRestantes = fechaFin
+        ? calcularDiasParaVencer(fechaFin.toISOString().split('T')[0])
+        : null;
+
+      const base = {
+        id:             r.idapartados_postales,
+        numero:         r.numeroapartados_postales,
+        sucursalId:     r.sucursales_idsucursales,
+        sucursalNombre: r.sucursal.nombresucursales,
+        estado:         r.estadoapartados_postales,
+        fechaFin:       fechaFin?.toISOString().split('T')[0] ?? null,
+        diasRestantes,
+      };
+
+      if (r.estadoapartados_postales === 'vencido') {
+        vencidos.push(base);
+      } else if (diasRestantes !== null) {
+        const alerta = evaluarAlertaVencimientoApartado(
+          diasRestantes,
+          r.dias_alerta_vencimientoapartados_postales,
+          r.idapartados_postales,
+          r.clientes_idclientes ?? 0,
+          r.sucursales_idsucursales,
+        );
+        if (alerta.generarAlerta) proximos.push(base);
+      }
+    }
+
+    return { proximos, vencidos };
+  }
+
+  // ── Alertas: anulaciones pendientes de aprobación ────────────────────────
+
+  async getAnulacionesPendientes(sucursalId?: number) {
+    const rows = await this.prisma.anulacion.findMany({
+      where: {
+        estadoanulaciones: 'pendiente',
+        ...(sucursalId && {
+          solicitante: { sucursales_idsucursales: sucursalId },
+        }),
+      },
+      include: {
+        solicitante: { select: { nombreusuarios: true, sucursales_idsucursales: true } },
+      },
+      orderBy: { created_atanulaciones: 'desc' },
+    });
+
+    return rows.map(r => ({
+      id:                r.idanulaciones,
+      referenciaId:      r.referencia_idanulaciones,
+      referenciaTipo:    r.referencia_tipoanulaciones,
+      motivo:            r.motivoanulaciones,
+      estado:            r.estadoanulaciones,
+      solicitanteNombre: r.solicitante?.nombreusuarios ?? null,
+      sucursalId:        r.solicitante?.sucursales_idsucursales ?? null,
+      createdAt:         r.created_atanulaciones,
+    }));
   }
 }

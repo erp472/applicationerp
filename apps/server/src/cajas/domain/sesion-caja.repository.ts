@@ -12,6 +12,7 @@ import type {
   TipoCuentaBancaria,
   EstadoAprobacion,
   ArqueoDenominacion,
+  BalancePagosRow,
 } from './caja.entity.js';
 
 export const SESIONES_CAJA_REPOSITORY = Symbol('SESIONES_CAJA_REPOSITORY');
@@ -106,11 +107,13 @@ export interface ISesionesCajaRepository {
 
   crearConsignacion(data: CrearConsignacionData): Promise<ConsignacionEntity>;
   findConsignacionById(id: number): Promise<ConsignacionEntity | null>;
+  findConsignacionesBySesion(sesionId: number): Promise<ConsignacionEntity[]>;
   aprobarConsignacion(id: number, data: AprobarConsignacionData): Promise<ConsignacionEntity>;
 
   crearDiferencia(data: CrearDiferenciaData): Promise<DiferenciaCajaEntity>;
   findDiferenciaById(id: number): Promise<DiferenciaCajaEntity | null>;
   resolverDiferencia(id: number, data: AprobarDiferenciaData): Promise<DiferenciaCajaEntity>;
+  findDiferenciasPendientesBySucursal(sucursalId: number): Promise<(DiferenciaCajaEntity & { cajaNombre: string })[]>;
 
   findReposicionById(id: number): Promise<ReposicionCajaEntity | null>;
   findReposicionByCodigo(codigo: string): Promise<ReposicionCajaEntity | null>;
@@ -126,4 +129,5 @@ export interface ISesionesCajaRepository {
   getStatusPunto(cajaPadreId: number): Promise<StatusPunto>;
   updateCajeroAsignado(sesionId: number, cajeroId: number | null): Promise<SesionCajaEntity>;
   getConsolidadoPorRegional(): Promise<{ regionalId: number; porMedio: Record<string, string> }[]>;
+  getBalancePagos(fechaInicio: Date, fechaFin: Date): Promise<BalancePagosRow[]>;
 }

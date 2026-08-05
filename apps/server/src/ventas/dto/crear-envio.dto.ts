@@ -31,6 +31,7 @@ export const CrearEnvioSchema = z.object({
   montoEfectivo:    z.number().positive().optional(),
   // international CP guide (format: LLddddddddLL)
   guiaCp:           z.string().regex(/^[A-Z]{2}\d{8}[A-Z]{2}$/, 'Formato esperado: LLddddddddLL').optional(),
+  esCorrespondencia: z.boolean().optional(),
 });
 
 export type CrearEnvioDto = z.infer<typeof CrearEnvioSchema>;

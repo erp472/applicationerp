@@ -1,8 +1,8 @@
 import {
-  Controller, Get, Post, Body, Param, Query,
-  UseGuards, ParseIntPipe, HttpCode, HttpStatus, UseFilters,
+  Controller, Get, Post, Patch, Body, Param, Query,
+  UseGuards, ParseIntPipe, HttpCode, HttpStatus, UseFilters, BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { z } from 'zod';
 import { InventarioService } from '../application/inventario.service.js';
 import { AjusteInventarioSchema } from '../dto/ajuste-inventario.dto.js';
@@ -15,7 +15,7 @@ import { InventarioDomainFilter } from './inventario-domain.filter.js';
 import { InventarioPresenter } from './inventario.presenter.js';
 
 const ROLES_READ  = ['INVENTARIOS', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL'] as const;
-const ROLES_WRITE = ['INVENTARIOS', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL'] as const;
+const ROLES_WRITE = ['INVENTARIOS', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL'] as const;
 
 const EntradaSchema = z.object({
   productoId:  z.number().int().positive(),
@@ -97,5 +97,69 @@ export class InventarioController {
     const query = QueryMovimientosSchema.parse(rawQuery);
     const { datos, total } = await this.service.listMovimientos(sucursalId, query, user.rol, user.sucursal_id);
     return { datos: datos.map(m => InventarioPresenter.toMovimiento(m)), total };
+  }
+
+  // ── Órdenes de inventario ────────────────────────────────────────────────
+
+  @Get('ordenes')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Listar órdenes de inventario' })
+  async listOrdenes(
+    @CurrentUser() user: { id: number; rol: string; sucursal_id: number | null },
+    @Query('sucursalId') sucursalIdRaw?: string,
+    @Query('estado')     estado?: string,
+  ) {
+    const sucursalId = sucursalIdRaw
+      ? Number(sucursalIdRaw)
+      : user.sucursal_id ?? undefined;
+    return this.service.listOrdenes(sucursalId, estado);
+  }
+
+  @Get('ordenes/pendientes')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Órdenes pendientes de confirmación — alerta orden_inventario' })
+  async getOrdenesPendientes(
+    @CurrentUser() user: { id: number; rol: string; sucursal_id: number | null },
+    @Query('sucursalId') sucursalIdRaw?: string,
+  ) {
+    const sucursalId = sucursalIdRaw
+      ? Number(sucursalIdRaw)
+      : user.sucursal_id ?? undefined;
+    return this.service.getOrdenesPendientes(sucursalId);
+  }
+
+  @Post('ordenes')
+  @Roles(...ROLES_WRITE)
+  @ApiOperation({ summary: 'Crear orden de reposición de inventario' })
+  async crearOrden(
+    @Body() body: unknown,
+    @CurrentUser() user: { id: number; rol: string; sucursal_id: number | null },
+  ) {
+    const OrdenSchema = z.object({
+      sucursalId: z.number().int().positive(),
+      items: z.array(z.object({
+        productoId:      z.number().int().positive(),
+        cantidadEnviada: z.number().int().positive(),
+      })).min(1),
+    });
+    const parsed = OrdenSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    return this.service.crearOrden(parsed.data.sucursalId, parsed.data.items, user.id);
+  }
+
+  @Patch('ordenes/:id/estado')
+  @Roles(...ROLES_WRITE)
+  @ApiOperation({ summary: 'Actualizar estado de una orden (confirmada / rechazada / parcial)' })
+  async actualizarEstadoOrden(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: unknown,
+    @CurrentUser() user: { id: number; rol: string; sucursal_id: number | null },
+  ) {
+    const EstadoSchema = z.object({
+      estado: z.enum(['confirmada', 'rechazada', 'parcial']),
+    });
+    const parsed = EstadoSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    return this.service.actualizarEstadoOrden(id, parsed.data.estado, user.id);
   }
 }

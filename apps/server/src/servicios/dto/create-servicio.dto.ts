@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const TipoServicioEnum = z.enum(['nacional', 'internacional_ms', 'internacional_courier', 'apartado_postal']);
+export const TipoServicioEnum = z.enum(['nacional', 'internacional_ms', 'internacional_courier', 'apartado_postal', 'alistamiento']);
 
 export const CreateServicioSchema = z.object({
   codigo:                  z.string().min(1).max(50),

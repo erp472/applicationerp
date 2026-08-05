@@ -51,6 +51,7 @@ export interface ContratarApartadoData {
 }
 
 export interface CrearEnvioData {
+  ventaId?:             number;
   sucursalId:           number;
   sesionCajaId:         number;
   usuarioId:            number;
@@ -58,6 +59,7 @@ export interface CrearEnvioData {
   servicioId:           number;
   tipo:                 string;
   numeroGuia:           string;
+  estado?:              'pendiente' | 'facturado';
   remitenteNombre:      string;
   remitenteDocumento?:  string;
   remitenteEmail?:      string;
@@ -87,6 +89,7 @@ export interface CrearEnvioData {
   medioPago:            MedioPagoVenta;
   contenido?:           string;
   observaciones?:       string;
+  esCorrespondencia?:   boolean;
 }
 
 export interface IVentasRepository {
@@ -133,6 +136,8 @@ export interface IVentasRepository {
   findEstampillasConStock(sucursalId: number): Promise<{ denominacion: string; stock: number }[]>;
   crearEnvio(data: CrearEnvioData): Promise<EnvioEntity>;
   anularEnvio(id: number): Promise<EnvioEntity>;
+  findEnviosPendientesByVenta(ventaId: number): Promise<EnvioEntity[]>;
+  facturarEnvio(id: number): Promise<EnvioEntity>;
 
   // Tarifas servicios especiales (por rango de cantidad)
   findTarifasEspecial(productoId: number): Promise<TarifaEspecialEntity[]>;

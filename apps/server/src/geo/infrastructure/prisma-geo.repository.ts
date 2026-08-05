@@ -9,7 +9,7 @@ export class PrismaGeoRepository implements IGeoRepository {
 
   async findAllPaises(): Promise<PaisEntity[]> {
     const rows = await this.prisma.pais.findMany({ orderBy: { nombrepaises: 'asc' } });
-    return rows.map(r => ({ id: r.idpaises, nombre: r.nombrepaises }));
+    return rows.map(r => ({ id: r.idpaises, nombre: r.nombrepaises, iso2: r.iso2 ?? null }));
   }
 
   async findDepartamentosByPais(paisId: number): Promise<DepartamentoEntity[]> {

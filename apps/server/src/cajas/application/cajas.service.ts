@@ -1,4 +1,4 @@
-import { Injectable, Inject, BadRequestException } from '@nestjs/common';
+import { Injectable, Inject, BadRequestException, Optional } from '@nestjs/common';
 import crypto from 'crypto';
 import { CAJAS_REPOSITORY } from '../domain/caja.repository.js';
 import type { ICajasRepository } from '../domain/caja.repository.js';
@@ -55,6 +55,8 @@ import type { CambioCustodiaDto } from '../dto/cambio-custodia.dto.js';
 import type { PagoAdministrativoDto } from '../dto/pago-administrativo.dto.js';
 import type { AperturaDirectaDto } from '../dto/apertura-directa.dto.js';
 import type { TipoMovimientoCaja, MedioPago } from '../domain/caja.entity.js';
+import { RealtimeService } from '../../realtime/realtime.service.js';
+import { PrismaService }  from '../../prisma/prisma.service.js';
 
 @Injectable()
 export class CajasService {
@@ -63,6 +65,8 @@ export class CajasService {
     private readonly cajasRepo: ICajasRepository,
     @Inject(SESIONES_CAJA_REPOSITORY)
     private readonly sesionesRepo: ISesionesCajaRepository,
+    @Optional() private readonly realtime?: RealtimeService,
+    @Optional() private readonly prisma?: PrismaService,
   ) {}
 
   // ── Caja CRUD (superadmin) ──────────────────────────────────────────────────
@@ -215,6 +219,7 @@ export class CajasService {
       descripcion:  'Apertura caja principal',
     });
 
+    this.realtime?.broadcast('cajas.sesion.abierta', { cajaPadreId });
     return sesion;
   }
 
@@ -307,6 +312,7 @@ export class CajasService {
       motivo:          'apertura_auxiliar',
     });
 
+    this.realtime?.broadcast('cajas.sesion.abierta', { cajaId: dto.cajaAuxiliarId });
     return nuevaSesion;
   }
 
@@ -394,6 +400,7 @@ export class CajasService {
       forzado:         debeForzar,
     });
 
+    this.realtime?.broadcast('cajas.sesion.cerrada', { sesionId: sesionAuxiliarId });
     return { sesion: sesionCerrada, diferenciaCierre, forzado: debeForzar, arqueoComparacion };
   }
 
@@ -520,6 +527,37 @@ export class CajasService {
     });
   }
 
+  async getConsignaciones(sesionId: number) {
+    const sesion = await this.sesionesRepo.findById(sesionId);
+    if (!sesion) throw new SesionNoEncontradaError(sesionId);
+    return this.sesionesRepo.findConsignacionesBySesion(sesionId);
+  }
+
+  async registrarMedioPago(
+    sesionId: number,
+    dto: { tipo: 'transferencia' | 'cheque'; valor: string; descripcion?: string; numeroCheque?: string },
+    usuarioId: number,
+  ) {
+    const sesion = await this.sesionesRepo.findById(sesionId);
+    if (!sesion) throw new SesionNoEncontradaError(sesionId);
+    validarSesionAbierta(sesionId, sesion.estado);
+
+    const mov = await this.sesionesRepo.registrarMovimiento({
+      sesionCajaId: sesionId,
+      tipo:         'recaudo',
+      monto:        dto.valor,
+      medioPago:    dto.tipo as 'transferencia' | 'cheque',
+      descripcion:  dto.descripcion ?? (dto.tipo === 'cheque' && dto.numeroCheque ? `Cheque #${dto.numeroCheque}` : undefined),
+    });
+
+    const saldo   = await this.sesionesRepo.calcularSaldo(sesionId);
+    const caja    = await this.cajasRepo.findById(sesion.cajaId);
+    const alertas = evaluarAlertas(saldo, caja?.baseDia ?? '0', caja?.limiteAlerta ?? null);
+
+    this.realtime?.broadcast('cajas.movimiento', { sesionId, tipo: dto.tipo });
+    return { movimiento: mov, saldoDespues: saldo, alertas };
+  }
+
   async aprobarConsignacion(id: number, dto: AprobarConsignacionDto, aprobadorId: number) {
     const consignacion = await this.sesionesRepo.findConsignacionById(id);
     if (!consignacion) throw new ConsignacionNoEncontradaError(id);
@@ -544,6 +582,7 @@ export class CajasService {
       });
     }
 
+    if (dto.estado === 'aprobada') this.realtime?.broadcast('cajas.consignacion', { id, estado: dto.estado });
     return updated;
   }
 
@@ -723,6 +762,10 @@ export class CajasService {
     const d = await this.sesionesRepo.findDiferenciaById(id);
     if (!d) throw new DiferenciaNoEncontradaError(id);
     return d;
+  }
+
+  async getDiferenciasPendientesBySucursal(sucursalId: number) {
+    return this.sesionesRepo.findDiferenciasPendientesBySucursal(sucursalId);
   }
 
   async resolverDiferencia(
@@ -945,6 +988,50 @@ export class CajasService {
     const alertas = evaluarAlertas(trasladoResult.saldoDespues, caja?.baseDia ?? '0', caja?.limiteAlerta ?? null);
 
     return { movimiento, saldoAntes: saldo, saldoDespues: trasladoResult.saldoDespues, alertas };
+  }
+
+  // ── Balance de Pagos ─────────────────────────────────────────────────────────
+
+  async getBalancePagos(fechaInicio: Date, fechaFin: Date) {
+    return this.sesionesRepo.getBalancePagos(fechaInicio, fechaFin);
+  }
+
+  // ── Alerta: sesiones que deben cerrarse automáticamente por horaReset ────────
+
+  async getAlertasCierreAutomatico(sucursalId: number) {
+    if (!this.prisma) return [];
+    const ahora = new Date();
+
+    const sesiones = await this.prisma.sesionCaja.findMany({
+      where: {
+        estadosesiones_caja: 'abierta',
+        caja: { sucursales_idsucursales: sucursalId },
+      },
+      include: {
+        caja: {
+          include: {
+            cajaPadre: { select: { idcajas_padres: true, hora_resetcajas_padres: true } },
+          },
+        },
+      },
+    });
+
+    return sesiones
+      .filter(s => {
+        const horaReset = s.caja.cajaPadre?.hora_resetcajas_padres;
+        if (!horaReset) return false;
+        const reset = new Date(ahora);
+        reset.setHours(horaReset.getHours(), horaReset.getMinutes(), 0, 0);
+        return ahora >= reset;
+      })
+      .map(s => ({
+        sesionId:      s.idsesiones_caja,
+        cajaId:        s.cajas_idcajas,
+        cajaNombre:    s.caja.nombrecajas,
+        cajaPadreId:   s.caja.cajaPadre?.idcajas_padres ?? null,
+        horaReset:     s.caja.cajaPadre?.hora_resetcajas_padres?.toISOString() ?? null,
+        abiertaDesde:  s.fecha_aperturasesiones_caja,
+      }));
   }
 
   // ── Capacidad del punto ──────────────────────────────────────────────────────

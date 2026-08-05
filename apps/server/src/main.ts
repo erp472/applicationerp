@@ -5,8 +5,11 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from '@fastify/helmet';
 import cors from '@fastify/cors';
+import fastifyWebsocket from '@fastify/websocket';
 import { trace } from '@opentelemetry/api';
+import { JwtService } from '@nestjs/jwt';
 import { AppModule } from './app.module.js';
+import { RealtimeService } from './realtime/realtime.service.js';
 
 async function bootstrap() {
   const isDev = process.env.NODE_ENV !== 'production';
@@ -28,9 +31,9 @@ async function bootstrap() {
     }),
   );
 
-  // 🤓 connect all origins with all methods in cors
   await app.register(cors, {
-    origin: process.env.CORS_ORIGIN ?? '*',
+    // '*' + credentials:true es inválido en CORS — usamos true para reflejar el Origin de la request
+    origin: process.env.CORS_ORIGIN ?? true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
   });
@@ -39,6 +42,40 @@ async function bootstrap() {
   await app.register(helmet, {
     contentSecurityPolicy: isDev ? false : undefined,
   });
+
+  // 🤓 register @fastify/websocket for /realtime endpoint
+  await app.register(fastifyWebsocket);
+
+  const jwtService      = app.get(JwtService);
+  const realtimeService = app.get(RealtimeService);
+
+  // JWT auth via ?token= query param then upgrade to WS
+  app.getHttpAdapter().getInstance().get(
+    '/realtime',
+    { websocket: true },
+    (socket: import('@fastify/websocket').WebSocket, req: import('fastify').FastifyRequest) => {
+      const token = (req.query as Record<string, string>)['token'];
+      if (!token) {
+        socket.close(4401, 'Unauthorized');
+        return;
+      }
+      try {
+        jwtService.verify(token);
+      } catch {
+        socket.close(4401, 'Invalid token');
+        return;
+      }
+      realtimeService.addClient(socket);
+      socket.send(JSON.stringify({ event: 'connection.ack', data: { ts: Date.now() } }));
+
+      socket.on('message', (raw) => {
+        try {
+          const msg = JSON.parse(raw.toString());
+          if (msg?.event === 'ping') socket.send(JSON.stringify({ event: 'pong', data: { ts: Date.now() } }));
+        } catch { /* ignore malformed frames */ }
+      });
+    },
+  );
 
   // 🤓 active swagger increase version with next release
   const config = new DocumentBuilder()

@@ -10,7 +10,7 @@ export type TipoMovimientoCaja =
   | 'anulacion' | 'recaudo'
   | 'pago_administrativo' | 'traslado_caja_fuerte'
   | 'moneda_circulante';
-export type MedioPago = 'efectivo' | 'tarjeta_debito' | 'tarjeta_credito' | 'transferencia' | 'consignacion' | 'preporteado' | 'mixto_preporteado';
+export type MedioPago = 'efectivo' | 'tarjeta_debito' | 'tarjeta_credito' | 'transferencia' | 'consignacion' | 'cheque' | 'preporteado' | 'mixto_preporteado';
 export type MedioConsignacion = 'banco' | 'transportadora';
 export type TipoCuentaBancaria = 'ahorros' | 'corriente';
 export type EstadoAprobacion = 'pendiente' | 'aprobada' | 'rechazada' | 'en_transito' | 'confirmada';
@@ -218,4 +218,14 @@ export interface SucursalPanelItem {
   departamento:   string | null;
   cajaPos:        CajaPosPanel | null;
   servicios:      ServicioSucursalItem[];
+}
+
+export interface BalancePagosRow {
+  regional:                 string;
+  punto:                    string;
+  fecha:                    string; // YYYY-MM-DD
+  reposicionBanco:          string;
+  reposicionTransportadora: string;
+  reposicionCheque:         string;
+  cantidadColpensiones:     number;
 }

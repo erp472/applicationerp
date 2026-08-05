@@ -4,6 +4,7 @@ export const MEDIOS_VALIDOS = new Set([
   'tarjeta_credito',
   'transferencia',
   'consignacion',
+  'cheque',
   'preporteado',
   'mixto_preporteado',
 ] as const);
@@ -14,6 +15,7 @@ export type MedioPago =
   | 'tarjeta_credito'
   | 'transferencia'
   | 'consignacion'
+  | 'cheque'
   | 'preporteado'
   | 'mixto_preporteado';
 

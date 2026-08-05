@@ -11,6 +11,7 @@ import type {
   CardAuxiliar,
   StatusPunto,
   TipoAlerta,
+  BalancePagosRow,
 } from '../domain/caja.entity.js';
 import { evaluarAlertas, TIPOS_MOVIMIENTO_ENTRADA, TIPOS_MOVIMIENTO_SALIDA } from '../domain/business-rules.js';
 import { calcularSaldoPorMedioPago } from '../domain/calculos/saldo-por-medio-pago.js';
@@ -442,6 +443,15 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
     return row ? toConsigEntity(row) : null;
   }
 
+  async findConsignacionesBySesion(sesionId: number): Promise<ConsignacionEntity[]> {
+    const rows = await this.prisma.consignacion.findMany({
+      where:   { sesiones_caja_idsesiones_caja: sesionId },
+      select:  SELECT_CONSIG,
+      orderBy: { created_atconsignaciones: 'desc' },
+    });
+    return rows.map(toConsigEntity);
+  }
+
   async aprobarConsignacion(id: number, data: AprobarConsignacionData): Promise<ConsignacionEntity> {
     const row = await this.prisma.consignacion.update({
       where: { idconsignaciones: id },
@@ -514,6 +524,32 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
       select: this.SELECT_DIFERENCIA,
     });
     return this.toDiferenciaEntity(row);
+  }
+
+  async findDiferenciasPendientesBySucursal(sucursalId: number): Promise<(DiferenciaCajaEntity & { cajaNombre: string })[]> {
+    const rows = await this.prisma.diferenciaCaja.findMany({
+      where: {
+        estado: 'pendiente',
+        sesionCaja: { caja: { sucursales_idsucursales: sucursalId } },
+      },
+      select: {
+        iddiferencias_caja:            true,
+        sesiones_caja_idsesiones_caja: true,
+        tipo_diferencia:               true,
+        monto_diferencia:              true,
+        custodio_id:                   true,
+        estado:                        true,
+        aprobador_id:                  true,
+        observaciones:                 true,
+        created_at:                    true,
+        sesionCaja: { select: { caja: { select: { nombrecajas: true } } } },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+    return rows.map(row => ({
+      ...this.toDiferenciaEntity(row),
+      cajaNombre: row.sesionCaja.caja.nombrecajas,
+    }));
   }
 
   async getMovimientos(sesionId: number): Promise<MovimientoCajaEntity[]> {
@@ -797,5 +833,90 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
       regionalId,
       porMedio: Object.fromEntries(Object.entries(totales).map(([k, v]) => [k, v.toFixed(2)])),
     }));
+  }
+
+  async getBalancePagos(fechaInicio: Date, fechaFin: Date): Promise<BalancePagosRow[]> {
+    const SELECT_SUC = {
+      idsucursales:    true,
+      nombresucursales: true,
+      regional: { select: { nombreregionales: true } },
+    } as const;
+
+    const [consigs, movCheque, colpensiones] = await Promise.all([
+      this.prisma.consignacion.findMany({
+        where: {
+          estadoconsignaciones:    'aprobada',
+          created_atconsignaciones: { gte: fechaInicio, lt: fechaFin },
+        },
+        select: {
+          medioconsignaciones:      true,
+          montoconsignaciones:      true,
+          created_atconsignaciones: true,
+          sesionCaja: { select: { caja: { select: { sucursal: { select: SELECT_SUC } } } } },
+        },
+      }),
+      this.prisma.movimientoCaja.findMany({
+        where: {
+          medio_pagomovimientos_caja: 'cheque',
+          created_atmovimientos_caja: { gte: fechaInicio, lt: fechaFin },
+        },
+        select: {
+          montomovimientos_caja:      true,
+          created_atmovimientos_caja: true,
+          sesionCaja: { select: { caja: { select: { sucursal: { select: SELECT_SUC } } } } },
+        },
+      }),
+      this.prisma.recaudo.findMany({
+        where: {
+          created_atrecaudos: { gte: fechaInicio, lt: fechaFin },
+          convenioRecaudo: { nombreconvenios_recaudo: { contains: 'colpensiones', mode: 'insensitive' } },
+        },
+        select: {
+          created_atrecaudos: true,
+          sucursal: { select: SELECT_SUC },
+        },
+      }),
+    ]);
+
+    const toDate = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    const map = new Map<string, BalancePagosRow>();
+    const getOrCreate = (sucId: number, punto: string, regional: string, fecha: string) => {
+      const key = `${sucId}_${fecha}`;
+      if (!map.has(key)) {
+        map.set(key, { regional, punto, fecha, reposicionBanco: '0', reposicionTransportadora: '0', reposicionCheque: '0', cantidadColpensiones: 0 });
+      }
+      return map.get(key)!;
+    };
+
+    for (const c of consigs) {
+      const suc = c.sesionCaja.caja.sucursal;
+      const row = getOrCreate(suc.idsucursales, suc.nombresucursales, suc.regional.nombreregionales, toDate(c.created_atconsignaciones));
+      const monto = Number(c.montoconsignaciones);
+      if (c.medioconsignaciones === 'banco') {
+        row.reposicionBanco = (Number(row.reposicionBanco) + monto).toFixed(2);
+      } else {
+        row.reposicionTransportadora = (Number(row.reposicionTransportadora) + monto).toFixed(2);
+      }
+    }
+
+    for (const m of movCheque) {
+      const suc = m.sesionCaja.caja.sucursal;
+      const row = getOrCreate(suc.idsucursales, suc.nombresucursales, suc.regional.nombreregionales, toDate(m.created_atmovimientos_caja));
+      row.reposicionCheque = (Number(row.reposicionCheque) + Number(m.montomovimientos_caja)).toFixed(2);
+    }
+
+    for (const r of colpensiones) {
+      const suc = r.sucursal;
+      const row = getOrCreate(suc.idsucursales, suc.nombresucursales, suc.regional.nombreregionales, toDate(r.created_atrecaudos));
+      row.cantidadColpensiones += 1;
+    }
+
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.fecha !== b.fecha) return a.fecha.localeCompare(b.fecha);
+      if (a.regional !== b.regional) return a.regional.localeCompare(b.regional);
+      return a.punto.localeCompare(b.punto);
+    });
   }
 }

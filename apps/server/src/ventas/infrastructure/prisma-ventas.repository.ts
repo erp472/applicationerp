@@ -203,6 +203,7 @@ function toTarifaEspecialEntity(row: TarifaEspecialRow): TarifaEspecialEntity {
 function toEnvioEntity(row: any): EnvioEntity {
   return {
     id:                    row.idenvios,
+    ventaId:               row.ventas_idventas ?? null,
     numeroGuia:            row.numero_guiaenvios,
     tipo:                  row.tipoenvios,
     sucursalId:            row.sucursales_idsucursales,
@@ -355,11 +356,19 @@ export class PrismaVentasRepository implements IVentasRepository {
   async findVentaConDetalle(id: number): Promise<VentaEntity | null> {
     const row = await this.prisma.venta.findFirst({
       where: { idventas: id },
-      select: { ...SELECT_VENTA, detalle: { select: SELECT_DETALLE } },
+      select: {
+        ...SELECT_VENTA,
+        detalle: { select: SELECT_DETALLE },
+        envios:  {
+          where: { estadoenvios: 'pendiente' as any },
+        },
+      },
     });
     if (!row) return null;
-    const { detalle, ...ventaRow } = row;
-    return toVentaEntity(ventaRow, detalle);
+    const { detalle, envios, ...ventaRow } = row;
+    const entity = toVentaEntity(ventaRow, detalle);
+    entity.envios = envios.map(toEnvioEntity);
+    return entity;
   }
 
   async confirmarVenta(id: number, data: ConfirmarVentaData & Partial<{ subtotal: number; descuento: number; iva: number; total: number }>): Promise<VentaEntity> {
@@ -716,7 +725,9 @@ export class PrismaVentasRepository implements IVentasRepository {
         valor_totalenvios:               data.valorTotal,
         medio_pagoenvios:                data.medioPago as any,
         observacionesenvios:             data.observaciones ?? null,
-        estadoenvios:                    'facturado',
+        es_correspondenciaenvios:        data.esCorrespondencia ?? false,
+        estadoenvios:                    (data.estado ?? 'facturado') as any,
+        ventas_idventas:                 data.ventaId ?? null,
       },
     });
     return toEnvioEntity(row);
@@ -726,6 +737,24 @@ export class PrismaVentasRepository implements IVentasRepository {
     const row = await this.prisma.envio.update({
       where: { idenvios: id },
       data:  { estadoenvios: 'anulado', updated_atenvios: new Date() },
+    });
+    return toEnvioEntity(row);
+  }
+
+  async findEnviosPendientesByVenta(ventaId: number): Promise<EnvioEntity[]> {
+    const rows = await this.prisma.envio.findMany({
+      where: {
+        ventas_idventas: ventaId,
+        estadoenvios:    'pendiente' as any,
+      },
+    });
+    return rows.map(toEnvioEntity);
+  }
+
+  async facturarEnvio(id: number): Promise<EnvioEntity> {
+    const row = await this.prisma.envio.update({
+      where: { idenvios: id },
+      data:  { estadoenvios: 'facturado', updated_atenvios: new Date() },
     });
     return toEnvioEntity(row);
   }

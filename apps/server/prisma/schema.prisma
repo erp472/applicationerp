@@ -47,6 +47,7 @@ enum tipo_servicio_envio {
   internacional_ms
   internacional_courier
   apartado_postal
+  alistamiento
 }
 
 enum tipo_caja {
@@ -125,6 +126,7 @@ enum tipo_envio {
 }
 
 enum estado_envio {
+  pendiente
   facturado
   en_saca
   despachado
@@ -945,6 +947,7 @@ model Venta {
   documento  Documento? @relation(fields: [documentos_iddocumentos], references: [iddocumentos])
 
   detalle VentaDetalle[]
+  envios  Envio[]
 
   @@index([sesiones_caja_idsesiones_caja], map: "idx_ventas_sesion")
   @@index([created_atventas], map: "idx_ventas_fecha")
@@ -1020,11 +1023,14 @@ model Envio {
   created_atenvios                   DateTime    @default(now()) @db.Timestamptz(6)
   updated_atenvios                   DateTime    @default(now()) @db.Timestamptz(6)
 
+  ventas_idventas                    Int?
+
   sucursal   Sucursal    @relation(fields: [sucursales_idsucursales], references: [idsucursales])
   sesionCaja SesionCaja? @relation(fields: [sesiones_caja_idsesiones_caja], references: [idsesiones_caja])
   usuario    Usuario     @relation(fields: [usuarios_idusuarios], references: [idusuarios])
   cliente    Cliente?    @relation(fields: [clientes_idclientes], references: [idclientes])
   servicio   Servicio    @relation(fields: [servicios_idservicios], references: [idservicios])
+  venta      Venta?      @relation(fields: [ventas_idventas], references: [idventas])
 
   items  EnvioItem[]
   sacas  EnvioSaca[]
@@ -1032,6 +1038,7 @@ model Envio {
   @@index([sucursales_idsucursales, created_atenvios], map: "idx_envios_sucursal_fecha")
   @@index([numero_guiaenvios], map: "idx_envios_guia")
   @@index([estadoenvios], map: "idx_envios_estado")
+  @@index([ventas_idventas], map: "idx_envios_venta")
   @@map("envios")
 }
 

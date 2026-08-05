@@ -14,9 +14,9 @@ export function validarSesionActivaParaVenta(cajaId: number, sesionId: number | 
   if (sesionId === null) throw new SesionCajaInactivaError(cajaId);
 }
 
-// BR-VEN-002: el carrito no puede estar vacío al confirmar
-export function validarCarritoNoVacio(cantidadItems: number): void {
-  if (cantidadItems === 0) throw new CarritoVacioError();
+// BR-VEN-002: el carrito no puede estar vacío al confirmar (productos o envíos pendientes)
+export function validarCarritoNoVacio(cantidadItems: number, cantidadEnvios = 0): void {
+  if (cantidadItems === 0 && cantidadEnvios === 0) throw new CarritoVacioError();
 }
 
 // BR-VEN-003: una venta anulada no puede operarse

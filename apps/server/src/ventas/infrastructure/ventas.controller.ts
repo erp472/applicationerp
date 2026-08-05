@@ -36,7 +36,7 @@ const ROLES_READ       = ['CAJERO', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA', 'ADM
 @ApiBearerAuth()
 @Controller('ventas')
 @UseGuards(JwtAuthGuard, FeatureFlagGuard, RolesGuard)
-@Feature('modulo_ventas')
+@Feature('modulo:ventas')
 @UseFilters(new VentasDomainFilter())
 export class VentasController {
   constructor(private readonly service: VentasService) {}
@@ -139,14 +139,51 @@ export class VentasController {
     await this.service.eliminarProducto(ventaId, detalleId);
   }
 
+  @Post(':ventaId/carrito/envio')
+  @Roles(...ROLES_CAJERO)
+  @ApiOperation({ summary: 'Agregar servicio postal al carrito — crea guía en estado pendiente, se factura al confirmar la venta' })
+  @ApiParam({ name: 'ventaId', type: Number })
+  @ApiQuery({ name: 'cajaId', type: Number, required: true })
+  @ApiResponse({ status: 201, description: 'Envío agregado al carrito. numeroGuia pre-asignado, estado=pendiente.' })
+  async agregarEnvioAlCarrito(
+    @Param('ventaId', ParseIntPipe) ventaId: number,
+    @Query('cajaId', ParseIntPipe)  cajaId:  number,
+    @Body() body: unknown,
+    @CurrentUser() user: { id: number },
+  ) {
+    const parsed = CrearEnvioSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    const result = await this.service.agregarEnvioAlCarrito(ventaId, cajaId, user.id, parsed.data);
+    return {
+      envio:       VentasPresenter.toEnvio(result.envio),
+      guia:        VentasPresenter.toGuia(result.envio),
+      cotizacion:  { pesoTarificadoKg: result.cotizacion.pesoTarificadoKg, valorServicio: result.cotizacion.valorServicio },
+      numeroGuia:  result.numeroGuia,
+      estado:      'pendiente',
+    };
+  }
+
+  @Delete(':ventaId/carrito/envio/:envioId')
+  @Roles(...ROLES_CAJERO)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Eliminar envío pendiente del carrito' })
+  @ApiParam({ name: 'ventaId', type: Number })
+  @ApiParam({ name: 'envioId', type: Number })
+  async eliminarEnvioDelCarrito(
+    @Param('ventaId', ParseIntPipe) ventaId: number,
+    @Param('envioId', ParseIntPipe) envioId: number,
+  ) {
+    await this.service.eliminarEnvioDelCarrito(ventaId, envioId);
+  }
+
   // ── Confirmar pago ────────────────────────────────────────────────────────────
 
   @Post(':ventaId/confirmar')
   @Roles(...ROLES_CAJERO)
-  @ApiOperation({ summary: 'Confirmar pago — registra MovimientoCaja en la caja auxiliar' })
+  @ApiOperation({ summary: 'Confirmar pago — registra MovimientoCaja, factura envíos pendientes y genera guías' })
   @ApiParam({ name: 'ventaId', type: Number })
   @ApiQuery({ name: 'cajaId', type: Number, required: true })
-  @ApiResponse({ status: 200, description: 'Venta confirmada. Retorna cambio (si efectivo) + saldo actualizado + alertas.' })
+  @ApiResponse({ status: 200, description: 'Venta confirmada. Retorna cambio + saldo + alertas + guias (si había envíos en carrito).' })
   @ApiResponse({ status: 422, description: 'Carrito vacío' })
   async confirmarVenta(
     @Param('ventaId', ParseIntPipe) ventaId: number,
@@ -163,6 +200,7 @@ export class VentasController {
       saldoActual: result.saldoActual,
       alertas:     result.alertas,
       cambio:      result.cambio,
+      guias:       result.guias.map(VentasPresenter.toGuia),
     };
   }
 
@@ -413,5 +451,39 @@ export class VentasController {
   @ApiParam({ name: 'id', type: Number })
   async deleteApartadoAdmin(@Param('id', ParseIntPipe) id: number) {
     await this.service.deleteApartadoAdmin(id);
+  }
+
+  // ── Alertas ───────────────────────────────────────────────────────────────
+
+  @Get('alertas/apartados')
+  @Roles('SUPERVISOR_REGIONAL', 'ADMIN_NACIONAL', 'ADMIN_SISTEMA')
+  @ApiOperation({ summary: 'Apartados próximos a vencer y vencidos — para Dashboard de alertas' })
+  @ApiQuery({ name: 'sucursalId', type: Number, required: false })
+  async getAlertasApartados(
+    @Query('sucursalId') sucursalIdRaw?: string,
+    @CurrentUser() user?: { id: number; rol: string; sucursal_id: number | null },
+  ) {
+    const sucursalId = sucursalIdRaw
+      ? Number(sucursalIdRaw)
+      : user?.rol === 'SUPERVISOR_REGIONAL'
+        ? (user.sucursal_id ?? undefined)
+        : undefined;
+    return this.service.getAlertasApartados(sucursalId);
+  }
+
+  @Get('alertas/anulaciones')
+  @Roles('SUPERVISOR_REGIONAL', 'ADMIN_NACIONAL', 'ADMIN_SISTEMA')
+  @ApiOperation({ summary: 'Anulaciones pendientes de aprobación — para Dashboard de alertas' })
+  @ApiQuery({ name: 'sucursalId', type: Number, required: false })
+  async getAnulacionesPendientes(
+    @Query('sucursalId') sucursalIdRaw?: string,
+    @CurrentUser() user?: { id: number; rol: string; sucursal_id: number | null },
+  ) {
+    const sucursalId = sucursalIdRaw
+      ? Number(sucursalIdRaw)
+      : user?.rol === 'SUPERVISOR_REGIONAL'
+        ? (user.sucursal_id ?? undefined)
+        : undefined;
+    return this.service.getAnulacionesPendientes(sucursalId);
   }
 }

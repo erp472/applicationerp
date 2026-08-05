@@ -44,7 +44,7 @@ type AuthUser = { id: number; rol: string; sucursal_id: number | null; regional_
 @ApiBearerAuth()
 @Controller('cajas')
 @UseGuards(JwtAuthGuard, FeatureFlagGuard, RolesGuard)
-@Feature('modulo_cajas')
+@Feature('modulo:caja')
 @UseFilters(new CajasDomainFilter())
 export class CajasController {
   constructor(private readonly service: CajasService) {}
@@ -126,6 +126,7 @@ export class CajasController {
   }
 
   @Get('consolidado-comercio')
+  @Feature('modulo:tesoreria')
   @Roles(...ROLES_TESORERIA)
   @ApiOperation({ summary: 'Consolidado financiero nacional por medio de pago agrupado por regional' })
   @ApiQuery({ name: 'comercioId', type: Number, required: false, description: 'ID del comercio (default: 1)' })
@@ -427,9 +428,24 @@ export class CajasController {
     );
   }
 
+  @Get('principales/:sesionId/consignaciones')
+  @Feature('modulo:tesoreria')
+  @Roles(...ROLES_TESORERIA)
+  @ApiOperation({ summary: 'Listar consignaciones de la sesión principal (supervisores y tesorería)' })
+  @ApiParam({ name: 'sesionId', type: Number })
+  async getConsignaciones(
+    @Param('sesionId', ParseIntPipe) sesionId: number,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.assertSesionAccess(user, sesionId);
+    const items = await this.service.getConsignaciones(sesionId);
+    return items.map(CajasPresenter.toConsignacion);
+  }
+
   // ── Consignación — aprobación compartida ─────────────────────────────────
 
   @Patch('consignacion/:id/estado')
+  @Feature('modulo:tesoreria')
   @Roles(...ROLES_TESORERIA)
   @ApiOperation({ summary: 'Aprobar o rechazar consignación (tesorería/supervisor)' })
   @ApiParam({ name: 'id', type: Number })
@@ -523,6 +539,32 @@ export class CajasController {
     );
   }
 
+  @Post('punto/:sesionId/medio-pago')
+  @Roles(...ROLES_CAJERO)
+  @ApiOperation({ summary: 'Registrar pago recibido por medio alterno (cheque/transferencia) en la sesión auxiliar' })
+  @ApiParam({ name: 'sesionId', type: Number })
+  @ApiResponse({ status: 201, description: 'Movimiento registrado con medio de pago alternativo' })
+  async registrarMedioPago(
+    @Param('sesionId', ParseIntPipe) sesionId: number,
+    @Body() body: unknown,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.assertSesionAccess(user, sesionId);
+    const parsed = z.object({
+      tipo:         z.enum(['transferencia', 'cheque']),
+      valor:        z.string().regex(/^\d+(\.\d{1,2})?$/, 'Monto debe ser numérico positivo'),
+      descripcion:  z.string().max(300).optional(),
+      numeroCheque: z.string().max(50).optional(),
+    }).safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    const result = await this.service.registrarMedioPago(sesionId, parsed.data, user.id);
+    return {
+      ...CajasPresenter.toMovimiento(result.movimiento),
+      saldoDespues: result.saldoDespues,
+      alertas:      result.alertas,
+    };
+  }
+
   @Post('punto/:sesionId/traslado-boveda')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Traslado de efectivo a bóveda física durante la sesión (RF-2.02 tope máximo)' })
@@ -593,6 +635,18 @@ export class CajasController {
 
   // ── RF-3.03: resolver diferencias pendientes ──────────────────────────────
 
+  @Get('sucursal/:sucursalId/diferencias-pendientes')
+  @Roles(...ROLES_SUPERVISOR)
+  @ApiOperation({ summary: 'Diferencias de cierre pendientes de resolución en todas las cajas de una sucursal' })
+  @ApiParam({ name: 'sucursalId', type: Number })
+  async getDiferenciasPendientesBySucursal(
+    @Param('sucursalId', ParseIntPipe) sucursalId: number,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.assertSucursalAccess(user, sucursalId);
+    return this.service.getDiferenciasPendientesBySucursal(sucursalId);
+  }
+
   @Get('diferencias/:id')
   @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Obtener diferencia de caja por ID' })
@@ -624,6 +678,38 @@ export class CajasController {
     const parsed = ResolverDiferenciaSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
     return this.service.resolverDiferencia(id, user.id, parsed.data.estado, parsed.data.observaciones);
+  }
+
+  // ── Reportes ──────────────────────────────────────────────────────────────
+
+  @Get('reportes/balance-pagos')
+  @Feature('modulo:tesoreria')
+  @Roles(...ROLES_TESORERIA)
+  @ApiOperation({ summary: 'Balance de Pagos: reposición banco/transportadora/cheque + cantidad Colpensiones por punto y fecha' })
+  @ApiQuery({ name: 'fechaInicio', type: String, required: true, description: 'Fecha inicio YYYY-MM-DD (inclusive)' })
+  @ApiQuery({ name: 'fechaFin',    type: String, required: true, description: 'Fecha fin YYYY-MM-DD (exclusive)' })
+  async getBalancePagos(
+    @Query('fechaInicio') fechaInicio: string,
+    @Query('fechaFin')    fechaFin:    string,
+  ) {
+    const inicio = new Date(`${fechaInicio}T00:00:00Z`);
+    const fin    = new Date(`${fechaFin}T00:00:00Z`);
+    if (isNaN(inicio.getTime()) || isNaN(fin.getTime()) || inicio >= fin) {
+      throw new BadRequestException('fechaInicio y fechaFin deben ser fechas válidas y fechaInicio < fechaFin');
+    }
+    return this.service.getBalancePagos(inicio, fin);
+  }
+
+  @Get('alertas/cierre-automatico')
+  @Roles('SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA')
+  @ApiOperation({ summary: 'Sesiones abiertas que superaron la hora de reset configurada en su caja principal' })
+  @ApiQuery({ name: 'sucursalId', type: Number, required: false })
+  async getAlertasCierreAutomatico(
+    @CurrentUser() user: AuthUser,
+    @Query('sucursalId') sucursalIdRaw?: string,
+  ) {
+    const sucursalId = sucursalIdRaw ? Number(sucursalIdRaw) : (user.sucursal_id ?? 0);
+    return this.service.getAlertasCierreAutomatico(sucursalId);
   }
 
   // ── Helpers de autorización ───────────────────────────────────────────────

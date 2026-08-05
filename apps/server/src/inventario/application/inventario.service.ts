@@ -111,6 +111,82 @@ export class InventarioService {
       .filter(s => s.bajo > 0 || s.critico > 0);
   }
 
+  // ── Órdenes de inventario ─────────────────────────────────────────────────
+
+  async crearOrden(sucursalId: number, items: { productoId: number; cantidadEnviada: number }[], usuarioId: number) {
+    return this.prisma.ordenInventario.create({
+      data: {
+        sucursales_idsucursales:       sucursalId,
+        usuarios_idusuarios_creador:   usuarioId,
+        estadoordenes_inventario:      'pendiente',
+        items: {
+          create: items.map(i => ({
+            productos_idproductos:                   i.productoId,
+            cantidad_enviadaordenes_inventario_items: i.cantidadEnviada,
+            estadoordenes_inventario_items:           'pendiente',
+          })),
+        },
+      },
+      include: {
+        items: { include: { producto: { select: { codigoproductos: true, nombreproductos: true } } } },
+        sucursal: { select: { nombresucursales: true } },
+      },
+    }).then(r => this._mapOrden(r));
+  }
+
+  async listOrdenes(sucursalId?: number, estado?: string) {
+    const rows = await this.prisma.ordenInventario.findMany({
+      where: {
+        ...(sucursalId && { sucursales_idsucursales: sucursalId }),
+        ...(estado     && { estadoordenes_inventario: estado as any }),
+      },
+      include: {
+        items:    { include: { producto: { select: { codigoproductos: true, nombreproductos: true } } } },
+        sucursal: { select: { nombresucursales: true } },
+      },
+      orderBy: { created_atordenes_inventario: 'desc' },
+    });
+    return rows.map(r => this._mapOrden(r));
+  }
+
+  async getOrdenesPendientes(sucursalId?: number) {
+    return this.listOrdenes(sucursalId, 'pendiente');
+  }
+
+  async actualizarEstadoOrden(ordenId: number, estado: string, usuarioId: number) {
+    return this.prisma.ordenInventario.update({
+      where: { idordenes_inventario: ordenId },
+      data: {
+        estadoordenes_inventario:            estado as any,
+        usuarios_idusuarios_confirmador:     usuarioId,
+        fecha_confirmacionordenes_inventario: ['confirmada', 'rechazada', 'parcial'].includes(estado) ? new Date() : undefined,
+      },
+      include: {
+        items:    { include: { producto: { select: { codigoproductos: true, nombreproductos: true } } } },
+        sucursal: { select: { nombresucursales: true } },
+      },
+    }).then(r => this._mapOrden(r));
+  }
+
+  private _mapOrden(r: any) {
+    return {
+      id:            r.idordenes_inventario,
+      sucursalId:    r.sucursales_idsucursales,
+      sucursalNombre: r.sucursal?.nombresucursales ?? null,
+      estado:        r.estadoordenes_inventario,
+      createdAt:     r.created_atordenes_inventario,
+      items: (r.items ?? []).map((i: any) => ({
+        id:              i.idordenes_inventario_items,
+        productoId:      i.productos_idproductos,
+        productoCodigo:  i.producto?.codigoproductos ?? null,
+        productoNombre:  i.producto?.nombreproductos ?? null,
+        cantidadEnviada: i.cantidad_enviadaordenes_inventario_items,
+        cantidadRecibida: i.cantidad_recibidaordenes_inventario_items ?? null,
+        estado:          i.estadoordenes_inventario_items,
+      })),
+    };
+  }
+
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   private esAdmin(rol: string) {
