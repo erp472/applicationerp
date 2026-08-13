@@ -2,7 +2,8 @@ import { Injectable } from '@nestjs/common';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { IServiciosRepository } from '../domain/servicio.repository.js';
-import type { ServicioEntity, ServicioSucursalEntity } from '../domain/servicio.entity.js';
+import type { CreateTarifaData, UpdateTarifaData } from '../domain/servicio.repository.js';
+import type { ServicioEntity, ServicioSucursalEntity, TarifaEnvioEntity } from '../domain/servicio.entity.js';
 import type { QueryServicioDto } from '../dto/query-servicio.dto.js';
 
 const SELECT = {
@@ -18,6 +19,11 @@ const SELECT = {
   factor_volumetricoservicios:       true,
   tiempo_entrega_diasservicios:      true,
   codigo_sigmaservicios:             true,
+  tarifa_certificacionservicios:     true,
+  minimo_seguro_postalservicios:     true,
+  alto_max_cmservicios:              true,
+  ancho_max_cmservicios:             true,
+  largo_max_cmservicios:             true,
   activoservicios:                   true,
   created_atservicios:               true,
 } satisfies Prisma.ServicioSelect;
@@ -35,6 +41,22 @@ const SELECT_SS = {
 
 type ServicioSucursalRow = Prisma.ServicioSucursalGetPayload<{ select: typeof SELECT_SS }>;
 
+const SELECT_TARIFA = {
+  idtarifas_servicio:                    true,
+  servicios_idservicios:                 true,
+  pais_destinotarifas_servicio:          true,
+  ciudad_destinotarifas_servicio:        true,
+  peso_min_kgtarifas_servicio:           true,
+  peso_max_kgtarifas_servicio:           true,
+  tarifatarifas_servicio:                true,
+  tarifa_kg_adicionaltarifas_servicio:   true,
+  activatarifas_servicio:                true,
+  fecha_vigencia_iniciotarifas_servicio: true,
+  fecha_vigencia_fintarifas_servicio:    true,
+} satisfies Prisma.TarifaServicioSelect;
+
+type TarifaRow = Prisma.TarifaServicioGetPayload<{ select: typeof SELECT_TARIFA }>;
+
 function toEntity(row: ServicioRow): ServicioEntity {
   return {
     id:                    row.idservicios,
@@ -49,8 +71,29 @@ function toEntity(row: ServicioRow): ServicioEntity {
     factorVolumetrico:     row.factor_volumetricoservicios,
     tiempoEntregaDias:     row.tiempo_entrega_diasservicios ?? null,
     codigoSigma:           row.codigo_sigmaservicios ?? null,
+    tarifaCertificacion:   row.tarifa_certificacionservicios !== null ? Number(row.tarifa_certificacionservicios) : null,
+    minimoSeguroPostal:    row.minimo_seguro_postalservicios !== null && row.minimo_seguro_postalservicios !== undefined ? Number(row.minimo_seguro_postalservicios) : null,
+    altoMaxCm:             row.alto_max_cmservicios  !== null && row.alto_max_cmservicios  !== undefined ? Number(row.alto_max_cmservicios)  : null,
+    anchoMaxCm:            row.ancho_max_cmservicios !== null && row.ancho_max_cmservicios !== undefined ? Number(row.ancho_max_cmservicios) : null,
+    largoMaxCm:            row.largo_max_cmservicios !== null && row.largo_max_cmservicios !== undefined ? Number(row.largo_max_cmservicios) : null,
     activo:                row.activoservicios,
     createdAt:             row.created_atservicios,
+  };
+}
+
+function toTarifaEntity(row: TarifaRow): TarifaEnvioEntity {
+  return {
+    id:                row.idtarifas_servicio,
+    servicioId:        row.servicios_idservicios,
+    paisDestino:       row.pais_destinotarifas_servicio,
+    ciudadDestino:     row.ciudad_destinotarifas_servicio ?? null,
+    pesoMinKg:         Number(row.peso_min_kgtarifas_servicio),
+    pesoMaxKg:         row.peso_max_kgtarifas_servicio !== null ? Number(row.peso_max_kgtarifas_servicio) : null,
+    tarifa:            Number(row.tarifatarifas_servicio),
+    tarifaKgAdicional: row.tarifa_kg_adicionaltarifas_servicio !== null ? Number(row.tarifa_kg_adicionaltarifas_servicio) : null,
+    activa:            row.activatarifas_servicio,
+    vigenciaInicio:    row.fecha_vigencia_iniciotarifas_servicio ?? null,
+    vigenciaFin:       row.fecha_vigencia_fintarifas_servicio ?? null,
   };
 }
 
@@ -85,6 +128,10 @@ export class PrismaServiciosRepository implements IServiciosRepository {
         factor_volumetricoservicios:       data.factorVolumetrico,
         tiempo_entrega_diasservicios:      data.tiempoEntregaDias ?? null,
         codigo_sigmaservicios:             data.codigoSigma ?? null,
+        minimo_seguro_postalservicios:     data.minimoSeguroPostal ?? null,
+        alto_max_cmservicios:              data.altoMaxCm ?? null,
+        ancho_max_cmservicios:             data.anchoMaxCm ?? null,
+        largo_max_cmservicios:             data.largoMaxCm ?? null,
       },
       select: SELECT,
     });
@@ -144,6 +191,10 @@ export class PrismaServiciosRepository implements IServiciosRepository {
         ...(data.factorVolumetrico     !== undefined && { factor_volumetricoservicios:       data.factorVolumetrico }),
         ...(data.tiempoEntregaDias     !== undefined && { tiempo_entrega_diasservicios:      data.tiempoEntregaDias }),
         ...(data.codigoSigma           !== undefined && { codigo_sigmaservicios:             data.codigoSigma }),
+        ...(data.minimoSeguroPostal    !== undefined && { minimo_seguro_postalservicios:     data.minimoSeguroPostal }),
+        ...(data.altoMaxCm             !== undefined && { alto_max_cmservicios:              data.altoMaxCm }),
+        ...(data.anchoMaxCm            !== undefined && { ancho_max_cmservicios:             data.anchoMaxCm }),
+        ...(data.largoMaxCm            !== undefined && { largo_max_cmservicios:             data.largoMaxCm }),
         ...(data.activo                !== undefined && { activoservicios:                   data.activo }),
       },
       select: SELECT,
@@ -200,5 +251,63 @@ export class PrismaServiciosRepository implements IServiciosRepository {
       where: { servicios_idservicios: servicioId, sucursales_idsucursales: sucursalId },
     });
     return count > 0;
+  }
+
+  async findTarifasByServicio(servicioId: number): Promise<TarifaEnvioEntity[]> {
+    const rows = await this.prisma.tarifaServicio.findMany({
+      where:   { servicios_idservicios: servicioId, deleted_attarifas_servicio: null },
+      select:  SELECT_TARIFA,
+      orderBy: [
+        { pais_destinotarifas_servicio: 'asc' },
+        { peso_min_kgtarifas_servicio: 'asc' },
+      ],
+    });
+    return rows.map(toTarifaEntity);
+  }
+
+  async createTarifa(servicioId: number, data: CreateTarifaData): Promise<TarifaEnvioEntity> {
+    const row = await this.prisma.tarifaServicio.create({
+      data: {
+        servicios_idservicios:               servicioId,
+        pais_destinotarifas_servicio:        data.paisDestino,
+        ciudad_destinotarifas_servicio:      data.ciudadDestino ?? null,
+        peso_min_kgtarifas_servicio:         data.pesoMinKg,
+        peso_max_kgtarifas_servicio:         data.pesoMaxKg ?? null,
+        tarifatarifas_servicio:              data.tarifa,
+        tarifa_kg_adicionaltarifas_servicio: data.tarifaKgAdicional ?? null,
+        activatarifas_servicio:              true,
+      },
+      select: SELECT_TARIFA,
+    });
+    return toTarifaEntity(row);
+  }
+
+  async updateTarifa(tarifaId: number, data: UpdateTarifaData): Promise<TarifaEnvioEntity> {
+    const row = await this.prisma.tarifaServicio.update({
+      where: { idtarifas_servicio: tarifaId },
+      data: {
+        ...(data.tarifa             !== undefined && { tarifatarifas_servicio:              data.tarifa }),
+        ...(data.tarifaKgAdicional  !== undefined && { tarifa_kg_adicionaltarifas_servicio: data.tarifaKgAdicional }),
+        ...(data.activa             !== undefined && { activatarifas_servicio:              data.activa }),
+      },
+      select: SELECT_TARIFA,
+    });
+    return toTarifaEntity(row);
+  }
+
+  async deleteTarifa(tarifaId: number): Promise<void> {
+    await this.prisma.tarifaServicio.update({
+      where: { idtarifas_servicio: tarifaId },
+      data:  { deleted_attarifas_servicio: new Date() },
+    });
+  }
+
+  async updateCertificacion(servicioId: number, tarifa: number | null): Promise<ServicioEntity> {
+    const row = await this.prisma.servicio.update({
+      where: { idservicios: servicioId },
+      data:  { tarifa_certificacionservicios: tarifa },
+      select: SELECT,
+    });
+    return toEntity(row);
   }
 }

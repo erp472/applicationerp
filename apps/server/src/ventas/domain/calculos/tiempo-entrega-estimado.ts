@@ -12,9 +12,11 @@ export function calcularTiempoEntregaEstimado(
   const fecha = new Date(hoy);
   while (diasContados < tiempoEntregaDias) {
     fecha.setDate(fecha.getDate() + 1);
-    const esDomingo = fecha.getDay() === 0;
-    const esFestivo = festivos.has(localDateKey(fecha));
-    if (!esDomingo && !esFestivo) diasContados++;
+    const dia = fecha.getDay();
+    const esDomingo  = dia === 0;
+    const esSabado   = dia === 6;
+    const esFestivo  = festivos.has(localDateKey(fecha));
+    if (!esDomingo && !esSabado && !esFestivo) diasContados++;
   }
   return fecha;
 }

@@ -8,7 +8,7 @@ export function calcularPesoVolumetricoIntl(
   alto: number,
   ancho: number,
   largo: number,
-  factorVolumetrico = 2500,
+  factorVolumetrico = 6000,
   pesoMaximoProveedor?: number | null,
 ): PesoVolumetricoIntlResult {
   const pesoVol = (alto * ancho * largo) / factorVolumetrico;

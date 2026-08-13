@@ -2,6 +2,7 @@ import { Injectable, Inject, ForbiddenException } from '@nestjs/common';
 import { INVENTARIO_REPOSITORY } from '../domain/inventario.repository.js';
 import type { IInventarioRepository, QueryStockParams } from '../domain/inventario.repository.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { calcularEstadoStock } from '../domain/business-rules.js';
 
 @Injectable()
 export class InventarioService {
@@ -104,8 +105,8 @@ export class InventarioService {
     });
     return sucursales
       .map(s => {
-        const bajo    = s.inventarioSucursal.filter(i => i.cantidad_actualinventario_sucursal > 0 && i.cantidad_actualinventario_sucursal < i.cantidad_minimainventario_sucursal).length;
-        const critico = s.inventarioSucursal.filter(i => i.cantidad_actualinventario_sucursal === 0).length;
+        const bajo    = s.inventarioSucursal.filter(i => calcularEstadoStock(i.cantidad_actualinventario_sucursal, i.cantidad_minimainventario_sucursal) === 'bajo').length;
+        const critico = s.inventarioSucursal.filter(i => calcularEstadoStock(i.cantidad_actualinventario_sucursal, i.cantidad_minimainventario_sucursal) === 'critico').length;
         return { sucursalId: s.idsucursales, sucursalNombre: s.nombresucursales, bajo, critico };
       })
       .filter(s => s.bajo > 0 || s.critico > 0);

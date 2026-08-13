@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Delete,
+  Controller, Get, Post, Patch, Delete, Put,
   Body, Param, Query, UseGuards, UseFilters,
   ParseIntPipe, BadRequestException, HttpCode, HttpStatus,
 } from '@nestjs/common';
@@ -11,7 +11,9 @@ import { IniciarVentaSchema }        from '../dto/iniciar-venta.dto.js';
 import { AgregarProductoSchema }     from '../dto/agregar-producto.dto.js';
 import { ConfirmarVentaSchema }      from '../dto/confirmar-venta.dto.js';
 import { AnularVentaSchema }         from '../dto/anular-venta.dto.js';
-import { ContratarApartadoSchema }   from '../dto/contratar-apartado.dto.js';
+import { SetTarifasEspecialSchema }  from '../dto/set-tarifas-especial.dto.js';
+import { ContratarApartadoSchema }         from '../dto/contratar-apartado.dto.js';
+import { AgregarApartadoCarritoSchema }    from '../dto/agregar-apartado-carrito.dto.js';
 import { RenovarApartadoSchema }     from '../dto/renovar-apartado.dto.js';
 import { CrearApartadoAdminSchema }  from '../dto/crear-apartado-admin.dto.js';
 import { UpdateApartadoAdminSchema } from '../dto/update-apartado-admin.dto.js';
@@ -64,6 +66,19 @@ export class VentasController {
     return this.service.getTarifasEspecial(productoId);
   }
 
+  @Put('catalogo/especiales/:productoId/tarifas')
+  @Roles('INVENTARIOS', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL')
+  @ApiOperation({ summary: 'Reemplaza todas las tarifas por cantidad de un servicio especial (admin)' })
+  @ApiParam({ name: 'productoId', type: Number })
+  async setTarifasEspecial(
+    @Param('productoId', ParseIntPipe) productoId: number,
+    @Body() body: unknown,
+  ) {
+    const parsed = SetTarifasEspecialSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    return this.service.setTarifasEspecial(productoId, parsed.data);
+  }
+
   // ── Clientes ──────────────────────────────────────────────────────────────────
 
   @Get('clientes/buscar')
@@ -77,6 +92,33 @@ export class VentasController {
   ) {
     const cliente = await this.service.buscarCliente(tipo, numero);
     return cliente ? VentasPresenter.toCliente(cliente) : null;
+  }
+
+  @Get('clientes/:clienteId/direcciones')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Direcciones frecuentes del cliente en envíos anteriores' })
+  @ApiParam({ name: 'clienteId', type: Number })
+  @ApiQuery({ name: 'rol', required: false, enum: ['remitente', 'destinatario'] })
+  async getDireccionesFrecuentes(
+    @Param('clienteId', ParseIntPipe) clienteId: number,
+    @Query('rol') rol?: string,
+  ) {
+    const rolVal = (rol === 'remitente' || rol === 'destinatario') ? rol : undefined;
+    return this.service.getDireccionesFrecuentes(clienteId, rolVal);
+  }
+
+  @Get('direcciones')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Direcciones frecuentes por número de documento del destinatario/remitente' })
+  @ApiQuery({ name: 'documento', required: true, description: 'Número de documento (CC, NIT, etc.)' })
+  @ApiQuery({ name: 'rol', required: false, enum: ['remitente', 'destinatario'] })
+  async getDireccionesPorDocumento(
+    @Query('documento') documento: string,
+    @Query('rol')       rol?: string,
+  ) {
+    if (!documento?.trim()) return [];
+    const rolVal = (rol === 'remitente' || rol === 'destinatario') ? rol : undefined;
+    return this.service.getDireccionesPorDocumento(documento.trim(), rolVal);
   }
 
   // ── Iniciar venta ─────────────────────────────────────────────────────────────
@@ -156,7 +198,7 @@ export class VentasController {
     const result = await this.service.agregarEnvioAlCarrito(ventaId, cajaId, user.id, parsed.data);
     return {
       envio:       VentasPresenter.toEnvio(result.envio),
-      guia:        VentasPresenter.toGuia(result.envio),
+      guia:        VentasPresenter.toGuia(result.envio, result.cotizacion.servicio?.nombre, result.cotizacion.fechaEntregaEstimada?.toISOString() ?? null),
       cotizacion:  { pesoTarificadoKg: result.cotizacion.pesoTarificadoKg, valorServicio: result.cotizacion.valorServicio },
       numeroGuia:  result.numeroGuia,
       estado:      'pendiente',
@@ -200,7 +242,7 @@ export class VentasController {
       saldoActual: result.saldoActual,
       alertas:     result.alertas,
       cambio:      result.cambio,
-      guias:       result.guias.map(VentasPresenter.toGuia),
+      guias:       result.guias.map((e) => VentasPresenter.toGuia(e)),
     };
   }
 
@@ -228,6 +270,41 @@ export class VentasController {
       alertas:     result.alertas,
       motivo:      result.motivo,
     };
+  }
+
+  // ── Apartado Postal en carrito ────────────────────────────────────────────────
+
+  @Post(':ventaId/carrito/apartado')
+  @Roles(...ROLES_CAJERO)
+  @ApiOperation({ summary: 'Agregar apartado postal al carrito — reserva y suma al total de la venta' })
+  @ApiParam({ name: 'ventaId', type: Number })
+  @ApiQuery({ name: 'cajaId', type: Number, required: true })
+  @ApiQuery({ name: 'clienteId', type: Number, required: true })
+  @ApiResponse({ status: 201, description: 'Apartado reservado y agregado al carrito' })
+  @ApiResponse({ status: 409, description: 'Apartado no disponible' })
+  async agregarApartadoAlCarrito(
+    @Param('ventaId',             ParseIntPipe) ventaId:   number,
+    @Query('cajaId',    ParseIntPipe)           cajaId:    number,
+    @Query('clienteId', ParseIntPipe)           clienteId: number,
+    @Body() body: unknown,
+  ) {
+    const parsed = AgregarApartadoCarritoSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    const result = await this.service.agregarApartadoAlCarrito(ventaId, cajaId, clienteId, parsed.data);
+    return { apartado: VentasPresenter.toApartado(result.apartado), cotizacion: result.cotizacion };
+  }
+
+  @Delete(':ventaId/carrito/apartado/:apartadoId')
+  @Roles(...ROLES_CAJERO)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Eliminar apartado reservado del carrito — libera el apartado' })
+  @ApiParam({ name: 'ventaId', type: Number })
+  @ApiParam({ name: 'apartadoId', type: Number })
+  async eliminarApartadoDelCarrito(
+    @Param('ventaId',    ParseIntPipe) ventaId:    number,
+    @Param('apartadoId', ParseIntPipe) apartadoId: number,
+  ) {
+    await this.service.eliminarApartadoDelCarrito(ventaId, apartadoId);
   }
 
   // ── Apartado Postal ───────────────────────────────────────────────────────────
@@ -331,7 +408,8 @@ export class VentasController {
   @ApiQuery({ name: 'anchoCm',      type: Number,  required: false })
   @ApiQuery({ name: 'largoCm',      type: Number,  required: false })
   @ApiQuery({ name: 'paisDestino',       required: false })
-  @ApiQuery({ name: 'ciudadDestino',     required: false })
+  @ApiQuery({ name: 'ciudadDestino',  required: false })
+  @ApiQuery({ name: 'tipoTrayecto',   required: false, enum: ['URBANO','NACIONAL','TE7','TE8'], description: 'Tipo de trayecto para servicios nacionales (reemplaza ciudadDestino en lookup de tarifa)' })
   @ApiQuery({ name: 'porcentajeArancel', type: Number, required: false, description: 'Porcentaje arancel destino — retorna estimado aduana en USD' })
   @ApiQuery({ name: 'trmDia',            type: Number, required: false, description: 'TRM del día para conversión COP→USD en estimado de aduana' })
   async cotizarEnvio(
@@ -342,6 +420,7 @@ export class VentasController {
     @Query('largoCm')         largoCmS?:     string,
     @Query('paisDestino')     paisDestino = 'CO',
     @Query('ciudadDestino')   ciudadDestino?: string,
+    @Query('tipoTrayecto')    tipoTrayecto?: 'URBANO' | 'NACIONAL' | 'TE7' | 'TE8',
     @Query('porcentajeArancel') porcentajeArancelS?: string,
     @Query('trmDia')            trmDiaS?:            string,
   ) {
@@ -355,6 +434,7 @@ export class VentasController {
       ciudadDestino,
       porcentajeArancelS ? Number(porcentajeArancelS) : undefined,
       trmDiaS            ? Number(trmDiaS)            : undefined,
+      tipoTrayecto,
     );
   }
 
@@ -373,13 +453,23 @@ export class VentasController {
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
     const result = await this.service.crearEnvio(cajaId, user.id, parsed.data);
     return {
-      guia:        VentasPresenter.toGuia(result.envio),
+      guia:        VentasPresenter.toGuia(result.envio, result.cotizacion.servicio?.nombre, result.cotizacion.fechaEntregaEstimada?.toISOString() ?? null),
       envio:       VentasPresenter.toEnvio(result.envio),
       cotizacion:  { pesoTarificadoKg: result.cotizacion.pesoTarificadoKg, valorServicio: result.cotizacion.valorServicio },
       movimiento:  result.movimiento,
       saldoActual: result.saldoActual,
       alertas:     result.alertas,
     };
+  }
+
+  // ── Ventas del día por sucursal ───────────────────────────────────────────────
+
+  @Get('sucursal/:sucursalId/dia')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Ventas confirmadas del día en una sucursal (con detalle de productos)' })
+  @ApiParam({ name: 'sucursalId', type: Number })
+  async getVentasDia(@Param('sucursalId', ParseIntPipe) sucursalId: number) {
+    return this.service.getVentasDia(sucursalId);
   }
 
   // ── Resumen del turno ─────────────────────────────────────────────────────────

@@ -18,4 +18,9 @@ describe('calcularTotalEnvioNacional', () => {
   it('todo cero', () => {
     expect(calcularTotalEnvioNacional('0', '0', '0', '0')).toBe('0');
   });
+
+  it('con certificación correo', () => {
+    // 7500 + 500 + 0 + 0 + 1800 = 9800
+    expect(calcularTotalEnvioNacional('7500', '500', '0', '0', '1800')).toBe('9800');
+  });
 });

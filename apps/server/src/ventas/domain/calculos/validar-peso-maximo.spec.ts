@@ -10,8 +10,8 @@ describe('validarPesoMaximo', () => {
     expect(() => validarPesoMaximo(30, 30)).not.toThrow();
   });
 
-  it('supera el límite lanza error', () => {
-    expect(() => validarPesoMaximo(31, 30)).toThrow('supera el máximo');
+  it('supera el límite lanza PesoExcedeLimiteError', () => {
+    expect(() => validarPesoMaximo(31, 30)).toThrow('supera el límite');
   });
 
   it('sin límite (null) siempre pasa', () => {

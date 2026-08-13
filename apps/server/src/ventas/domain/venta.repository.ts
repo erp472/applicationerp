@@ -9,6 +9,7 @@ import type {
   TarifaEnvioEntity,
   TarifaEspecialEntity,
   EnvioEntity,
+  DireccionFrecuenteEntity,
   ResumenTurno,
   MedioPagoVenta,
   TipoProducto,
@@ -38,6 +39,14 @@ export interface ConfirmarVentaData {
   emailFactura?:     string;
 }
 
+export interface UpdateVentaTotalesData {
+  medioPago:  MedioPagoVenta;
+  subtotal:   number;
+  descuento:  number;
+  iva:        number;
+  total:      number;
+}
+
 export interface ContratarApartadoData {
   sucursalId:   number;
   numero:       string;
@@ -48,6 +57,22 @@ export interface ContratarApartadoData {
   fechaFin:     Date;
   monto:        number;
   incluyeIva:   boolean;
+}
+
+export interface ReservarApartadoData {
+  apartadoId:   number;
+  tamano:       TamanoApartado;
+  clienteId:    number;
+  ventaId:      number;
+  sesionCajaId: number;
+  fechaInicio:  Date;
+  fechaFin:     Date;
+  monto:        number;
+  incluyeIva:   boolean;
+}
+
+export interface FinalizarApartadoData {
+  sesionCajaId: number;
 }
 
 export interface CrearEnvioData {
@@ -85,6 +110,7 @@ export interface CrearEnvioData {
   valorServicio:        number;
   valorEstampillas:     number;
   valorSeguro:          number;
+  valorCertificacion:   number;
   valorTotal:           number;
   medioPago:            MedioPagoVenta;
   contenido?:           string;
@@ -104,9 +130,11 @@ export interface IVentasRepository {
   crearVenta(data: CrearVentaData): Promise<VentaEntity>;
   findVentaById(id: number): Promise<VentaEntity | null>;
   findVentaConDetalle(id: number): Promise<VentaEntity | null>;
+  updateVentaTotales(id: number, data: UpdateVentaTotalesData): Promise<void>;
   confirmarVenta(id: number, data: ConfirmarVentaData): Promise<VentaEntity>;
   anularVenta(id: number): Promise<VentaEntity>;
   listVentasBySession(sesionCajaId: number, fecha?: Date): Promise<VentaEntity[]>;
+  findVentasBySucursalHoy(sucursalId: number): Promise<VentaEntity[]>;
 
   // Detalle (carrito)
   agregarDetalle(data: AgregarDetalleData): Promise<VentaDetalleEntity>;
@@ -117,7 +145,11 @@ export interface IVentasRepository {
   findApartadosDisponibles(sucursalId: number, tamano?: TamanoApartado): Promise<ApartadoPostalEntity[]>;
   findApartadoByNumero(sucursalId: number, numero: string): Promise<ApartadoPostalEntity | null>;
   contratarApartado(data: ContratarApartadoData): Promise<ApartadoPostalEntity>;
+  reservarApartado(data: ReservarApartadoData): Promise<ApartadoPostalEntity>;
   liberarApartado(id: number): Promise<ApartadoPostalEntity>;
+  liberarApartadoReservado(id: number): Promise<ApartadoPostalEntity>;
+  finalizarApartadoReservado(id: number): Promise<ApartadoPostalEntity>;
+  findApartadosPendientesByVenta(ventaId: number): Promise<ApartadoPostalEntity[]>;
   renovarApartado(id: number, data: { nuevaFechaFin: Date; monto: number; sesionCajaId: number }): Promise<ApartadoPostalEntity>;
 
   // Apartado Postal — admin CRUD
@@ -141,10 +173,37 @@ export interface IVentasRepository {
 
   // Tarifas servicios especiales (por rango de cantidad)
   findTarifasEspecial(productoId: number): Promise<TarifaEspecialEntity[]>;
+  setTarifasEspecial(productoId: number, tarifas: Array<{ minCantidad: number; maxCantidad: number | null; precio: number }>): Promise<TarifaEspecialEntity[]>;
 
   // Resumen de turno
   getResumenSesion(sesionCajaId: number): Promise<ResumenTurno>;
 
   // Consecutivo para número de guía (MAX id de envios + 1)
   nextConsecutivoGuia(): Promise<number>;
+
+  // Direcciones frecuentes
+  upsertDireccionFrecuente(data: {
+    clienteId:   number;
+    rol:         'remitente' | 'destinatario';
+    nombre:      string;
+    empresa?:    string;
+    telefono?:   string;
+    email?:      string;
+    direccion?:  string;
+    ciudad?:     string;
+    departamento?: string;
+    pais:        string;
+    codigoPostal?: string;
+    documento?:  string;
+  }): Promise<void>;
+
+  findDireccionesFrecuentes(
+    clienteId: number,
+    rol?: 'remitente' | 'destinatario',
+  ): Promise<DireccionFrecuenteEntity[]>;
+
+  findDireccionesPorDocumento(
+    documento: string,
+    rol?: 'remitente' | 'destinatario',
+  ): Promise<DireccionFrecuenteEntity[]>;
 }

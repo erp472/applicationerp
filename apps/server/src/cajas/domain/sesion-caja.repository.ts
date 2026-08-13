@@ -17,6 +17,26 @@ import type {
 
 export const SESIONES_CAJA_REPOSITORY = Symbol('SESIONES_CAJA_REPOSITORY');
 
+export interface DiferenciasFiltros {
+  tipo?:     'faltante' | 'sobrante';
+  estado?:   'pendiente' | 'aprobada' | 'rechazada';
+  desde?:    Date;
+  hasta?:    Date;
+  limite?:   number;
+  pagina?:   number;
+}
+
+export interface DiferenciaRegistroItem {
+  id:            number;
+  sesionCajaId:  number;
+  cajaNombre:    string;
+  tipoDiferencia: 'faltante' | 'sobrante';
+  monto:         string;
+  estado:        'pendiente' | 'aprobada' | 'rechazada';
+  observaciones: string | null;
+  createdAt:     Date;
+}
+
 export interface CrearSesionData {
   cajaId: number;
   usuarioAperturaId: number;
@@ -114,6 +134,7 @@ export interface ISesionesCajaRepository {
   findDiferenciaById(id: number): Promise<DiferenciaCajaEntity | null>;
   resolverDiferencia(id: number, data: AprobarDiferenciaData): Promise<DiferenciaCajaEntity>;
   findDiferenciasPendientesBySucursal(sucursalId: number): Promise<(DiferenciaCajaEntity & { cajaNombre: string })[]>;
+  findDiferenciasBySucursal(sucursalId: number, filters: DiferenciasFiltros): Promise<DiferenciaRegistroItem[]>;
 
   findReposicionById(id: number): Promise<ReposicionCajaEntity | null>;
   findReposicionByCodigo(codigo: string): Promise<ReposicionCajaEntity | null>;
@@ -129,5 +150,13 @@ export interface ISesionesCajaRepository {
   getStatusPunto(cajaPadreId: number): Promise<StatusPunto>;
   updateCajeroAsignado(sesionId: number, cajeroId: number | null): Promise<SesionCajaEntity>;
   getConsolidadoPorRegional(): Promise<{ regionalId: number; porMedio: Record<string, string> }[]>;
+  getConsolidadoPorSesion(): Promise<{
+    sesionId: number;
+    cajaId: number;
+    cajaNombre: string;
+    sucursalNombre: string;
+    cajeroNombre: string | null;
+    porMedio: Record<string, string>;
+  }[]>;
   getBalancePagos(fechaInicio: Date, fechaFin: Date): Promise<BalancePagosRow[]>;
 }

@@ -148,8 +148,9 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get ventaDetalle()    { return this.client.ventaDetalle; }
 
   // ── 11. Envíos ─────────────────────────────────────────────────────────────
-  get envio()           { return this.client.envio; }
-  get envioItem()       { return this.client.envioItem; }
+  get envio()                 { return this.client.envio; }
+  get envioItem()             { return this.client.envioItem; }
+  get direccionFrecuente()    { return this.client.direccionFrecuente; }
 
   // ── 12. Facturación ────────────────────────────────────────────────────────
   get factura()         { return this.client.factura; }

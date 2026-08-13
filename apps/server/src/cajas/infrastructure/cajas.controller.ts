@@ -274,6 +274,20 @@ export class CajasController {
     );
   }
 
+  // ── Cajas habilitadas por sucursal ────────────────────────────────────────
+
+  @Get('sucursal/:sucursalId/habilitadas')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Cajas habilitadas de la sucursal agrupadas por tipo (general/pos/pagos/menor)' })
+  @ApiParam({ name: 'sucursalId', type: Number })
+  async getCajasHabilitadas(
+    @Param('sucursalId', ParseIntPipe) sucursalId: number,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.assertSucursalAccess(user, sucursalId);
+    return this.service.getCajasHabilitadas(sucursalId);
+  }
+
   // ── Acceso por sucursalId (para sesiones con solo sucursal_id) ───────────
 
   @Get('sucursal/:sucursalId/status')
@@ -490,6 +504,18 @@ export class CajasController {
     return movs.map(CajasPresenter.toMovimiento);
   }
 
+  @Get('punto/:sesionId/reposicion-sugerida')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Monto recomendado de reposición para la sesión auxiliar (base_dia − saldo_actual)' })
+  @ApiParam({ name: 'sesionId', type: Number })
+  async getReposicionSugerida(
+    @Param('sesionId', ParseIntPipe) sesionId: number,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.assertSesionAccess(user, sesionId);
+    return this.service.getReposicionSugerida(sesionId);
+  }
+
   @Post('punto/:sesionId/cierre')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Cierre de caja auxiliar con arqueo — entrega total a principal' })
@@ -600,6 +626,19 @@ export class CajasController {
     return this.service.resetAutomaticoPunto(cajaPadreId, user.id);
   }
 
+  @Get('principales/:cajaPadreId/saldo-fuerte')
+  @Roles(...ROLES_SUPERVISOR)
+  @ApiOperation({ summary: 'Saldo actual de la caja fuerte (sesión general del punto)' })
+  @ApiParam({ name: 'cajaPadreId', type: Number })
+  async getSaldoCajaFuerte(
+    @Param('cajaPadreId', ParseIntPipe) cajaPadreId: number,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const cajaPadre = await this.service.getCajaPadre(cajaPadreId);
+    await this.assertSucursalAccess(user, cajaPadre.sucursalId);
+    return this.service.getSaldoCajaFuerte(cajaPadreId);
+  }
+
   @Get('principales/:cajaPadreId/capacidad')
   @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Capacidad del punto: cuántas auxiliares más pueden abrir según la base disponible' })
@@ -645,6 +684,33 @@ export class CajasController {
   ) {
     await this.assertSucursalAccess(user, sucursalId);
     return this.service.getDiferenciasPendientesBySucursal(sucursalId);
+  }
+
+  @Get('sucursal/:sucursalId/diferencias')
+  @Roles(...ROLES_GESTOR)
+  @ApiOperation({ summary: 'Registro histórico de diferencias de cierre por sucursal (informativo)' })
+  @ApiParam({ name: 'sucursalId', type: Number })
+  @ApiQuery({ name: 'tipo',   required: false, enum: ['faltante', 'sobrante'] })
+  @ApiQuery({ name: 'estado', required: false, enum: ['pendiente', 'aprobada', 'rechazada'] })
+  @ApiQuery({ name: 'desde',  required: false, type: String, description: 'YYYY-MM-DD' })
+  @ApiQuery({ name: 'hasta',  required: false, type: String, description: 'YYYY-MM-DD' })
+  @ApiQuery({ name: 'limite', required: false, type: Number })
+  @ApiQuery({ name: 'pagina', required: false, type: Number })
+  @ApiResponse({ status: 200, description: 'Lista de diferencias registradas. Solo lectura informativa.' })
+  async getDiferenciasBySucursal(
+    @Param('sucursalId', ParseIntPipe) sucursalId: number,
+    @Query() query: Record<string, string>,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.assertSucursalAccess(user, sucursalId);
+    return this.service.getDiferenciasBySucursal(sucursalId, {
+      tipo:   query['tipo']   as 'faltante' | 'sobrante' | undefined,
+      estado: query['estado'] as 'pendiente' | 'aprobada' | 'rechazada' | undefined,
+      desde:  query['desde'],
+      hasta:  query['hasta'],
+      limite: query['limite'] ? Number(query['limite']) : undefined,
+      pagina: query['pagina'] ? Number(query['pagina']) : undefined,
+    });
   }
 
   @Get('diferencias/:id')

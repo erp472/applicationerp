@@ -1,4 +1,5 @@
-import { Controller, Post, Get, Body, Headers, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Body, Headers, UseGuards, BadRequestException } from '@nestjs/common';
+import { ZodError } from 'zod';
 import {
   ApiTags,
   ApiBearerAuth,
@@ -54,8 +55,15 @@ export class AuthController {
     @Headers('x-mac-address') mac?: string,
     @Headers('x-plataforma') plataforma?: string,
   ) {
-    const dto = LoginSchema.parse(body);
-    return this.authService.login(dto, mac, plataforma);
+    try {
+      const dto = LoginSchema.parse(body);
+      return this.authService.login(dto, mac, plataforma);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
   }
 
   @UseGuards(JwtAuthGuard)

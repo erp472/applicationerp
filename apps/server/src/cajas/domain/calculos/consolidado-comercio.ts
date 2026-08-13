@@ -15,11 +15,22 @@ export interface RegionalConsolidado {
   porMedio: Record<MedioPago, string>;
 }
 
+export interface SesionConsolidado {
+  sesionId: number;
+  cajaId: number;
+  cajaNombre: string;
+  sucursalNombre: string;
+  cajeroNombre: string | null;
+  total: string;
+  porMedio: Record<MedioPago, string>;
+}
+
 export interface ConsolidadoComercioResult {
   comercioId: number;
   total: string;
   porMedio: Record<MedioPago, string>;
   numRegionales: number;
+  sesiones: SesionConsolidado[];
 }
 
 export function consolidarComercio(comercioId: number, regionales: RegionalConsolidado[]): ConsolidadoComercioResult {
@@ -38,5 +49,6 @@ export function consolidarComercio(comercioId: number, regionales: RegionalConso
       string
     >,
     numRegionales: regionales.length,
+    sesiones: [],
   };
 }

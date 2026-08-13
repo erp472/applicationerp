@@ -13,9 +13,16 @@ describe('calcularTiempoEntregaEstimado', () => {
     expect(localKey(r)).toBe('2025-01-09'); // Jueves
   });
 
-  it('salta el domingo', () => {
-    // Viernes 2025-01-10 + 2 días hábiles: Sab(1), Dom(skip), Lun(2)
+  it('salta sábado y domingo', () => {
+    // Viernes 2025-01-10 + 2 días hábiles: Sab(skip), Dom(skip), Lun(1), Mar(2)
     const hoy = new Date(2025, 0, 10);
+    const r = calcularTiempoEntregaEstimado(hoy, 2);
+    expect(localKey(r)).toBe('2025-01-14'); // Martes (no lunes — sábado ya no cuenta)
+  });
+
+  it('salta solo el sábado', () => {
+    // Jueves 2025-01-09 + 2 días hábiles: Vie(1), Sab(skip), Dom(skip), Lun(2)
+    const hoy = new Date(2025, 0, 9);
     const r = calcularTiempoEntregaEstimado(hoy, 2);
     expect(localKey(r)).toBe('2025-01-13'); // Lunes
   });

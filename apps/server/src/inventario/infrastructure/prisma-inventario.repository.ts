@@ -10,6 +10,7 @@ import type {
 } from '../domain/inventario.repository.js';
 import type { StockEntity, MovimientoInventarioEntity } from '../domain/inventario.entity.js';
 import { calcularEstadoStock } from '../domain/business-rules.js';
+import { calcularImpactoInventarioEspecial, calcularRestaurarInventarioEspecial } from '../domain/calculos/inventario-especial.js';
 
 const INV_UNIQUE = (sucursalId: number, productoId: number) => ({
   sucursales_idsucursales_productos_idproductos: {
@@ -192,14 +193,16 @@ export class PrismaInventarioRepository implements IInventarioRepository {
       const inv = await tx.inventarioSucursal.findUnique({ where: INV_UNIQUE(params.sucursalId, params.productoId) });
       const cantidadAnterior = inv?.cantidad_actualinventario_sucursal ?? 0;
 
-      if (cantidadAnterior < params.cantidad) {
+      let cantidadPosterior: number;
+      try {
+        const impacto = calcularImpactoInventarioEspecial(cantidadAnterior, params.cantidad, params.productoId, params.sucursalId);
+        cantidadPosterior = impacto.nuevoStock;
+      } catch (err: unknown) {
         throw Object.assign(
-          new Error(`Stock insuficiente para producto ${params.productoId}: disponible ${cantidadAnterior}, requerido ${params.cantidad}`),
+          new Error((err as Error).message),
           { code: 'STOCK_INSUFICIENTE', stockActual: cantidadAnterior, cantidadRequerida: params.cantidad },
         );
       }
-
-      const cantidadPosterior = cantidadAnterior - params.cantidad;
 
       await tx.inventarioSucursal.upsert({
         where:  INV_UNIQUE(params.sucursalId, params.productoId),
@@ -227,7 +230,8 @@ export class PrismaInventarioRepository implements IInventarioRepository {
     await this.prisma.$transaction(async (tx) => {
       const inv              = await tx.inventarioSucursal.findUnique({ where: INV_UNIQUE(params.sucursalId, params.productoId) });
       const cantidadAnterior = inv?.cantidad_actualinventario_sucursal ?? 0;
-      const cantidadPosterior = cantidadAnterior + params.cantidad;
+      const impacto          = calcularRestaurarInventarioEspecial(cantidadAnterior, params.cantidad, params.productoId, params.sucursalId);
+      const cantidadPosterior = impacto.nuevoStock;
 
       await tx.inventarioSucursal.upsert({
         where:  INV_UNIQUE(params.sucursalId, params.productoId),

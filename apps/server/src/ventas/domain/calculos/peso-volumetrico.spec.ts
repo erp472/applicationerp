@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { calcularPesoVolumetrico } from './peso-volumetrico.js';
 
 describe('calcularPesoVolumetrico', () => {
-  it('factor por defecto 2500', () => {
-    // 30 * 20 * 10 / 2500 = 2.4
-    expect(calcularPesoVolumetrico(30, 20, 10)).toBeCloseTo(2.4);
+  it('factor por defecto 5000 (estándar 4-72/Colombia)', () => {
+    // 30 * 20 * 10 / 5000 = 1.2
+    expect(calcularPesoVolumetrico(30, 20, 10)).toBeCloseTo(1.2);
   });
 
   it('factor personalizado', () => {
@@ -17,7 +17,7 @@ describe('calcularPesoVolumetrico', () => {
   });
 
   it('dimensiones pequeñas', () => {
-    // 10 * 10 * 10 / 2500 = 0.4
-    expect(calcularPesoVolumetrico(10, 10, 10)).toBeCloseTo(0.4);
+    // 10 * 10 * 10 / 5000 = 0.2
+    expect(calcularPesoVolumetrico(10, 10, 10)).toBeCloseTo(0.2);
   });
 });

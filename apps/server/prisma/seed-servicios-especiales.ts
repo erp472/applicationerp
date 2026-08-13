@@ -1,7 +1,7 @@
 /**
  * seed-servicios-especiales.ts
- * Upsert de los 37 Servicios Especiales 4-72 (tipo='otro').
- * Seguro de ejecutar sobre una base de datos existente.
+ * Upsert completo de Servicios Especiales 4-72 con precios reales de VENTAESPECIAL472.txt.
+ * Safe to re-run — uses delete+create for tarifas and upsert for productos.
  *
  * Ejecutar desde apps/server/:
  *   DATABASE_URL=... npx tsx prisma/seed-servicios-especiales.ts
@@ -15,72 +15,248 @@ const pool    = new pg.Pool({ connectionString: process.env.DATABASE_URL })
 const adapter = new PrismaPg(pool)
 const prisma  = new PrismaClient({ adapter } as never)
 
+// ── Tipos ─────────────────────────────────────────────────────────────────────
+
+interface Tarifa { min: number; max: number | null; precio: number }
+
 interface SvcEspecial {
   codigo:         string
   nombre:         string
+  precio:         number          // precio base (0 si usa tarifas por tramos)
   cantidadMinima: number | null
   cantidadMaxima: number | null
+  tarifas?:       Tarifa[]
 }
 
-const SERVICIOS: SvcEspecial[] = [
-  // ── Administración de Correspondencia ────────────────────────────────────
-  { codigo: 'SVC-ADM-SUP', nombre: 'ADM. DE CORRESPONDENCIA (SUPERVISOR)',        cantidadMinima: 1, cantidadMaxima: null },
-  { codigo: 'SVC-ADM-AUX', nombre: 'ADM. DE CORRESPONDENCIA (AUXILIAR)',          cantidadMinima: 1, cantidadMaxima: null },
-  { codigo: 'SVC-ADM-EQC', nombre: 'ADM. DE CORRESPONDENCIA (EQ. COMUNICACIONES)',cantidadMinima: 1, cantidadMaxima: null },
-  { codigo: 'SVC-ADM-MOT', nombre: 'ADM. DE CORRESPONDENCIA (MOTORIZADO)',        cantidadMinima: 1, cantidadMaxima: null },
-  { codigo: 'SVC-ADM-CTR', nombre: 'ADM. DE CORRESPONDENCIA (COUNTER)',           cantidadMinima: 1, cantidadMaxima: null },
+// ── Catálogo completo ─────────────────────────────────────────────────────────
 
-  // ── Alistamiento ─────────────────────────────────────────────────────────
-  { codigo: 'SVC-ALI-IPR', nombre: 'ALISTAMIENTO (IMPRESIÓN Y PEGADO DE RÓTULOS)',cantidadMinima: 1, cantidadMaxima: null },
-  { codigo: 'SVC-ALI-DPL', nombre: 'ALISTAMIENTO (DOBLADO PLEGADO EN C O Z)',     cantidadMinima: 1, cantidadMaxima: null },
-  { codigo: 'SVC-ALI-ENS', nombre: 'ALISTAMIENTO (ENSOBRADO)',                    cantidadMinima: 1, cantidadMaxima: null },
-  { codigo: 'SVC-ALI-EMT', nombre: 'ALISTAMIENTO (EMBOLSADO Y TERMOSELLADO)',     cantidadMinima: 1, cantidadMaxima: null },
-  { codigo: 'SVC-ALI-AUT', nombre: 'ALISTAMIENTO (AUTOENSOBRADO)',                cantidadMinima: 1, cantidadMaxima: null },
-  { codigo: 'SVC-ALI-ROT', nombre: 'ALISTAMIENTO (RÓTULOS)',                      cantidadMinima: 1, cantidadMaxima: null },
-  { codigo: 'SVC-ALI-IPG', nombre: 'ALISTAMIENTO (IMPRESIÓN Y PEGADO DE GUÍA)',   cantidadMinima: 1, cantidadMaxima: null },
-  { codigo: 'SVC-ALI-PHR', nombre: 'ALISTAMIENTO (PERSONAL HRS)',                 cantidadMinima: 1, cantidadMaxima: null },
-  { codigo: 'SVC-ALI-IUC', nombre: 'ALISTAMIENTO (INSERTO A UN CUERPO)',          cantidadMinima: 1, cantidadMaxima: null },
+const SERVICIOS: SvcEspecial[] = [
+
+  // ── Administración de Correspondencia ─────────────────────────────────────
+  // NOTA: SUP ($1.8M), AUX ($1.3M), MOT ($2.2M), CTR ($2.7M) eliminados —
+  //       precios superan $1.000.000 COP (imposible en POS).
+
+  {
+    codigo: 'SVC-ADM-EQC', precio: 129_000, cantidadMinima: 1, cantidadMaxima: null,
+    nombre: 'ADM. DE CORRESPONDENCIA (EQ. COMUNICACIONES)',
+  },
+
+  // ── Alistamiento — tarifas por tramos ────────────────────────────────────
+
+  {
+    codigo: 'SVC-ALI-IPR', precio: 0, cantidadMinima: 1, cantidadMaxima: null,
+    nombre: 'ALISTAMIENTO (IMPRESIÓN Y PEGADO DE RÓTULOS)',
+    tarifas: [
+      { min: 1,      max: 1_000,  precio: 41 },
+      { min: 1_001,  max: 5_000,  precio: 38 },
+      { min: 5_001,  max: 10_000, precio: 38 },
+      { min: 10_001, max: 20_000, precio: 36 },
+      { min: 20_001, max: 50_000, precio: 35 },
+      { min: 50_001, max: 100_000,precio: 28 },
+      { min: 100_001,max: null,   precio: 25 },
+    ],
+  },
+  {
+    codigo: 'SVC-ALI-DPL', precio: 0, cantidadMinima: 1, cantidadMaxima: null,
+    nombre: 'ALISTAMIENTO (DOBLADO PLEGADO EN C O Z)',
+    tarifas: [
+      { min: 1,      max: 1_000,  precio: 8 },
+      { min: 1_001,  max: 5_000,  precio: 8 },
+      { min: 5_001,  max: 10_000, precio: 8 },
+      { min: 10_001, max: 20_000, precio: 8 },
+      { min: 20_001, max: 50_000, precio: 8 },
+      { min: 50_001, max: 100_000,precio: 7 },
+      { min: 100_001,max: null,   precio: 7 },
+    ],
+  },
+  {
+    codigo: 'SVC-ALI-ENS', precio: 0, cantidadMinima: 1, cantidadMaxima: null,
+    nombre: 'ALISTAMIENTO (ENSOBRADO)',
+    tarifas: [
+      { min: 1,      max: 1_000,  precio: 58 },
+      { min: 1_001,  max: 5_000,  precio: 58 },
+      { min: 5_001,  max: 10_000, precio: 49 },
+      { min: 10_001, max: 20_000, precio: 49 },
+      { min: 20_001, max: 50_000, precio: 48 },
+      { min: 50_001, max: 100_000,precio: 46 },
+      { min: 100_001,max: null,   precio: 44 },
+    ],
+  },
+  {
+    codigo: 'SVC-ALI-EMT', precio: 0, cantidadMinima: 1, cantidadMaxima: null,
+    nombre: 'ALISTAMIENTO (EMBOLSADO Y TERMOSELLADO)',
+    tarifas: [
+      { min: 1,      max: 5_000,  precio: 52   },
+      { min: 5_001,  max: 20_000, precio: 44.5 },
+      { min: 20_001, max: 50_000, precio: 43.5 },
+      { min: 50_001, max: 100_000,precio: 42   },
+      { min: 100_001,max: null,   precio: 40.5 },
+    ],
+  },
+  {
+    codigo: 'SVC-ALI-AUT', precio: 0, cantidadMinima: 1, cantidadMaxima: null,
+    nombre: 'ALISTAMIENTO (AUTOENSOBRADO)',
+    tarifas: [
+      { min: 1,       max: 20_000,  precio: 23.7 },
+      { min: 20_001,  max: 100_000, precio: 22.3 },
+      { min: 100_001, max: null,    precio: 20.9 },
+    ],
+  },
+  {
+    codigo: 'SVC-ALI-ROT', precio: 100, cantidadMinima: 1, cantidadMaxima: 10_000,
+    nombre: 'ALISTAMIENTO (RÓTULOS)',
+  },
+  {
+    codigo: 'SVC-ALI-IPG', precio: 22.30, cantidadMinima: 1, cantidadMaxima: null,
+    nombre: 'ALISTAMIENTO (IMPRESIÓN Y PEGADO DE GUÍA)',
+  },
+  {
+    codigo: 'SVC-ALI-IPG-B', precio: 26.40, cantidadMinima: 1, cantidadMaxima: null,
+    nombre: 'ALISTAMIENTO (IMPRESIÓN Y PEGADO DE GUÍA - VAR. B)',
+  },
+  {
+    codigo: 'SVC-ALI-PHR', precio: 0, cantidadMinima: null, cantidadMaxima: null,
+    nombre: 'ALISTAMIENTO (PERSONAL HRS)',
+  },
+  {
+    codigo: 'SVC-ALI-IUC', precio: 9.50, cantidadMinima: 1, cantidadMaxima: null,
+    nombre: 'ALISTAMIENTO (INSERTO A UN CUERPO)',
+  },
+  {
+    codigo: 'SVC-ALI-IPR-V2', precio: 118.48, cantidadMinima: 1, cantidadMaxima: null,
+    nombre: 'ALISTAMIENTO (IMP. Y PEG. RÓTULOS — VARIANTE)',
+  },
+  {
+    codigo: 'SVC-ALI-DPL-V2', precio: 17.56, cantidadMinima: 1, cantidadMaxima: null,
+    nombre: 'ALISTAMIENTO (DOBLADO PEG. C/O/Z — VARIANTE)',
+  },
 
   // ── Servicios Geográficos ─────────────────────────────────────────────────
-  { codigo: 'SVC-GEO-REG', nombre: 'REGISTRO A GEOCODIFICAR',                              cantidadMinima: 1,   cantidadMaxima: null },
-  { codigo: 'SVC-GEO-CP',  nombre: 'CÓDIGO POSTAL',                                        cantidadMinima: 1,   cantidadMaxima: null },
-  { codigo: 'SVC-GEO-MAL', nombre: 'MALLA VIAL',                                           cantidadMinima: 1,   cantidadMaxima: null },
-  { codigo: 'SVC-GEO-EST', nombre: 'ESTRATO',                                              cantidadMinima: 1,   cantidadMaxima: null },
-  { codigo: 'SVC-GEO-SUE', nombre: 'USO DE SUELO',                                         cantidadMinima: 1,   cantidadMaxima: null },
-  { codigo: 'SVC-GEO-LMV', nombre: 'LONGITUD DE LA MALLA VIAL',                            cantidadMinima: 1,   cantidadMaxima: null },
-  { codigo: 'SVC-GEO-BAR', nombre: 'BARRIO',                                               cantidadMinima: 1,   cantidadMaxima: null },
-  { codigo: 'SVC-GEO-MAN', nombre: 'NO. DE MANZANAS',                                      cantidadMinima: 1,   cantidadMaxima: null },
-  { codigo: 'SVC-GEO-HAB', nombre: 'NO. DE HABITANTES',                                    cantidadMinima: 1,   cantidadMaxima: null },
-  { codigo: 'SVC-GEO-ECO', nombre: 'NO. DE EMPRESAS COMERCIALES',                          cantidadMinima: 1,   cantidadMaxima: null },
-  { codigo: 'SVC-GEO-EIN', nombre: 'NO. DE EMPRESAS INDUSTRIALES',                         cantidadMinima: 1,   cantidadMaxima: null },
-  { codigo: 'SVC-GEO-EPS', nombre: 'NO. DE EMPRESAS PRESTADORES DE SERVICIOS',             cantidadMinima: 1,   cantidadMaxima: null },
-  { codigo: 'SVC-GEO-MAP', nombre: 'Generación de Mapa (Valor por cada mapa espacial a...)',cantidadMinima: 1,   cantidadMaxima: null },
-  { codigo: 'SVC-GEO-PEN', nombre: 'PENDIENTE',                                            cantidadMinima: null,cantidadMaxima: null },
-  { codigo: 'SVC-GEO-NOR', nombre: 'NORMALIZACION',                                        cantidadMinima: 1,   cantidadMaxima: null },
+
+  { codigo: 'SVC-GEO-REG', precio: 105, cantidadMinima: 1, cantidadMaxima: null, nombre: 'REGISTRO A GEOCODIFICAR' },
+  { codigo: 'SVC-GEO-CP',  precio: 0,   cantidadMinima: 1, cantidadMaxima: null, nombre: 'CÓDIGO POSTAL' },
+  { codigo: 'SVC-GEO-MAL', precio: 105, cantidadMinima: 1, cantidadMaxima: null, nombre: 'MALLA VIAL' },
+  { codigo: 'SVC-GEO-EST', precio: 105, cantidadMinima: 1, cantidadMaxima: null, nombre: 'ESTRATO' },
+  { codigo: 'SVC-GEO-SUE', precio: 105, cantidadMinima: 1, cantidadMaxima: null, nombre: 'USO DE SUELO' },
+  { codigo: 'SVC-GEO-LMV', precio: 105, cantidadMinima: 1, cantidadMaxima: null, nombre: 'LONGITUD DE LA MALLA VIAL' },
+  { codigo: 'SVC-GEO-BAR', precio: 105, cantidadMinima: 1, cantidadMaxima: null, nombre: 'BARRIO' },
+  { codigo: 'SVC-GEO-MAN', precio: 105, cantidadMinima: 1, cantidadMaxima: null, nombre: 'NO. DE MANZANAS' },
+  { codigo: 'SVC-GEO-HAB', precio: 105, cantidadMinima: 1, cantidadMaxima: null, nombre: 'NO. DE HABITANTES' },
+  { codigo: 'SVC-GEO-ECO', precio: 105, cantidadMinima: 1, cantidadMaxima: null, nombre: 'NO. DE EMPRESAS COMERCIALES' },
+  { codigo: 'SVC-GEO-EIN', precio: 105, cantidadMinima: 1, cantidadMaxima: null, nombre: 'NO. DE EMPRESAS INDUSTRIALES' },
+  { codigo: 'SVC-GEO-EPS', precio: 105, cantidadMinima: 1, cantidadMaxima: null, nombre: 'NO. DE EMPRESAS PRESTADORES DE SERVICIOS' },
+  { codigo: 'SVC-GEO-PEN', precio: 105, cantidadMinima: 1, cantidadMaxima: null, nombre: 'PENDIENTE' },
+  { codigo: 'SVC-GEO-MAP', precio: 70_000,  cantidadMinima: 1, cantidadMaxima: null, nombre: 'GENERACIÓN DE MAPA (ESPACIAL A)' },
+  { codigo: 'SVC-GEO-MAP2',precio: 100_000, cantidadMinima: 1, cantidadMaxima: null, nombre: 'GENERACIÓN DE MAPA (ESPACIAL — GENE.)' },
+  {
+    codigo: 'SVC-GEO-NOR', precio: 0, cantidadMinima: 10, cantidadMaxima: null,
+    nombre: 'NORMALIZACIÓN',
+    tarifas: [
+      { min: 10,      max: 100,    precio: 0 },
+      { min: 101,     max: 1_000,  precio: 0 },
+      { min: 1_001,   max: 2_000,  precio: 0 },
+      { min: 2_001,   max: 5_000,  precio: 0 },
+      { min: 5_001,   max: 10_000, precio: 0 },
+      { min: 10_001,  max: 50_000, precio: 0 },
+      { min: 50_001,  max: 500_000,precio: 0 },
+      { min: 500_001, max: null,   precio: 0 },
+    ],
+  },
 
   // ── Documentos y Oficina ─────────────────────────────────────────────────
-  { codigo: 'SVC-DOC-CER', nombre: 'CERTIMAIL',           cantidadMinima: 1, cantidadMaxima: null },
-  { codigo: 'SVC-DOC-CVT', nombre: 'CASILLERO VIRTUAL',   cantidadMinima: 1, cantidadMaxima: null },
-  { codigo: 'SVC-DOC-FAX', nombre: 'SERVICIO DE FAX',     cantidadMinima: 1, cantidadMaxima: null },
-  { codigo: 'SVC-DOC-IMP', nombre: 'SERVICIO DE IMPRESIÓN',  cantidadMinima: 1, cantidadMaxima: null },
-  { codigo: 'SVC-DOC-SCN', nombre: 'SERVICIO DE SCANNER',    cantidadMinima: 1, cantidadMaxima: null },
-  { codigo: 'SVC-DOC-FOT', nombre: 'SERVICIO DE FOTOCOPIAS', cantidadMinima: 1, cantidadMaxima: null },
 
-  // ── Enriquecimiento de Datos ──────────────────────────────────────────────
-  { codigo: 'SVC-ENR-P1', nombre: 'Enriquecimiento de variables paquete 1', cantidadMinima: 1, cantidadMaxima: null },
-  { codigo: 'SVC-ENR-P2', nombre: 'Enriquecimiento de variables paquete 2', cantidadMinima: 1, cantidadMaxima: null },
+  { codigo: 'SVC-DOC-CER', precio: 0,   cantidadMinima: null, cantidadMaxima: null, nombre: 'CERTIMAIL' },
+  { codigo: 'SVC-DOC-CVT', precio: 0,   cantidadMinima: null, cantidadMaxima: null, nombre: 'CASILLERO VIRTUAL' },
+  { codigo: 'SVC-DOC-FAX', precio: 1_000, cantidadMinima: 1, cantidadMaxima: null, nombre: 'SERVICIO DE FAX' },
+  { codigo: 'SVC-DOC-IMP', precio: 200,   cantidadMinima: 1, cantidadMaxima: null, nombre: 'SERVICIO DE IMPRESIÓN' },
+  { codigo: 'SVC-DOC-SCN', precio: 500,   cantidadMinima: 1, cantidadMaxima: null, nombre: 'SERVICIO DE SCANNER' },
+  { codigo: 'SVC-DOC-FOT', precio: 100,   cantidadMinima: 1, cantidadMaxima: null, nombre: 'SERVICIO DE FOTOCOPIAS' },
+
+  // ── Enriquecimiento de Datos ─────────────────────────────────────────────
+
+  {
+    codigo: 'SVC-ENR-P1', precio: 0, cantidadMinima: 10, cantidadMaxima: null,
+    nombre: 'ENRIQUECIMIENTO DE VARIABLES — PAQUETE 1',
+    tarifas: [
+      { min: 10,      max: 100,    precio: 560 },
+      { min: 101,     max: 1_000,  precio: 409 },
+      { min: 1_001,   max: 2_000,  precio: 302 },
+      { min: 2_001,   max: 5_000,  precio: 222 },
+      { min: 5_001,   max: 10_000, precio: 160 },
+      { min: 10_001,  max: 50_000, precio: 120 },
+      { min: 50_001,  max: 100_000,precio: 86  },
+      { min: 100_001, max: 250_000,precio: 63  },
+      { min: 250_001, max: 500_000,precio: 46  },
+      { min: 500_001, max: null,   precio: 36  },
+    ],
+  },
+  {
+    codigo: 'SVC-ENR-P2', precio: 0, cantidadMinima: 10, cantidadMaxima: null,
+    nombre: 'ENRIQUECIMIENTO DE VARIABLES — PAQUETE 2',
+    tarifas: [
+      { min: 10,      max: 100,    precio: 620 },
+      { min: 101,     max: 1_000,  precio: 453 },
+      { min: 1_001,   max: 2_000,  precio: 339 },
+      { min: 2_001,   max: 5_000,  precio: 250 },
+      { min: 5_001,   max: 10_000, precio: 179 },
+      { min: 10_001,  max: 50_000, precio: 134 },
+      { min: 50_001,  max: 100_000,precio: 96  },
+      { min: 100_001, max: 250_000,precio: 70  },
+      { min: 250_001, max: 500_000,precio: 51  },
+      { min: 500_001, max: null,   precio: 42  },
+    ],
+  },
+  {
+    codigo: 'SVC-ENR-P3', precio: 0, cantidadMinima: 10, cantidadMaxima: null,
+    nombre: 'ENRIQUECIMIENTO DE VARIABLES — PAQUETE 3',
+    tarifas: [
+      { min: 10,      max: 100,    precio: 740 },
+      { min: 101,     max: 1_000,  precio: 540 },
+      { min: 1_001,   max: 2_000,  precio: 413 },
+      { min: 2_001,   max: 5_000,  precio: 304 },
+      { min: 5_001,   max: 10_000, precio: 218 },
+      { min: 10_001,  max: 50_000, precio: 164 },
+      { min: 50_001,  max: 100_000,precio: 117 },
+      { min: 100_001, max: 250_000,precio: 86  },
+      { min: 250_001, max: 500_000,precio: 62  },
+      { min: 500_001, max: null,   precio: 54  },
+    ],
+  },
+  {
+    codigo: 'SVC-ENR-P4', precio: 0, cantidadMinima: 10, cantidadMaxima: null,
+    nombre: 'ENRIQUECIMIENTO DE VARIABLES — PAQUETE 4',
+    tarifas: [
+      { min: 10,      max: 100,    precio: 800 },
+      { min: 101,     max: 1_000,  precio: 584 },
+      { min: 1_001,   max: 2_000,  precio: 451 },
+      { min: 2_001,   max: 5_000,  precio: 332 },
+      { min: 5_001,   max: 10_000, precio: 238 },
+      { min: 10_001,  max: 50_000, precio: 179 },
+      { min: 50_001,  max: 100_000,precio: 128 },
+      { min: 100_001, max: 250_000,precio: 94  },
+      { min: 250_001, max: 500_000,precio: 68  },
+      { min: 500_001, max: null,   precio: 60  },
+    ],
+  },
+
+  // ── Material ──────────────────────────────────────────────────────────────
+
+  { codigo: 'SVC-MAT-PRU', precio: 100, cantidadMinima: 1, cantidadMaxima: 1_000, nombre: 'MATERIAL DE PRUEBAS' },
 ]
 
-async function main() {
-  console.log(`\n🌐  Upsert de ${SERVICIOS.length} Servicios Especiales...\n`)
+// ── Runner ────────────────────────────────────────────────────────────────────
 
-  // 1. Upsert productos
+async function main() {
+  console.log(`\n🌐  Sincronizando ${SERVICIOS.length} Servicios Especiales...\n`)
+
   const productoIds: number[] = []
+
   for (const s of SERVICIOS) {
     const prod = await prisma.producto.upsert({
       where:  { codigoproductos: s.codigo },
       update: {
         nombreproductos:                s.nombre,
+        precioproductos:                s.precio,
         activoproductos:                true,
         cantidad_minima_ventaproductos: s.cantidadMinima,
         cantidad_maxima_ventaproductos: s.cantidadMaxima,
@@ -89,7 +265,7 @@ async function main() {
         codigoproductos:                s.codigo,
         nombreproductos:                s.nombre,
         tipoproductos:                  'otro',
-        precioproductos:                0,
+        precioproductos:                s.precio,
         porcentaje_taxproductos:        0,
         activoproductos:                true,
         cantidad_minima_ventaproductos: s.cantidadMinima,
@@ -97,17 +273,42 @@ async function main() {
       },
     })
     productoIds.push(prod.idproductos)
-    const minStr = s.cantidadMinima !== null ? String(s.cantidadMinima) : '—'
-    const maxStr = s.cantidadMaxima !== null ? String(s.cantidadMaxima) : '—'
-    console.log(`  ✓  ${s.codigo.padEnd(12)}  min=${minStr.padEnd(4)} max=${maxStr.padEnd(6)}  ${s.nombre}`)
+
+    const precio = s.precio > 0 ? `$${s.precio.toLocaleString()}` : (s.tarifas ? `${s.tarifas.length} tramos` : 'sin precio')
+    console.log(`  ✓  ${s.codigo.padEnd(14)}  ${precio.padEnd(14)}  ${s.nombre}`)
+
+    // Reemplazar tarifas por tramos (delete-then-create para evitar solapados huérfanos)
+    if (s.tarifas && s.tarifas.length > 0) {
+      await (prisma as any).tarifaEspecialCantidad.deleteMany({
+        where: { productos_idproductos: prod.idproductos },
+      })
+      await (prisma as any).tarifaEspecialCantidad.createMany({
+        data: s.tarifas.map(t => ({
+          productos_idproductos:          prod.idproductos,
+          min_cantidadtarifas_especial:   t.min,
+          max_cantidadtarifas_especial:   t.max,
+          preciotarifas_especial:         t.precio,
+          activotarifas_especial:         true,
+        })),
+      })
+      console.log(`       ↳ ${s.tarifas.length} tramos de tarifa`)
+    } else {
+      // Para productos con precio fijo, eliminar tarifas obsoletas si existían
+      const deleted = await (prisma as any).tarifaEspecialCantidad.deleteMany({
+        where: { productos_idproductos: prod.idproductos },
+      })
+      if (deleted.count > 0) {
+        console.log(`       ↳ ${deleted.count} tarifas obsoletas eliminadas (precio fijo)`)
+      }
+    }
   }
 
-  // 2. Asociar a todas las sucursales activas
+  // Asociar a todas las sucursales activas
   const sucursales = await prisma.sucursal.findMany({
     where:  { activosucursales: true },
     select: { idsucursales: true, nombresucursales: true },
   })
-  console.log(`\n  → Asociando a ${sucursales.length} sucursal(es)...`)
+  console.log(`\n  → Vinculando a ${sucursales.length} sucursal(es)...`)
 
   for (const suc of sucursales) {
     for (const pid of productoIds) {
@@ -127,99 +328,8 @@ async function main() {
       })
     }
   }
-  console.log(`     ✓  ${sucursales.length} sucursales vinculadas`)
-
-  // 3. Tarifas por rango de cantidad para servicios de alistamiento
-  const TARIFAS_ALISTAMIENTO: { codigo: string; tarifas: { min: number; max: number | null; precio: number }[] }[] = [
-    {
-      codigo: 'SVC-ALI-IPR',
-      tarifas: [
-        { min: 1,      max: 1000,   precio: 41 },
-        { min: 1001,   max: 5000,   precio: 38 },
-        { min: 5001,   max: 10000,  precio: 38 },
-        { min: 10001,  max: 20000,  precio: 36 },
-        { min: 20001,  max: 50000,  precio: 35 },
-        { min: 50001,  max: 100000, precio: 33 },
-        { min: 100001, max: null,   precio: 30 },
-      ],
-    },
-    {
-      codigo: 'SVC-ALI-DPL',
-      tarifas: [
-        { min: 1,      max: 1000,   precio: 41 },
-        { min: 1001,   max: 5000,   precio: 38 },
-        { min: 5001,   max: 10000,  precio: 38 },
-        { min: 10001,  max: 20000,  precio: 36 },
-        { min: 20001,  max: 50000,  precio: 35 },
-        { min: 50001,  max: 100000, precio: 33 },
-        { min: 100001, max: null,   precio: 30 },
-      ],
-    },
-    {
-      codigo: 'SVC-ALI-ENS',
-      tarifas: [
-        { min: 1,      max: 1000,   precio: 41 },
-        { min: 1001,   max: 5000,   precio: 38 },
-        { min: 5001,   max: 10000,  precio: 38 },
-        { min: 10001,  max: 20000,  precio: 36 },
-        { min: 20001,  max: 50000,  precio: 35 },
-        { min: 50001,  max: 100000, precio: 33 },
-        { min: 100001, max: null,   precio: 30 },
-      ],
-    },
-    {
-      codigo: 'SVC-ALI-EMT',
-      tarifas: [
-        { min: 1,      max: 1000,   precio: 41 },
-        { min: 1001,   max: 5000,   precio: 38 },
-        { min: 5001,   max: 10000,  precio: 38 },
-        { min: 10001,  max: 20000,  precio: 36 },
-        { min: 20001,  max: 50000,  precio: 35 },
-        { min: 50001,  max: 100000, precio: 33 },
-        { min: 100001, max: null,   precio: 30 },
-      ],
-    },
-    {
-      codigo: 'SVC-ALI-ROT',
-      tarifas: [
-        { min: 1,      max: 1000,   precio: 41 },
-        { min: 1001,   max: 5000,   precio: 38 },
-        { min: 5001,   max: 10000,  precio: 38 },
-        { min: 10001,  max: 20000,  precio: 36 },
-        { min: 20001,  max: 50000,  precio: 35 },
-        { min: 50001,  max: 100000, precio: 33 },
-        { min: 100001, max: null,   precio: 30 },
-      ],
-    },
-  ]
-
-  console.log('\n  → Creando tarifas por cantidad...')
-  for (const svc of TARIFAS_ALISTAMIENTO) {
-    const prod = await prisma.producto.findUnique({ where: { codigoproductos: svc.codigo } })
-    if (!prod) { console.log(`  ⚠️  Producto ${svc.codigo} no encontrado, saltando tarifas`); continue }
-    for (const t of svc.tarifas) {
-      await (prisma as any).tarifaEspecialCantidad.upsert({
-        where: {
-          productos_idproductos_min_cantidadtarifas_especial: {
-            productos_idproductos:        prod.idproductos,
-            min_cantidadtarifas_especial: t.min,
-          },
-        },
-        update: { preciotarifas_especial: t.precio, max_cantidadtarifas_especial: t.max, activotarifas_especial: true },
-        create: {
-          productos_idproductos:          prod.idproductos,
-          min_cantidadtarifas_especial:   t.min,
-          max_cantidadtarifas_especial:   t.max,
-          preciotarifas_especial:         t.precio,
-          activotarifas_especial:         true,
-        },
-      })
-    }
-    console.log(`     ✓  ${svc.codigo}: ${svc.tarifas.length} tramos de tarifa`)
-  }
-
-  console.log(`\n✅  ${SERVICIOS.length} Servicios Especiales listos en ${sucursales.length} sucursal(es).\n`)
-  console.log('   ⚠️  Los precios quedan en $0 — actualizar desde Admin → Productos.\n')
+  console.log(`     ✓  ${sucursales.length} sucursales vinculadas\n`)
+  console.log(`✅  ${SERVICIOS.length} Servicios Especiales sincronizados con precios reales.\n`)
 }
 
 main()

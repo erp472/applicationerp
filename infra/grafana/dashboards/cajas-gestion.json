@@ -1,0 +1,216 @@
+{
+  "uid": "pos472-cajas-gestion",
+  "title": "4-72 POS — Gestión de Cajas",
+  "description": "Auditoría operativa de sesiones y jobs de cajas. Sin datos financieros.",
+  "tags": ["cajas", "auditoria", "gestion"],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "panels": [
+
+    {
+      "id": 1,
+      "title": "Aperturas hoy",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none", "textMode": "auto" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } } },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) AS value FROM eventos_auditoria WHERE tablaeventos_auditoria = 'sesiones_caja' AND datos_despueseventos_auditoria->>'tipo_evento' LIKE 'apertura%' AND created_ateventos_auditoria >= CURRENT_DATE",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 2,
+      "title": "Cierres hoy",
+      "type": "stat",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none", "textMode": "auto" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } } },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) AS value FROM eventos_auditoria WHERE tablaeventos_auditoria = 'sesiones_caja' AND datos_despueseventos_auditoria->>'tipo_evento' LIKE 'cierre%' AND created_ateventos_auditoria >= CURRENT_DATE",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 3,
+      "title": "Cierres con diferencia",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none", "textMode": "auto" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 3 }] } } },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) AS value FROM eventos_auditoria WHERE tablaeventos_auditoria = 'sesiones_caja' AND datos_despueseventos_auditoria->>'tipo_evento' LIKE 'cierre%' AND (datos_despueseventos_auditoria->>'hubo_diferencia')::boolean = true AND created_ateventos_auditoria >= CURRENT_DATE",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 4,
+      "title": "Cierres forzados hoy",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none", "textMode": "auto" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 5 }] } } },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) AS value FROM eventos_auditoria WHERE tablaeventos_auditoria = 'sesiones_caja' AND datos_despueseventos_auditoria->>'tipo_evento' LIKE 'cierre%' AND (datos_despueseventos_auditoria->>'forzado')::boolean = true AND created_ateventos_auditoria >= CURRENT_DATE",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 5,
+      "title": "Último job cierre automático",
+      "type": "stat",
+      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none", "textMode": "value_and_name" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "unit": "short", "displayName": "sesiones cerradas", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } } },
+      "targets": [{
+        "rawSql": "SELECT (datos_despueseventos_auditoria->>'sesiones_cerradas')::int AS value FROM eventos_auditoria WHERE tablaeventos_auditoria = 'job_cierre_automatico' ORDER BY created_ateventos_auditoria DESC LIMIT 1",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 6,
+      "title": "Estado último job",
+      "type": "stat",
+      "gridPos": { "x": 20, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none", "textMode": "auto" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "mappings": [{ "type": "value", "options": { "OK": { "color": "green", "text": "OK" }, "ERROR": { "color": "red", "text": "ERROR" } } }], "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } } },
+      "targets": [{
+        "rawSql": "SELECT datos_despueseventos_auditoria->>'resultado' AS value FROM eventos_auditoria WHERE tablaeventos_auditoria = 'job_cierre_automatico' ORDER BY created_ateventos_auditoria DESC LIMIT 1",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 10,
+      "title": "Eventos de sesión por hora (hoy)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 4, "w": 16, "h": 8 },
+      "datasource": { "uid": "pos472_pg" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10 } }
+      },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "rawSql": "SELECT DATE_TRUNC('hour', created_ateventos_auditoria) AS time, datos_despueseventos_auditoria->>'tipo_evento' AS metric, COUNT(*) AS value FROM eventos_auditoria WHERE tablaeventos_auditoria = 'sesiones_caja' AND created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() GROUP BY 1, 2 ORDER BY 1",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "id": 11,
+      "title": "Distribución por tipo de evento",
+      "type": "piechart",
+      "gridPos": { "x": 16, "y": 4, "w": 8, "h": 8 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "pieType": "donut", "tooltip": { "mode": "single" }, "legend": { "displayMode": "table", "placement": "right" } },
+      "targets": [{
+        "rawSql": "SELECT datos_despueseventos_auditoria->>'tipo_evento' AS metric, COUNT(*) AS value FROM eventos_auditoria WHERE tablaeventos_auditoria = 'sesiones_caja' AND created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() GROUP BY 1 ORDER BY 2 DESC",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 20,
+      "title": "Historial jobs cierre automático",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 12, "w": 24, "h": 7 },
+      "datasource": { "uid": "pos472_pg" },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10 } }
+      },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "rawSql": "SELECT created_ateventos_auditoria AS time, (datos_despueseventos_auditoria->>'sesiones_cerradas')::int AS \"sesiones cerradas\", (datos_despueseventos_auditoria->>'sesiones_con_error')::int AS \"con error\", (datos_despueseventos_auditoria->>'puntos_procesados')::int AS \"puntos procesados\" FROM eventos_auditoria WHERE tablaeventos_auditoria = 'job_cierre_automatico' AND created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() ORDER BY 1",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ]
+    },
+
+    {
+      "id": 30,
+      "title": "Cierres forzados por cajero (período)",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 19, "w": 12, "h": 8 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "sortBy": [{ "displayName": "cierres forzados", "desc": true }] },
+      "fieldConfig": { "defaults": {}, "overrides": [{ "matcher": { "id": "byName", "options": "cierres forzados" }, "properties": [{ "id": "custom.width", "value": 150 }] }] },
+      "targets": [{
+        "rawSql": "SELECT u.nombreusuarios AS cajero, u.emailusuarios AS email, COUNT(*) AS \"cierres forzados\" FROM eventos_auditoria ea JOIN usuarios u ON u.idusuarios = (ea.datos_despueseventos_auditoria->>'cajero_id')::int WHERE ea.tablaeventos_auditoria = 'sesiones_caja' AND ea.datos_despueseventos_auditoria->>'tipo_evento' LIKE 'cierre%' AND (ea.datos_despueseventos_auditoria->>'forzado')::boolean = true AND ea.created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() GROUP BY u.nombreusuarios, u.emailusuarios ORDER BY 3 DESC LIMIT 10",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 31,
+      "title": "Sesiones con diferencia (período)",
+      "type": "table",
+      "gridPos": { "x": 12, "y": 19, "w": 12, "h": 8 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "sortBy": [{ "displayName": "diferencias", "desc": true }] },
+      "targets": [{
+        "rawSql": "SELECT u.nombreusuarios AS cajero, u.emailusuarios AS email, COUNT(*) AS diferencias FROM eventos_auditoria ea JOIN usuarios u ON u.idusuarios = (ea.datos_despueseventos_auditoria->>'cajero_id')::int WHERE ea.tablaeventos_auditoria = 'sesiones_caja' AND (ea.datos_despueseventos_auditoria->>'hubo_diferencia')::boolean = true AND ea.created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() GROUP BY u.nombreusuarios, u.emailusuarios ORDER BY 3 DESC LIMIT 10",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 40,
+      "title": "Registro detallado de eventos (sesiones)",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 27, "w": 24, "h": 10 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "sortBy": [{ "displayName": "fecha", "desc": true }] },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "targets": [{
+        "rawSql": "SELECT ea.created_ateventos_auditoria AS fecha, ea.datos_despueseventos_auditoria->>'tipo_evento' AS evento, u.nombreusuarios AS usuario, ea.datos_despueseventos_auditoria->>'caja_id' AS caja_id, ea.datos_despueseventos_auditoria->>'cajero_id' AS cajero_id, ea.datos_despueseventos_auditoria->>'punto_id' AS punto_id, CASE WHEN (ea.datos_despueseventos_auditoria->>'hubo_diferencia')::boolean THEN 'SÍ' ELSE 'NO' END AS diferencia, CASE WHEN (ea.datos_despueseventos_auditoria->>'forzado')::boolean THEN 'SÍ' ELSE 'NO' END AS forzado, ea.datos_despueseventos_auditoria->>'duracion_minutos' AS duracion_min FROM eventos_auditoria ea LEFT JOIN usuarios u ON u.idusuarios = ea.usuarios_idusuarios WHERE ea.tablaeventos_auditoria = 'sesiones_caja' AND ea.created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() ORDER BY ea.created_ateventos_auditoria DESC LIMIT 100",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+
+    {
+      "id": 41,
+      "title": "Registro detallado jobs",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 37, "w": 24, "h": 7 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "sortBy": [{ "displayName": "fecha", "desc": true }] },
+      "targets": [{
+        "rawSql": "SELECT created_ateventos_auditoria AS fecha, datos_despueseventos_auditoria->>'resultado' AS resultado, (datos_despueseventos_auditoria->>'puntos_procesados')::int AS puntos, (datos_despueseventos_auditoria->>'sesiones_cerradas')::int AS sesiones_cerradas, (datos_despueseventos_auditoria->>'sesiones_con_error')::int AS errores, datos_despueseventos_auditoria->>'puntos_con_error' AS puntos_con_error, (datos_despueseventos_auditoria->>'duracion_ms')::int AS duracion_ms FROM eventos_auditoria WHERE tablaeventos_auditoria = 'job_cierre_automatico' AND created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() ORDER BY created_ateventos_auditoria DESC LIMIT 50",
+        "format": "table",
+        "refId": "A"
+      }]
+    }
+
+  ]
+}

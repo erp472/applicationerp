@@ -8,6 +8,8 @@ export type RealtimeEvent =
   | 'cajas.movimiento'
   | 'cajas.consignacion'
   | 'cajas.custodia'
+  | 'ventas.venta_confirmada'
+  | 'inventario.stock_bajo'
   | 'heartbeat';
 
 export interface RealtimeMessage {

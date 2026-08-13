@@ -320,12 +320,21 @@ async function main() {
 
   // ── 9. PRODUCTOS ──────────────────────────────────────────────────────────
   const productosData = [
-    // Estampillas
-    { codigoproductos: 'EST-20',      nombreproductos: 'Estampilla $20',                    tipoproductos: 'estampilla' as const,      precioproductos: 20,    porcentaje_taxproductos: 0 },
-    { codigoproductos: 'EST-50',      nombreproductos: 'Estampilla $50',                    tipoproductos: 'estampilla' as const,      precioproductos: 50,    porcentaje_taxproductos: 0 },
-    { codigoproductos: 'EST-100',     nombreproductos: 'Estampilla $100',                   tipoproductos: 'estampilla' as const,      precioproductos: 100,   porcentaje_taxproductos: 0 },
-    { codigoproductos: 'EST-200',     nombreproductos: 'Estampilla $200',                   tipoproductos: 'estampilla' as const,      precioproductos: 200,   porcentaje_taxproductos: 0 },
-    { codigoproductos: 'EST-500',     nombreproductos: 'Estampilla $500',                   tipoproductos: 'estampilla' as const,      precioproductos: 500,   porcentaje_taxproductos: 0 },
+    // Estampillas — catálogo real 4-72
+    { codigoproductos: 'ES-001', nombreproductos: 'ES 100 Años Escuela Superior de Guerra',               tipoproductos: 'estampilla' as const, precioproductos:  5500, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ES-002', nombreproductos: 'ES Federación Nacional de Cafeteros de Colombia 90',   tipoproductos: 'estampilla' as const, precioproductos:    50, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ES-003', nombreproductos: 'ES Policarpa Salavarrieta bicentenario de su sacri',   tipoproductos: 'estampilla' as const, precioproductos:   100, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ES-004', nombreproductos: 'ES C.R.I',                                              tipoproductos: 'estampilla' as const, precioproductos:  2600, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ES-005', nombreproductos: 'ES Premio Nobel de la Paz 2016 Juan Manuel Santos',    tipoproductos: 'estampilla' as const, precioproductos:    20, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ES-006', nombreproductos: 'ES 1er Festival Internacional de Historia',            tipoproductos: 'estampilla' as const, precioproductos:  1000, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ES-007', nombreproductos: 'ES XXIII Juegos Centroamericano y del Caribe Baran',  tipoproductos: 'estampilla' as const, precioproductos:   200, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ES-008', nombreproductos: 'ES Buque Escuela Gloria 50 Años 1968-2018',           tipoproductos: 'estampilla' as const, precioproductos:  5000, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ES-009', nombreproductos: 'ES Batallon Guardia Presidencial 90 Años',            tipoproductos: 'estampilla' as const, precioproductos:   200, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ES-010', nombreproductos: 'ES Orquideas Endemicas de Colombia',                  tipoproductos: 'estampilla' as const, precioproductos:   500, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ES-011', nombreproductos: 'ES Region del Catatumbo y Provincia de Ocaña',        tipoproductos: 'estampilla' as const, precioproductos:  1000, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ES-012', nombreproductos: 'ES Comunicaciones Fuerzas Militares 74 Años 1944-2', tipoproductos: 'estampilla' as const, precioproductos:    20, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ES-013', nombreproductos: 'ES America UPAEP 2018 Animales Domesticos',           tipoproductos: 'estampilla' as const, precioproductos:  4000, porcentaje_taxproductos: 0 },
+    { codigoproductos: 'ES-014', nombreproductos: 'ES Navidad 2018',                                     tipoproductos: 'estampilla' as const, precioproductos: 10000, porcentaje_taxproductos: 0 },
     // Material de Empaque (ME)
     { codigoproductos: 'ME-CES-S',    nombreproductos: 'ME Caja Especial S 37x28x6',       tipoproductos: 'empaque' as const,         precioproductos: 11860, porcentaje_taxproductos: 0 },
     { codigoproductos: 'ME-CES-M',    nombreproductos: 'ME Caja Especial M 37x28x14',      tipoproductos: 'empaque' as const,         precioproductos:  3700, porcentaje_taxproductos: 0 },
@@ -401,6 +410,7 @@ async function main() {
       peso_maximo_kgservicios: 2,
       tiempo_entrega_diasservicios: 8,
       codigo_sigmaservicios: 'NPDC',
+      tarifa_certificacionservicios: 1800,
     },
     {
       codigoservicios: 'NP-PAQ-NOR',
@@ -425,6 +435,7 @@ async function main() {
       peso_maximo_kgservicios: 30,
       tiempo_entrega_diasservicios: 8,
       codigo_sigmaservicios: 'NPPC',
+      tarifa_certificacionservicios: 1800,
     },
     // ── Correo Prioritario ────────────────────────────────────────────────────
     {
@@ -450,6 +461,7 @@ async function main() {
       peso_maximo_kgservicios: 2,
       tiempo_entrega_diasservicios: 3,
       codigo_sigmaservicios: 'PDC',
+      tarifa_certificacionservicios: 1800,
     },
     {
       codigoservicios: 'P-PAQ-NOR',
@@ -474,6 +486,31 @@ async function main() {
       peso_maximo_kgservicios: 30,
       tiempo_entrega_diasservicios: 3,
       codigo_sigmaservicios: 'PPC',
+      tarifa_certificacionservicios: 1800,
+    },
+    {
+      codigoservicios: 'AL-DIA',
+      nombreservicios: 'Al Día',
+      descripcionservicios: 'Servicio de entrega urgente al día siguiente hábil en cobertura nacional',
+      tiposervicios: 'nacional' as const,
+      requiere_estampillaservicios: false,
+      requiere_dimensionesservicios: false,
+      requiere_valor_declaradoservicios: false,
+      peso_maximo_kgservicios: 2,
+      tiempo_entrega_diasservicios: 1,
+      codigo_sigmaservicios: 'ALD',
+    },
+    {
+      codigoservicios: 'NOTIF',
+      nombreservicios: 'Notificaciones',
+      descripcionservicios: 'Servicio para notificaciones judiciales y administrativas con validez legal',
+      tiposervicios: 'nacional' as const,
+      requiere_estampillaservicios: false,
+      requiere_dimensionesservicios: false,
+      requiere_valor_declaradoservicios: false,
+      peso_maximo_kgservicios: 2,
+      tiempo_entrega_diasservicios: 3,
+      codigo_sigmaservicios: 'NOT',
     },
     {
       codigoservicios: 'INT-MS',
@@ -513,12 +550,13 @@ async function main() {
 
   const servicios: Record<string, { idservicios: number }> = {}
   for (const s of serviciosData) {
+    const { codigoservicios, tarifa_certificacionservicios: cert, ...rest } = s as any
     const servicio = await prisma.servicio.upsert({
-      where: { codigoservicios: s.codigoservicios },
-      update: {},
-      create: { ...s, activoservicios: true },
+      where:  { codigoservicios },
+      update: { tarifa_certificacionservicios: cert ?? null },
+      create: { codigoservicios, ...rest, tarifa_certificacionservicios: cert ?? null, activoservicios: true },
     })
-    servicios[s.codigoservicios] = servicio
+    servicios[codigoservicios] = servicio
   }
   console.log(`✓ Servicios: ${Object.keys(servicios).length} servicios`)
 
@@ -543,30 +581,109 @@ async function main() {
   }
   console.log('✓ Servicios habilitados en todas las sucursales')
 
-  // ── 13. TARIFAS DE ENVÍO NACIONAL (básicas) ───────────────────────────────
-  const tarifasNalStd = [
-    { peso_min: 0,   peso_max: 0.5,  tarifa: 5500 },
-    { peso_min: 0.5, peso_max: 1,    tarifa: 7500 },
-    { peso_min: 1,   peso_max: 2,    tarifa: 10000 },
-    { peso_min: 2,   peso_max: 5,    tarifa: 14000 },
-    { peso_min: 5,   peso_max: 10,   tarifa: 22000 },
-    { peso_min: 10,  peso_max: 30,   tarifa: 38000, tarifa_kg_adicional: 3000 },
+  // ── 13. TARIFAS CORREO NACIONAL (tarifas oficiales 4-72) ─────────────────
+  // Siempre borra y re-inserta para que re-ejecutar el seed actualice las tarifas.
+  type TramoTarifa = { peso_min: number; peso_max: number | null; tarifa: number; tarifa_kg_adicional?: number }
+  const tarifasCorreo: { codigo: string; tramos: TramoTarifa[] }[] = [
+    // ── Correo No Prioritario Normal — Documentos (max 2 kg) ──
+    { codigo: 'NP-DOC-NOR', tramos: [
+      { peso_min: 0,     peso_max: 0.02,  tarifa: 1500 },
+      { peso_min: 0.02,  peso_max: 0.05,  tarifa: 2100 },
+      { peso_min: 0.05,  peso_max: 0.1,   tarifa: 2800 },
+      { peso_min: 0.1,   peso_max: 0.25,  tarifa: 3900 },
+      { peso_min: 0.25,  peso_max: 0.5,   tarifa: 4850 },
+      { peso_min: 0.5,   peso_max: 1,     tarifa: 6100 },
+      { peso_min: 1,     peso_max: 2,     tarifa: 7800 },
+    ]},
+    // ── Correo No Prioritario con Certificación — Documentos (mismos tramos base) ──
+    { codigo: 'NP-DOC-CERT', tramos: [
+      { peso_min: 0,     peso_max: 0.02,  tarifa: 1500 },
+      { peso_min: 0.02,  peso_max: 0.05,  tarifa: 2100 },
+      { peso_min: 0.05,  peso_max: 0.1,   tarifa: 2800 },
+      { peso_min: 0.1,   peso_max: 0.25,  tarifa: 3900 },
+      { peso_min: 0.25,  peso_max: 0.5,   tarifa: 4850 },
+      { peso_min: 0.5,   peso_max: 1,     tarifa: 6100 },
+      { peso_min: 1,     peso_max: 2,     tarifa: 7800 },
+    ]},
+    // ── Correo No Prioritario Normal — Paquetes (max 30 kg) ──
+    { codigo: 'NP-PAQ-NOR', tramos: [
+      { peso_min: 0,    peso_max: 1,    tarifa: 4850 },
+      { peso_min: 1,    peso_max: 2,    tarifa: 9500 },
+      { peso_min: 2,    peso_max: 5,    tarifa: 16000 },
+      { peso_min: 5,    peso_max: 10,   tarifa: 27000 },
+      { peso_min: 10,   peso_max: 20,   tarifa: 48000 },
+      { peso_min: 20,   peso_max: null, tarifa: 75000, tarifa_kg_adicional: 3500 },
+    ]},
+    // ── Correo No Prioritario con Certificación — Paquetes ──
+    { codigo: 'NP-PAQ-CERT', tramos: [
+      { peso_min: 0,    peso_max: 1,    tarifa: 4850 },
+      { peso_min: 1,    peso_max: 2,    tarifa: 9500 },
+      { peso_min: 2,    peso_max: 5,    tarifa: 16000 },
+      { peso_min: 5,    peso_max: 10,   tarifa: 27000 },
+      { peso_min: 10,   peso_max: 20,   tarifa: 48000 },
+      { peso_min: 20,   peso_max: null, tarifa: 75000, tarifa_kg_adicional: 3500 },
+    ]},
+    // ── Correo Prioritario Normal — Documentos (max 2 kg) ──
+    { codigo: 'P-DOC-NOR', tramos: [
+      { peso_min: 0,     peso_max: 0.02,  tarifa: 2100 },
+      { peso_min: 0.02,  peso_max: 0.05,  tarifa: 2900 },
+      { peso_min: 0.05,  peso_max: 0.1,   tarifa: 3900 },
+      { peso_min: 0.1,   peso_max: 0.25,  tarifa: 5500 },
+      { peso_min: 0.25,  peso_max: 0.5,   tarifa: 6800 },
+      { peso_min: 0.5,   peso_max: 1,     tarifa: 7250 },
+      { peso_min: 1,     peso_max: 2,     tarifa: 10500 },
+    ]},
+    // ── Correo Prioritario con Certificación — Documentos ──
+    { codigo: 'P-DOC-CERT', tramos: [
+      { peso_min: 0,     peso_max: 0.02,  tarifa: 2100 },
+      { peso_min: 0.02,  peso_max: 0.05,  tarifa: 2900 },
+      { peso_min: 0.05,  peso_max: 0.1,   tarifa: 3900 },
+      { peso_min: 0.1,   peso_max: 0.25,  tarifa: 5500 },
+      { peso_min: 0.25,  peso_max: 0.5,   tarifa: 6800 },
+      { peso_min: 0.5,   peso_max: 1,     tarifa: 7250 },
+      { peso_min: 1,     peso_max: 2,     tarifa: 10500 },
+    ]},
+    // ── Correo Prioritario Normal — Paquetes (max 30 kg) ──
+    { codigo: 'P-PAQ-NOR', tramos: [
+      { peso_min: 0,    peso_max: 1,    tarifa: 6800 },
+      { peso_min: 1,    peso_max: 2,    tarifa: 13300 },
+      { peso_min: 2,    peso_max: 5,    tarifa: 22400 },
+      { peso_min: 5,    peso_max: 10,   tarifa: 37800 },
+      { peso_min: 10,   peso_max: 20,   tarifa: 67200 },
+      { peso_min: 20,   peso_max: null, tarifa: 105000, tarifa_kg_adicional: 4900 },
+    ]},
+    // ── Correo Prioritario con Certificación — Paquetes ──
+    { codigo: 'P-PAQ-CERT', tramos: [
+      { peso_min: 0,    peso_max: 1,    tarifa: 6800 },
+      { peso_min: 1,    peso_max: 2,    tarifa: 13300 },
+      { peso_min: 2,    peso_max: 5,    tarifa: 22400 },
+      { peso_min: 5,    peso_max: 10,   tarifa: 37800 },
+      { peso_min: 10,   peso_max: 20,   tarifa: 67200 },
+      { peso_min: 20,   peso_max: null, tarifa: 105000, tarifa_kg_adicional: 4900 },
+    ]},
   ]
 
-  for (const t of tarifasNalStd) {
-    await prisma.tarifaServicio.create({
-      data: {
-        servicios_idservicios: servicios['NAL-ESTANDAR'].idservicios,
-        pais_destinotarifas_servicio: 'CO',
-        peso_min_kgtarifas_servicio: t.peso_min,
-        peso_max_kgtarifas_servicio: t.peso_max ?? null,
-        tarifatarifas_servicio: t.tarifa,
-        tarifa_kg_adicionaltarifas_servicio: (t as { tarifa_kg_adicional?: number }).tarifa_kg_adicional ?? null,
-        activatarifas_servicio: true,
-      },
-    })
+  let totalTarifasCorreo = 0
+  for (const svc of tarifasCorreo) {
+    const svcId = servicios[svc.codigo]?.idservicios
+    if (!svcId) continue
+    await prisma.tarifaServicio.deleteMany({ where: { servicios_idservicios: svcId } })
+    for (const t of svc.tramos) {
+      await prisma.tarifaServicio.create({
+        data: {
+          servicios_idservicios:               svcId,
+          pais_destinotarifas_servicio:        'CO',
+          peso_min_kgtarifas_servicio:         t.peso_min,
+          peso_max_kgtarifas_servicio:         t.peso_max ?? null,
+          tarifatarifas_servicio:              t.tarifa,
+          tarifa_kg_adicionaltarifas_servicio: t.tarifa_kg_adicional ?? null,
+          activatarifas_servicio:              true,
+        },
+      })
+      totalTarifasCorreo++
+    }
   }
-  console.log('✓ Tarifas servicio nacional estándar')
+  console.log(`✓ Tarifas correo correspondencia 4-72: ${totalTarifasCorreo} filas (8 servicios)`)
 
   // ── 13b. TARIFAS INTERNACIONALES EMS (muestra — actualizar con tabla UPU oficial) ─────
   // Tasas aproximadas en COP (1 USD ≈ 4 200 COP, tarifas UPU zona América/Europa)
@@ -860,6 +977,70 @@ async function main() {
       })
     }
     console.log(`✓ Cajas ${plan.nombre}: ${plan.auxiliares.length} cajas`)
+  }
+
+  // ── 20. APARTADOS POSTALES ───────────────────────────────────────────────
+  // Catálogo real de casillas — tarifa $54.800, sin IVA (tabla SIGMA).
+  // Asignadas a las 3 sucursales seed. Se eliminan las libres (sin cliente) antes de recrear.
+  const CASILLAS_REALES = [
+    '102192', '149', '17118', '18383', '18416', '18417', '18418', '18419',
+    '18425', '18426', '18427', '201863', '2584', '358368', '358369', '358371',
+    '358372', '358373', '358374', '358375', '360662', '360709', '360760',
+    '360761', '360762', '360763', '360764', '360765', '360766', '360767',
+    '360768', '360769', '360770', '360771', '360773', '360774', '360776',
+    '360777', '360779', '360781', '360782', '360783', '360787', '360788',
+    '360789', '360790', '360791', '360792', '360793', '360794', '360795',
+    '360796', '360797', '360799', '360800', '360803', '360804', '360806',
+    '360809', '360810', '360812', '360813', '360815', '360816', '360817',
+    '360818', '360820', '360830', '360831', '360833', '360838', '360839',
+    '360840', '360842', '360843', '360845', '360850', '360851', '360852',
+    '360853', '360854', '360855', '360856', '360857', '360858', '360859',
+    '360860', '360861', '360862', '360863', '360864', '360865', '360866',
+    '360867', '360868', '360869', '360870', '360872', '360873', '360874',
+    '360875', '360876', '360877', '360878', '360879', '361855', '361856',
+    '361857', '361859', '361860', '361861', '361862', '361863', '361864',
+    '361865', '361866', '361867', '361868', '361869', '361871', '361872',
+    '361873', '361874', '361875', '361876', '361877', '361878', '361880',
+    '361881', '361882', '361884', '361885', '361886', '361887', '361888',
+    '361889', '361892', '361893', '361896', '361898', '361899', '361900',
+    '361901', '361903', '361905', '361906', '361907', '361908', '361909',
+    '361910', '361912', '361913', '361914', '361915', '361916', '361917',
+    '361918', '361919', '361920', '361921', '361922', '361923', '361924',
+    '361925', '361926', '361927', '361928', '361929', '361930', '361931',
+    '361932', '361933', '361934', '361935', '361936', '361937', '361938',
+    '361939', '361940', '361941', '361942', '361943', '361944', '361945',
+    '361946', '361947', '361948', '361949', '361950', '361951', '361952',
+    '361953', '361954', '361955', '361956', '361957', '57712', '57713',
+    '7-1-200277', '7-1-200294', '7067002', '853001', '93953',
+    'AA 18282', 'AA 51224', 'AA 853011', 'AA076478', 'AA100178', 'AA1110',
+    'AA11383', 'AA12058', 'AA13729', 'AA13820', 'AA13884', 'AA14331',
+    'AA16257', 'AA18186', 'AA18470', 'AA19585', 'AA20220', 'AA20262',
+    'AA20485', 'AA20726', 'AA22716', 'AA23003', 'AA2323', 'AA240868',
+    'AA24607', 'AA250316', 'AA25379', 'AA26152', 'AA27396', 'AA2762',
+    'AA30197', 'AA31147', 'AA33398', 'AA34225', 'AA355077', 'AA36162',
+    'AA3784', 'AA46794', 'AA49132', 'AA50818', 'AA51146', 'AA51350',
+    'AA52291', 'AA54725', 'AA54860', 'AA55700', 'AA7189', 'AA7438',
+    'AA75146', 'AA75784', 'AA75874', 'AA75976', 'AA77092', 'AA7744',
+    'AA80333', 'AA8224', 'AA842', 'AA8655', 'AA8691', 'AA8852', 'AA9079',
+    'AP 150072', 'AP7189',
+  ]
+
+  for (const suc of sucursales) {
+    await prisma.apartadoPostal.deleteMany({
+      where: { sucursales_idsucursales: suc.idsucursales, clientes_idclientes: null },
+    })
+    const { count } = await prisma.apartadoPostal.createMany({
+      data: CASILLAS_REALES.map(numero => ({
+        sucursales_idsucursales:       suc.idsucursales,
+        numeroapartados_postales:      numero,
+        tamanoapartados_postales:      'pequeno' as const,
+        estadoapartados_postales:      'disponible' as const,
+        valorapartados_postales:       '54800',
+        incluye_ivaapartados_postales: false,
+      })),
+      skipDuplicates: true,
+    })
+    console.log(`✓ Apartados postales: ${count} casillas en ${suc.nombresucursales}`)
   }
 
   console.log('\n✅ Seed completado exitosamente.')

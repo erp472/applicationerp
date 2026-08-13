@@ -19,15 +19,23 @@ describe('calcularPrecioPorMeses', () => {
     expect(calcularPrecioPorMeses('120000', 3)).toBe('30000');
   });
 
+  it('24 meses (2 años)', () => {
+    expect(calcularPrecioPorMeses('120000', 24)).toBe('240000');
+  });
+
+  it('36 meses (máximo permitido)', () => {
+    expect(calcularPrecioPorMeses('87500', 36)).toBe('262500');
+  });
+
   it('cero meses lanza error', () => {
-    expect(() => calcularPrecioPorMeses('120000', 0)).toThrow('entre 1 y 12');
+    expect(() => calcularPrecioPorMeses('120000', 0)).toThrow('entre 1 y 36');
   });
 
   it('negativo lanza error', () => {
-    expect(() => calcularPrecioPorMeses('120000', -1)).toThrow('entre 1 y 12');
+    expect(() => calcularPrecioPorMeses('120000', -1)).toThrow('entre 1 y 36');
   });
 
-  it('más de 12 meses lanza error', () => {
-    expect(() => calcularPrecioPorMeses('120000', 13)).toThrow('entre 1 y 12');
+  it('más de 36 meses lanza error', () => {
+    expect(() => calcularPrecioPorMeses('120000', 37)).toThrow('entre 1 y 36');
   });
 });

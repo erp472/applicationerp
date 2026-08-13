@@ -3,25 +3,28 @@ import {
   SesionCajaInactivaError,
   CarritoVacioError,
   VentaYaAnuladaError,
+  VentaYaConfirmadaError,
   VentaDeOtroTurnoError,
   EfectivoInsuficienteError,
 } from './venta.errors.js';
 import { descomponerIva } from './calculos/descomponer-iva.js';
 import { calcularSubtotalLinea } from './calculos/subtotal-linea.js';
+import { calcularDescuentoTotalVenta } from './calculos/descuento-total-venta.js';
 
 // BR-VEN-001: debe existir sesión activa en la caja antes de crear/registrar una venta
 export function validarSesionActivaParaVenta(cajaId: number, sesionId: number | null): void {
   if (sesionId === null) throw new SesionCajaInactivaError(cajaId);
 }
 
-// BR-VEN-002: el carrito no puede estar vacío al confirmar (productos o envíos pendientes)
-export function validarCarritoNoVacio(cantidadItems: number, cantidadEnvios = 0): void {
-  if (cantidadItems === 0 && cantidadEnvios === 0) throw new CarritoVacioError();
+// BR-VEN-002: el carrito no puede estar vacío al confirmar (productos, envíos o apartados)
+export function validarCarritoNoVacio(cantidadItems: number, cantidadEnvios = 0, cantidadApartados = 0): void {
+  if (cantidadItems === 0 && cantidadEnvios === 0 && cantidadApartados === 0) throw new CarritoVacioError();
 }
 
-// BR-VEN-003: una venta anulada no puede operarse
+// BR-VEN-003: una venta anulada o confirmada no puede operarse
 export function validarVentaActiva(ventaId: number, estado: EstadoVenta): void {
-  if (estado === 'anulada') throw new VentaYaAnuladaError(ventaId);
+  if (estado === 'anulada')    throw new VentaYaAnuladaError(ventaId);
+  if (estado === 'confirmada') throw new VentaYaConfirmadaError(ventaId);
 }
 
 // BR-VEN-004: la venta debe pertenecer a la sesión activa de la caja
@@ -49,15 +52,18 @@ export function calcularTotalesCarrito(items: Array<{ precioUnitario: number; ca
 
   for (const item of items) {
     const { precioSinTax, ivaUnitario } = descomponerIva(item.precioUnitario, item.porcentajeTax);
-    subtotal  += precioSinTax  * item.cantidad;
-    iva       += ivaUnitario   * item.cantidad;
-    descuento += item.descuento;
+    subtotal += precioSinTax * item.cantidad;
+    iva      += ivaUnitario  * item.cantidad;
   }
+
+  const descuentoTotal = Math.round(
+    Number(calcularDescuentoTotalVenta(items.map(i => ({ descuentoMonto: String(i.descuento) })))),
+  );
 
   return {
     subtotal:  Math.round(subtotal),
-    descuento: Math.round(descuento),
+    descuento: descuentoTotal,
     iva:       Math.round(iva),
-    total:     Math.round(subtotal + iva - descuento),
+    total:     Math.round(subtotal + iva - descuentoTotal),
   };
 }

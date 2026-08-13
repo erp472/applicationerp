@@ -7,6 +7,7 @@ import {
   ApiTags, ApiBearerAuth, ApiOperation, ApiResponse,
   ApiBody, ApiParam, ApiQuery,
 } from '@nestjs/swagger';
+import { z } from 'zod';
 import { ServiciosService } from '../application/servicios.service.js';
 import { CreateServicioSchema } from '../dto/create-servicio.dto.js';
 import { UpdateServicioSchema } from '../dto/update-servicio.dto.js';
@@ -18,6 +19,25 @@ import { Roles } from '../../common/decorators/roles.decorator.js';
 import { Feature } from '../../common/decorators/feature.decorator.js';
 import { ServiciosPresenter } from './servicios.presenter.js';
 import { ServiciosDomainFilter } from './servicios-domain.filter.js';
+
+const CreateTarifaSchema = z.object({
+  paisDestino:        z.string().min(2).max(5).default('CO'),
+  ciudadDestino:      z.string().max(100).nullable().optional(),
+  pesoMinKg:          z.number().min(0),
+  pesoMaxKg:          z.number().positive().nullable().optional(),
+  tarifa:             z.number().positive(),
+  tarifaKgAdicional:  z.number().positive().nullable().optional(),
+});
+
+const UpdateTarifaSchema = z.object({
+  tarifa:             z.number().positive().optional(),
+  tarifaKgAdicional:  z.number().positive().nullable().optional(),
+  activa:             z.boolean().optional(),
+});
+
+const UpdateCertificacionSchema = z.object({
+  tarifa: z.number().positive().nullable(),
+});
 
 const ROLES_WRITE = ['ADMIN_SISTEMA', 'ADMIN_NACIONAL'];
 
@@ -146,5 +166,72 @@ export class ServiciosController {
   @ApiResponse({ status: 404, description: 'Servicio no encontrado' })
   async findSucursales(@Param('id', ParseIntPipe) id: number) {
     return ServiciosPresenter.toSucursalList(await this.service.findSucursales(id));
+  }
+
+  @Get(':id/tarifas')
+  @Roles(...ROLES_WRITE, 'SUPERVISOR_REGIONAL', 'CAJERO', 'TESORERIA')
+  @ApiOperation({ summary: 'Listar tarifas de un servicio' })
+  @ApiParam({ name: 'id', type: Number })
+  @ApiResponse({ status: 200, description: 'Lista de tarifas' })
+  @ApiResponse({ status: 404, description: 'Servicio no encontrado' })
+  async getTarifas(@Param('id', ParseIntPipe) id: number) {
+    return ServiciosPresenter.toTarifaList(await this.service.getTarifas(id));
+  }
+
+  @Post(':id/tarifas')
+  @Roles(...ROLES_WRITE)
+  @ApiOperation({ summary: 'Crear tarifa para un servicio' })
+  @ApiParam({ name: 'id', type: Number })
+  @ApiResponse({ status: 201, description: 'Tarifa creada' })
+  @ApiResponse({ status: 400, description: 'Datos inválidos' })
+  @ApiResponse({ status: 404, description: 'Servicio no encontrado' })
+  async createTarifa(@Param('id', ParseIntPipe) id: number, @Body() body: unknown) {
+    const parsed = CreateTarifaSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    return ServiciosPresenter.toTarifaResponse(await this.service.createTarifa(id, parsed.data));
+  }
+
+  @Patch(':id/tarifas/:tarifaId')
+  @Roles(...ROLES_WRITE)
+  @ApiOperation({ summary: 'Actualizar tarifa de un servicio' })
+  @ApiParam({ name: 'id', type: Number })
+  @ApiParam({ name: 'tarifaId', type: Number })
+  @ApiResponse({ status: 200, description: 'Tarifa actualizada' })
+  @ApiResponse({ status: 404, description: 'Tarifa no encontrada' })
+  async updateTarifa(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('tarifaId', ParseIntPipe) tarifaId: number,
+    @Body() body: unknown,
+  ) {
+    const parsed = UpdateTarifaSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    return ServiciosPresenter.toTarifaResponse(await this.service.updateTarifa(id, tarifaId, parsed.data));
+  }
+
+  @Delete(':id/tarifas/:tarifaId')
+  @Roles(...ROLES_WRITE)
+  @ApiOperation({ summary: 'Eliminar tarifa de un servicio (soft delete)' })
+  @ApiParam({ name: 'id', type: Number })
+  @ApiParam({ name: 'tarifaId', type: Number })
+  @ApiResponse({ status: 200, description: 'Tarifa eliminada' })
+  @ApiResponse({ status: 404, description: 'Tarifa no encontrada' })
+  async deleteTarifa(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('tarifaId', ParseIntPipe) tarifaId: number,
+  ) {
+    await this.service.deleteTarifa(id, tarifaId);
+    return { message: 'Tarifa eliminada' };
+  }
+
+  @Patch(':id/tarifa-certificacion')
+  @Roles(...ROLES_WRITE)
+  @ApiOperation({ summary: 'Actualizar tarifa de certificación de un servicio' })
+  @ApiParam({ name: 'id', type: Number })
+  @ApiResponse({ status: 200, description: 'Tarifa de certificación actualizada' })
+  @ApiResponse({ status: 404, description: 'Servicio no encontrado' })
+  async updateCertificacion(@Param('id', ParseIntPipe) id: number, @Body() body: unknown) {
+    const parsed = UpdateCertificacionSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    return ServiciosPresenter.toResponse(await this.service.updateCertificacion(id, parsed.data.tarifa));
   }
 }

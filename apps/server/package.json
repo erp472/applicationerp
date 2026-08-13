@@ -17,9 +17,13 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:e2e:watch": "vitest --config vitest.e2e.config.ts",
+    "test:e2e:cov": "vitest run --config vitest.e2e.config.ts --coverage",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "dotenv -e .env -- tsx prisma/seed.ts",
+    "db:seed:tarifas-correo":     "dotenv -e .env -- tsx prisma/seed-tarifas-correo.ts",
     "db:studio": "prisma studio"
   },
   "prisma": {

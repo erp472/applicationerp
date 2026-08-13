@@ -1,0 +1,145 @@
+{
+  "uid": "pos472-performance",
+  "title": "4-72 POS — Performance",
+  "description": "HTTP requests/s, latencia, errores, heap, event loop. Fuente: prom-client.",
+  "tags": ["performance", "api"],
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "time": { "from": "now-1h", "to": "now" },
+  "timezone": "browser",
+  "panels": [
+
+    {
+      "id": 1, "title": "Requests / s",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } } },
+      "targets": [{ "expr": "sum(rate(pos472_http_requests_total[1m]))", "instant": true, "legendFormat": "RPS", "refId": "A" }]
+    },
+
+    {
+      "id": 2, "title": "Tasa error 5xx",
+      "type": "stat",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+      "fieldConfig": {
+        "defaults": { "unit": "percent",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 1 },
+            { "color": "red", "value": 5 }
+          ]}
+        }
+      },
+      "targets": [{ "expr": "100 * sum(rate(pos472_http_requests_total{status=~\"5..\"}[5m])) / sum(rate(pos472_http_requests_total[5m]))", "instant": true, "legendFormat": "Error %", "refId": "A" }]
+    },
+
+    {
+      "id": 3, "title": "Latencia p95",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area" },
+      "fieldConfig": {
+        "defaults": { "unit": "ms",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 500 },
+            { "color": "red", "value": 2000 }
+          ]}
+        }
+      },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by(le)(rate(pos472_http_request_duration_ms_bucket[5m])))", "instant": true, "legendFormat": "p95", "refId": "A" }]
+    },
+
+    {
+      "id": 4, "title": "Requests activos",
+      "type": "stat",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "unit": "short", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } } },
+      "targets": [{ "expr": "pos472_nodejs_active_handles_total", "instant": true, "legendFormat": "Handles", "refId": "A" }]
+    },
+
+    {
+      "id": 10, "title": "Requests por segundo",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10 } } },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "sum(rate(pos472_http_requests_total[1m]))", "legendFormat": "Total RPS", "refId": "A" },
+        { "expr": "sum(rate(pos472_http_requests_total{status=~\"2..\"}[1m]))", "legendFormat": "2xx", "refId": "B" },
+        { "expr": "sum(rate(pos472_http_requests_total{status=~\"4..\"}[1m]))", "legendFormat": "4xx", "refId": "C" },
+        { "expr": "sum(rate(pos472_http_requests_total{status=~\"5..\"}[1m]))", "legendFormat": "5xx", "refId": "D" }
+      ]
+    },
+
+    {
+      "id": 11, "title": "Tasa de error 5xx %",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "min": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 5 }] },
+          "color": { "mode": "thresholds" }, "custom": { "lineWidth": 2, "fillOpacity": 15 }
+        }
+      },
+      "targets": [{ "expr": "100 * sum(rate(pos472_http_requests_total{status=~\"5..\"}[5m])) / sum(rate(pos472_http_requests_total[5m]))", "legendFormat": "Error rate %", "refId": "A" }]
+    },
+
+    {
+      "id": 12, "title": "Latencia p50 / p95 / p99",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 12, "w": 16, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "fieldConfig": { "defaults": { "unit": "ms", "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 5 } } },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum by(le)(rate(pos472_http_request_duration_ms_bucket[5m])))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum by(le)(rate(pos472_http_request_duration_ms_bucket[5m])))", "legendFormat": "p95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum by(le)(rate(pos472_http_request_duration_ms_bucket[5m])))", "legendFormat": "p99", "refId": "C" }
+      ]
+    },
+
+    {
+      "id": 13, "title": "Latencia p95 por ruta",
+      "type": "table",
+      "gridPos": { "x": 16, "y": 12, "w": 8, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "options": { "sortBy": [{ "displayName": "p95 (ms)", "desc": true }] },
+      "targets": [{ "expr": "sort_desc(histogram_quantile(0.95, sum by(route, le)(rate(pos472_http_request_duration_ms_bucket[5m]))))", "instant": true, "legendFormat": "{{route}}", "format": "table", "refId": "A" }]
+    },
+
+    {
+      "id": 14, "title": "Heap Node.js",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "fieldConfig": { "defaults": { "unit": "bytes", "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10 } } },
+      "targets": [
+        { "expr": "pos472_nodejs_heap_size_used_bytes", "legendFormat": "Heap usado", "refId": "A" },
+        { "expr": "pos472_nodejs_heap_size_total_bytes", "legendFormat": "Heap total", "refId": "B" }
+      ]
+    },
+
+    {
+      "id": 15, "title": "Event loop lag p99 + GC",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10 } } },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "rate(pos472_nodejs_gc_duration_seconds_sum[5m]) * 1000", "legendFormat": "GC (ms/s)", "refId": "A" },
+        { "expr": "pos472_process_cpu_user_seconds_total", "legendFormat": "CPU user (acum)", "refId": "B" }
+      ]
+    }
+  ]
+}

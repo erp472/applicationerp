@@ -8,6 +8,8 @@ import {
   CajeroYaAsignadoError,
 } from './caja.errors.js';
 import type { TipoAlerta, EstadoSesionCaja, EstadoAprobacion } from './caja.entity.js';
+import { evaluarAlertaReposicion } from './calculos/alerta-reposicion.js';
+import { evaluarLimiteEfectivo } from './calculos/limite-efectivo-alerta.js';
 
 export const TIPOS_MOVIMIENTO_ENTRADA = new Set([
   'cambio_custodia_in', 'reposicion',
@@ -79,8 +81,7 @@ export function evaluarAlertas(
   limiteAlerta: string | null,
 ): TipoAlerta[] {
   const alertas: TipoAlerta[] = [];
-  const s = Number(saldo);
-  if (s < Number(baseDia)) alertas.push('reposicion_caja');
-  if (limiteAlerta && s > Number(limiteAlerta)) alertas.push('limite_efectivo_caja');
+  if (evaluarAlertaReposicion(saldo, baseDia).necesitaReposicion) alertas.push('reposicion_caja');
+  if (limiteAlerta && evaluarLimiteEfectivo(saldo, limiteAlerta).superaLimite) alertas.push('limite_efectivo_caja');
   return alertas;
 }

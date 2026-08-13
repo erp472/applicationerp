@@ -13,6 +13,8 @@ import { UpdateRegionalDto } from '../dto/update-regional.dto.js';
 import { QueryRegionalDto } from '../dto/query-regional.dto.js';
 import { AuditService } from '../../audit/audit.service.js';
 import { auditStore } from '../../common/audit-context.js';
+import { consolidarRegional } from '../domain/calculos/consolidado-regional.js';
+import { calcularSucursalesActivas } from '../domain/calculos/sucursales-activas.js';
 
 @Injectable()
 export class RegionalesService {
@@ -107,5 +109,17 @@ export class RegionalesService {
     });
 
     return deleted;
+  }
+
+  async getConsolidadoRegional(id: number) {
+    await this.findOne(id);
+    const saldos = await this.repo.getSaldosPorSucursal(id);
+    return consolidarRegional(id, saldos);
+  }
+
+  async getSucursalesActivas(id: number) {
+    await this.findOne(id);
+    const actividad = await this.repo.getSucursalesConActividad(id);
+    return calcularSucursalesActivas(actividad);
   }
 }

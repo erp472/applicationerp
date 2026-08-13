@@ -58,6 +58,14 @@ export class VentaYaAnuladaError extends VentaDomainError {
   }
 }
 
+export class VentaYaConfirmadaError extends VentaDomainError {
+  readonly statusCode = 409;
+  constructor(id: number) {
+    super(`La venta ${id} ya fue confirmada y no puede modificarse`);
+    this.name = 'VentaYaConfirmadaError';
+  }
+}
+
 export class VentaDeOtroTurnoError extends VentaDomainError {
   readonly statusCode = 403;
   constructor(id: number) {

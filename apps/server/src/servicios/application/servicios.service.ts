@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { IServiciosRepository } from '../domain/servicio.repository.js';
+import type { IServiciosRepository, CreateTarifaData, UpdateTarifaData } from '../domain/servicio.repository.js';
 import { SERVICIOS_REPOSITORY } from '../domain/servicio.repository.js';
 import type { CreateServicioDto } from '../dto/create-servicio.dto.js';
 import type { UpdateServicioDto } from '../dto/update-servicio.dto.js';
@@ -12,6 +12,7 @@ import {
 } from '../domain/business-rules.js';
 import {
   ServicioNotFoundError,
+  ServicioTarifaNotFoundError,
   ServicioSucursalNoEncontradaError,
   ServicioYaAsignadoError,
   ServicioNoAsignadoError,
@@ -43,6 +44,10 @@ export class ServiciosService {
       factorVolumetrico:       dto.factor_volumetrico,
       tiempoEntregaDias:       dto.tiempo_entrega_dias ?? null,
       codigoSigma:             dto.codigo_sigma ?? null,
+      minimoSeguroPostal:      dto.minimo_seguro_postal ?? null,
+      altoMaxCm:               dto.alto_max_cm ?? null,
+      anchoMaxCm:              dto.ancho_max_cm ?? null,
+      largoMaxCm:              dto.largo_max_cm ?? null,
     });
   }
 
@@ -86,6 +91,10 @@ export class ServiciosService {
       factorVolumetrico:       dto.factor_volumetrico,
       tiempoEntregaDias:       dto.tiempo_entrega_dias,
       codigoSigma:             dto.codigo_sigma,
+      minimoSeguroPostal:      dto.minimo_seguro_postal,
+      altoMaxCm:               dto.alto_max_cm,
+      anchoMaxCm:              dto.ancho_max_cm,
+      largoMaxCm:              dto.largo_max_cm,
       activo:                  dto.activo,
     });
   }
@@ -123,5 +132,41 @@ export class ServiciosService {
     const servicio = await this.repo.findById(servicioId);
     if (!servicio) throw new ServicioNotFoundError(servicioId);
     return this.repo.findSucursalesByServicio(servicioId);
+  }
+
+  async getTarifas(servicioId: number) {
+    const servicio = await this.repo.findById(servicioId);
+    if (!servicio) throw new ServicioNotFoundError(servicioId);
+    return this.repo.findTarifasByServicio(servicioId);
+  }
+
+  async createTarifa(servicioId: number, data: CreateTarifaData) {
+    const servicio = await this.repo.findById(servicioId);
+    if (!servicio) throw new ServicioNotFoundError(servicioId);
+    return this.repo.createTarifa(servicioId, data);
+  }
+
+  async updateTarifa(servicioId: number, tarifaId: number, data: UpdateTarifaData) {
+    const servicio = await this.repo.findById(servicioId);
+    if (!servicio) throw new ServicioNotFoundError(servicioId);
+    const tarifas = await this.repo.findTarifasByServicio(servicioId);
+    const existe = tarifas.some((t) => t.id === tarifaId);
+    if (!existe) throw new ServicioTarifaNotFoundError(tarifaId);
+    return this.repo.updateTarifa(tarifaId, data);
+  }
+
+  async deleteTarifa(servicioId: number, tarifaId: number) {
+    const servicio = await this.repo.findById(servicioId);
+    if (!servicio) throw new ServicioNotFoundError(servicioId);
+    const tarifas = await this.repo.findTarifasByServicio(servicioId);
+    const existe = tarifas.some((t) => t.id === tarifaId);
+    if (!existe) throw new ServicioTarifaNotFoundError(tarifaId);
+    await this.repo.deleteTarifa(tarifaId);
+  }
+
+  async updateCertificacion(servicioId: number, tarifa: number | null) {
+    const servicio = await this.repo.findById(servicioId);
+    if (!servicio) throw new ServicioNotFoundError(servicioId);
+    return this.repo.updateCertificacion(servicioId, tarifa);
   }
 }

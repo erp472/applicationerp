@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import type { ISesionesCajaRepository, CrearSesionData, CerrarSesionData, RegistrarMovimientoData, CrearReposicionData, CrearConsignacionData, AprobarConsignacionData, CrearDiferenciaData, AprobarDiferenciaData } from '../domain/sesion-caja.repository.js';
+import type { ISesionesCajaRepository, CrearSesionData, CerrarSesionData, RegistrarMovimientoData, CrearReposicionData, CrearConsignacionData, AprobarConsignacionData, CrearDiferenciaData, AprobarDiferenciaData, DiferenciasFiltros, DiferenciaRegistroItem } from '../domain/sesion-caja.repository.js';
 import type {
   SesionCajaEntity,
   MovimientoCajaEntity,
@@ -552,6 +552,48 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
     }));
   }
 
+  async findDiferenciasBySucursal(sucursalId: number, filters: DiferenciasFiltros): Promise<DiferenciaRegistroItem[]> {
+    const { tipo, estado, desde, hasta, limite = 200, pagina = 1 } = filters;
+
+    const rows = await this.prisma.diferenciaCaja.findMany({
+      where: {
+        sesionCaja: { caja: { sucursales_idsucursales: sucursalId } },
+        ...(tipo   ? { tipo_diferencia: tipo === 'faltante' ? 'faltante' : 'sobrante' } : {}),
+        ...(estado ? { estado } : {}),
+        ...(desde || hasta ? {
+          created_at: {
+            ...(desde ? { gte: desde } : {}),
+            ...(hasta ? { lte: hasta } : {}),
+          },
+        } : {}),
+      },
+      select: {
+        iddiferencias_caja:            true,
+        sesiones_caja_idsesiones_caja: true,
+        tipo_diferencia:               true,
+        monto_diferencia:              true,
+        estado:                        true,
+        observaciones:                 true,
+        created_at:                    true,
+        sesionCaja: { select: { caja: { select: { nombrecajas: true } } } },
+      },
+      orderBy: { created_at: 'desc' },
+      take:    limite,
+      skip:    (pagina - 1) * limite,
+    });
+
+    return rows.map(row => ({
+      id:             row.iddiferencias_caja,
+      sesionCajaId:   row.sesiones_caja_idsesiones_caja,
+      cajaNombre:     row.sesionCaja.caja.nombrecajas,
+      tipoDiferencia: row.tipo_diferencia as 'faltante' | 'sobrante',
+      monto:          row.monto_diferencia.toString(),
+      estado:         row.estado as 'pendiente' | 'aprobada' | 'rechazada',
+      observaciones:  row.observaciones,
+      createdAt:      row.created_at,
+    }));
+  }
+
   async getMovimientos(sesionId: number): Promise<MovimientoCajaEntity[]> {
     const rows = await this.prisma.movimientoCaja.findMany({
       where: { sesiones_caja_idsesiones_caja: sesionId },
@@ -833,6 +875,76 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
       regionalId,
       porMedio: Object.fromEntries(Object.entries(totales).map(([k, v]) => [k, v.toFixed(2)])),
     }));
+  }
+
+  async getConsolidadoPorSesion(): Promise<{
+    sesionId: number;
+    cajaId: number;
+    cajaNombre: string;
+    sucursalNombre: string;
+    cajeroNombre: string | null;
+    porMedio: Record<string, string>;
+  }[]> {
+    const padres = await this.prisma.cajaPadre.findMany({
+      where: { deleted_atcajas_padres: null },
+      select: {
+        cajas: {
+          where: { deleted_atcajas: null },
+          select: {
+            idcajas:    true,
+            nombrecajas: true,
+            sucursal:   { select: { nombresucursales: true } },
+            sesiones: {
+              where: { estadosesiones_caja: 'abierta' },
+              select: {
+                idsesiones_caja: true,
+                cajeroAsignado:  { select: { nombreusuarios: true } },
+                movimientosCaja: {
+                  where: { tipomovimientos_caja: { in: [...TIPOS_MOVIMIENTO_ENTRADA] as any[] } },
+                  select: {
+                    montomovimientos_caja:      true,
+                    medio_pagomovimientos_caja: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const result: {
+      sesionId: number;
+      cajaId: number;
+      cajaNombre: string;
+      sucursalNombre: string;
+      cajeroNombre: string | null;
+      porMedio: Record<string, string>;
+    }[] = [];
+
+    for (const padre of padres) {
+      for (const caja of padre.cajas) {
+        for (const sesion of caja.sesiones) {
+          const totales: Record<string, number> = {};
+          for (const m of sesion.movimientosCaja) {
+            const medio = (m.medio_pagomovimientos_caja as string | null) ?? 'efectivo';
+            totales[medio] = (totales[medio] ?? 0) + Number(m.montomovimientos_caja);
+          }
+          result.push({
+            sesionId:       sesion.idsesiones_caja,
+            cajaId:         caja.idcajas,
+            cajaNombre:     caja.nombrecajas,
+            sucursalNombre: caja.sucursal.nombresucursales,
+            cajeroNombre:   sesion.cajeroAsignado?.nombreusuarios ?? null,
+            porMedio:       Object.fromEntries(
+              Object.entries(totales).map(([k, v]) => [k, v.toFixed(2)]),
+            ),
+          });
+        }
+      }
+    }
+
+    return result;
   }
 
   async getBalancePagos(fechaInicio: Date, fechaFin: Date): Promise<BalancePagosRow[]> {

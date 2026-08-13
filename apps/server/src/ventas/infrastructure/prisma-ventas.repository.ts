@@ -14,7 +14,9 @@ import type {
   CrearVentaData,
   AgregarDetalleData,
   ConfirmarVentaData,
+  UpdateVentaTotalesData,
   ContratarApartadoData,
+  ReservarApartadoData,
   CrearEnvioData,
 } from '../domain/venta.repository.js';
 import type {
@@ -24,6 +26,7 @@ import type {
   TarifaEnvioEntity,
   TarifaEspecialEntity,
   EnvioEntity,
+  DireccionFrecuenteEntity,
   ResumenTurno,
   TamanoApartado,
   EstadoApartado,
@@ -153,6 +156,7 @@ function toApartadoEntity(row: any): ApartadoPostalEntity {
     tamano:                row.tamanoapartados_postales as TamanoApartado,
     estado:                row.estadoapartados_postales as ApartadoPostalEntity['estado'],
     clienteId:             row.clientes_idclientes ?? null,
+    ventaId:               row.ventas_idventas ?? null,
     fechaInicio:           row.fecha_inicioapartados_postales ?? null,
     fechaFin:              row.fecha_finapartados_postales ?? null,
     valor:                 row.valorapartados_postales !== null ? Number(row.valorapartados_postales) : null,
@@ -174,6 +178,13 @@ function toServicioEntity(row: any): ServicioCatalogoEntity {
     pesoMaximoKg:          row.peso_maximo_kgservicios !== null ? Number(row.peso_maximo_kgservicios) : null,
     factorVolumetrico:     row.factor_volumetricoservicios,
     tiempoEntregaDias:     row.tiempo_entrega_diasservicios ?? null,
+    tarifaCertificacion:   row.tarifa_certificacionservicios !== null && row.tarifa_certificacionservicios !== undefined
+                             ? Number(row.tarifa_certificacionservicios)
+                             : null,
+    minimoSeguroPostal:    row.minimo_seguro_postalservicios != null ? Number(row.minimo_seguro_postalservicios) : null,
+    altoMaxCm:             row.alto_max_cmservicios  != null ? Number(row.alto_max_cmservicios)  : null,
+    anchoMaxCm:            row.ancho_max_cmservicios != null ? Number(row.ancho_max_cmservicios) : null,
+    largoMaxCm:            row.largo_max_cmservicios != null ? Number(row.largo_max_cmservicios) : null,
   };
 }
 
@@ -211,19 +222,21 @@ function toEnvioEntity(row: any): EnvioEntity {
     usuarioId:             row.usuarios_idusuarios,
     clienteId:             row.clientes_idclientes ?? null,
     servicioId:            row.servicios_idservicios,
-    remitenteNombre:       row.remitente_nombreenvios ?? null,
-    remitenteDocumento:    row.remitente_documentoenvios ?? null,
-    remitenteTelefono:     row.remitente_telefonoenvios ?? null,
-    remitenteEmail:        row.remitente_emailenvios ?? null,
-    remitenteDireccion:    row.remitente_direccionenvios ?? null,
-    remitenteCiudad:       row.remitente_ciudadenvios ?? null,
-    destinatarioNombre:    row.destinatario_nombreenvios ?? null,
-    destinatarioDocumento: row.destinatario_documentoenvios ?? null,
-    destinatarioTelefono:  row.destinatario_telefonoenvios ?? null,
-    destinatarioEmail:     row.destinatario_emailenvios ?? null,
-    destinatarioDireccion: row.destinatario_direccionenvios ?? null,
-    destinatarioCiudad:    row.destinatario_ciudadenvios ?? null,
-    destinatarioPais:      row.destinatario_paisenvios,
+    remitenteNombre:          row.remitente_nombreenvios ?? null,
+    remitenteDocumento:       row.remitente_documentoenvios ?? null,
+    remitenteTelefono:        row.remitente_telefonoenvios ?? null,
+    remitenteEmail:           row.remitente_emailenvios ?? null,
+    remitenteDireccion:       row.remitente_direccionenvios ?? null,
+    remitenteCiudad:          row.remitente_ciudadenvios ?? null,
+    remitenteCodigoPostal:    row.remitente_codigo_postalenvios ?? null,
+    destinatarioNombre:       row.destinatario_nombreenvios ?? null,
+    destinatarioDocumento:    row.destinatario_documentoenvios ?? null,
+    destinatarioTelefono:     row.destinatario_telefonoenvios ?? null,
+    destinatarioEmail:        row.destinatario_emailenvios ?? null,
+    destinatarioDireccion:    row.destinatario_direccionenvios ?? null,
+    destinatarioCiudad:       row.destinatario_ciudadenvios ?? null,
+    destinatarioCodigoPostal: row.destinatario_codigo_postalenvios ?? null,
+    destinatarioPais:         row.destinatario_paisenvios,
     pesoFisicoKg:          Number(row.peso_fisico_kgenvios),
     pesoVolumetricoKg:     row.peso_volumetrico_kgenvios !== null ? Number(row.peso_volumetrico_kgenvios) : null,
     pesoTarificadoKg:      Number(row.peso_tarificado_kgenvios),
@@ -234,6 +247,7 @@ function toEnvioEntity(row: any): EnvioEntity {
     valorServicio:         Number(row.valor_servicioenvios),
     valorEstampillas:      Number(row.valor_estampillasenvios),
     valorSeguro:           Number(row.valor_seguroenvios),
+    valorCertificacion:    Number(row.valor_certificacionenvios ?? 0),
     valorTotal:            Number(row.valor_totalenvios),
     medioPago:             row.medio_pagoenvios ?? null,
     estado:                row.estadoenvios,
@@ -358,30 +372,41 @@ export class PrismaVentasRepository implements IVentasRepository {
       where: { idventas: id },
       select: {
         ...SELECT_VENTA,
-        detalle: { select: SELECT_DETALLE },
-        envios:  {
-          where: { estadoenvios: 'pendiente' as any },
-        },
+        detalle:             { select: SELECT_DETALLE },
+        envios:              { where: { estadoenvios: 'pendiente' as any } },
+        apartadosPendientes: { where: { estadoapartados_postales: 'reservado' as any } },
       },
     });
     if (!row) return null;
-    const { detalle, envios, ...ventaRow } = row;
+    const { detalle, envios, apartadosPendientes, ...ventaRow } = row;
     const entity = toVentaEntity(ventaRow, detalle);
-    entity.envios = envios.map(toEnvioEntity);
+    entity.envios              = envios.map(toEnvioEntity);
+    entity.apartadosPendientes = apartadosPendientes.map(toApartadoEntity);
     return entity;
   }
 
-  async confirmarVenta(id: number, data: ConfirmarVentaData & Partial<{ subtotal: number; descuento: number; iva: number; total: number }>): Promise<VentaEntity> {
+  async updateVentaTotales(id: number, data: UpdateVentaTotalesData): Promise<void> {
+    await this.prisma.venta.update({
+      where: { idventas: id },
+      data: {
+        medio_pagoventas: data.medioPago as any,
+        subtotalventas:   data.subtotal,
+        descuentoventas:  data.descuento,
+        ivaventas:        data.iva,
+        totalventas:      data.total,
+        updated_atventas: new Date(),
+      },
+    });
+  }
+
+  async confirmarVenta(id: number, data: ConfirmarVentaData): Promise<VentaEntity> {
     const row = await this.prisma.venta.update({
       where: { idventas: id },
       data: {
+        estadoventas:        'confirmada' as any,
         medio_pagoventas:    data.medioPago as any,
         updated_atventas:    new Date(),
         ...(data.emailFactura !== undefined && { email_factura_ventas: data.emailFactura }),
-        ...(data.subtotal     !== undefined && { subtotalventas:  data.subtotal }),
-        ...(data.descuento    !== undefined && { descuentoventas: data.descuento }),
-        ...(data.iva          !== undefined && { ivaventas:       data.iva }),
-        ...(data.total        !== undefined && { totalventas:     data.total }),
       },
       select: SELECT_VENTA,
     });
@@ -410,6 +435,24 @@ export class PrismaVentasRepository implements IVentasRepository {
       orderBy: { created_atventas: 'desc' },
     });
     return rows.map(r => toVentaEntity(r));
+  }
+
+  async findVentasBySucursalHoy(sucursalId: number): Promise<VentaEntity[]> {
+    const inicio = new Date(); inicio.setHours(0, 0, 0, 0);
+    const fin    = new Date(); fin.setHours(23, 59, 59, 999);
+    const rows = await this.prisma.venta.findMany({
+      where: {
+        sesionCaja:       { sucursales_idsucursales: sucursalId } as any,
+        estadoventas:     'confirmada' as any,
+        created_atventas: { gte: inicio, lte: fin },
+      },
+      select:  { ...SELECT_VENTA, detalle: { select: SELECT_DETALLE } },
+      orderBy: { created_atventas: 'desc' },
+    });
+    return rows.map(r => {
+      const { detalle, ...ventaRow } = r as typeof r & { detalle: Parameters<typeof toVentaEntity>[1] };
+      return toVentaEntity(ventaRow, detalle);
+    });
   }
 
   // ── Detalle / Carrito ────────────────────────────────────────────────────────
@@ -491,6 +534,24 @@ export class PrismaVentasRepository implements IVentasRepository {
     return toApartadoEntity(row);
   }
 
+  async reservarApartado(data: ReservarApartadoData): Promise<ApartadoPostalEntity> {
+    const row = await this.prisma.apartadoPostal.update({
+      where: { idapartados_postales: data.apartadoId },
+      data: {
+        estadoapartados_postales:       'reservado',
+        tamanoapartados_postales:       data.tamano,
+        clientes_idclientes:            data.clienteId,
+        ventas_idventas:                data.ventaId,
+        sesiones_caja_idsesiones_caja:  data.sesionCajaId,
+        fecha_inicioapartados_postales: data.fechaInicio,
+        fecha_finapartados_postales:    data.fechaFin,
+        valorapartados_postales:        data.monto,
+        incluye_ivaapartados_postales:  data.incluyeIva,
+      },
+    });
+    return toApartadoEntity(row);
+  }
+
   async liberarApartado(id: number): Promise<ApartadoPostalEntity> {
     const row = await this.prisma.apartadoPostal.update({
       where: { idapartados_postales: id },
@@ -504,6 +565,43 @@ export class PrismaVentasRepository implements IVentasRepository {
       },
     });
     return toApartadoEntity(row);
+  }
+
+  async liberarApartadoReservado(id: number): Promise<ApartadoPostalEntity> {
+    const row = await this.prisma.apartadoPostal.update({
+      where: { idapartados_postales: id },
+      data: {
+        estadoapartados_postales:       'disponible',
+        clientes_idclientes:            null,
+        ventas_idventas:                null,
+        sesiones_caja_idsesiones_caja:  null,
+        fecha_inicioapartados_postales: null,
+        fecha_finapartados_postales:    null,
+        valorapartados_postales:        null,
+      },
+    });
+    return toApartadoEntity(row);
+  }
+
+  async finalizarApartadoReservado(id: number): Promise<ApartadoPostalEntity> {
+    const row = await this.prisma.apartadoPostal.update({
+      where: { idapartados_postales: id },
+      data: {
+        estadoapartados_postales: 'ocupado',
+        ventas_idventas:          null,
+      },
+    });
+    return toApartadoEntity(row);
+  }
+
+  async findApartadosPendientesByVenta(ventaId: number): Promise<ApartadoPostalEntity[]> {
+    const rows = await this.prisma.apartadoPostal.findMany({
+      where: {
+        ventas_idventas:         ventaId,
+        estadoapartados_postales: 'reservado' as any,
+      },
+    });
+    return rows.map(toApartadoEntity);
   }
 
   async renovarApartado(id: number, data: { nuevaFechaFin: Date; monto: number; sesionCajaId: number }): Promise<ApartadoPostalEntity> {
@@ -722,6 +820,7 @@ export class PrismaVentasRepository implements IVentasRepository {
         valor_servicioenvios:            data.valorServicio,
         valor_estampillasenvios:         data.valorEstampillas,
         valor_seguroenvios:              data.valorSeguro,
+        valor_certificacionenvios:       data.valorCertificacion,
         valor_totalenvios:               data.valorTotal,
         medio_pagoenvios:                data.medioPago as any,
         observacionesenvios:             data.observaciones ?? null,
@@ -802,11 +901,163 @@ export class PrismaVentasRepository implements IVentasRepository {
     return rows.map(toTarifaEspecialEntity);
   }
 
+  async setTarifasEspecial(
+    productoId: number,
+    tarifas: Array<{ minCantidad: number; maxCantidad: number | null; precio: number }>,
+  ): Promise<TarifaEspecialEntity[]> {
+    await this.prisma.$transaction([
+      this.prisma.tarifaEspecialCantidad.deleteMany({
+        where: { productos_idproductos: productoId },
+      }),
+      this.prisma.tarifaEspecialCantidad.createMany({
+        data: tarifas.map(t => ({
+          productos_idproductos:         productoId,
+          min_cantidadtarifas_especial:  t.minCantidad,
+          max_cantidadtarifas_especial:  t.maxCantidad ?? null,
+          preciotarifas_especial:        t.precio,
+        })),
+      }),
+    ]);
+    return this.findTarifasEspecial(productoId);
+  }
+
   async nextConsecutivoGuia(): Promise<number> {
     const last = await this.prisma.envio.findFirst({
       orderBy: { idenvios: 'desc' },
       select:  { idenvios: true },
     });
     return (last?.idenvios ?? 0) + 1;
+  }
+
+  // ── Direcciones frecuentes ────────────────────────────────────────────────────
+
+  async upsertDireccionFrecuente(data: {
+    clienteId:    number;
+    rol:          'remitente' | 'destinatario';
+    nombre:       string;
+    empresa?:     string;
+    telefono?:    string;
+    email?:       string;
+    direccion?:   string;
+    ciudad?:      string;
+    departamento?: string;
+    pais:         string;
+    codigoPostal?: string;
+    documento?:   string;
+  }): Promise<void> {
+    const existing = await this.prisma.direccionFrecuente.findFirst({
+      where: {
+        clientes_idclientes:         data.clienteId,
+        roldireccionesfrecuentes:    data.rol,
+        nombredireccionesfrecuentes: data.nombre,
+        telefonodirfrecuentes:       data.telefono ?? null,
+      },
+    });
+    if (existing) {
+      await this.prisma.direccionFrecuente.update({
+        where: { iddireccionesfrecuentes: existing.iddireccionesfrecuentes },
+        data:  {
+          empresadireccionesfrecuentes: data.empresa ?? null,
+          emaildirfrecuentes:           data.email ?? null,
+          direcciondirfrecuentes:       data.direccion ?? null,
+          ciudaddirfrecuentes:          data.ciudad ?? null,
+          departamentodirfrecuentes:    data.departamento ?? null,
+          paisdirfrecuentes:            data.pais,
+          codigo_postaldirfrecuentes:   data.codigoPostal ?? null,
+          documentodirfrecuentes:       data.documento ?? null,
+          usosdirfrecuentes:            { increment: 1 },
+          ultimo_usodirfrecuentes:      new Date(),
+        },
+      });
+    } else {
+      await this.prisma.direccionFrecuente.create({
+        data: {
+          clientes_idclientes:          data.clienteId,
+          roldireccionesfrecuentes:     data.rol,
+          nombredireccionesfrecuentes:  data.nombre,
+          empresadireccionesfrecuentes: data.empresa ?? null,
+          telefonodirfrecuentes:        data.telefono ?? null,
+          emaildirfrecuentes:           data.email ?? null,
+          direcciondirfrecuentes:       data.direccion ?? null,
+          ciudaddirfrecuentes:          data.ciudad ?? null,
+          departamentodirfrecuentes:    data.departamento ?? null,
+          paisdirfrecuentes:            data.pais,
+          codigo_postaldirfrecuentes:   data.codigoPostal ?? null,
+          documentodirfrecuentes:       data.documento ?? null,
+        },
+      });
+    }
+  }
+
+  private _mapDireccion(r: {
+    iddireccionesfrecuentes:      number;
+    clientes_idclientes:          number;
+    roldireccionesfrecuentes:     string;
+    nombredireccionesfrecuentes:  string;
+    empresadireccionesfrecuentes: string | null;
+    telefonodirfrecuentes:        string | null;
+    emaildirfrecuentes:           string | null;
+    direcciondirfrecuentes:       string | null;
+    ciudaddirfrecuentes:          string | null;
+    departamentodirfrecuentes:    string | null;
+    paisdirfrecuentes:            string;
+    codigo_postaldirfrecuentes:   string | null;
+    documentodirfrecuentes:       string | null;
+    usosdirfrecuentes:            number;
+    ultimo_usodirfrecuentes:      Date;
+  }): DireccionFrecuenteEntity {
+    return {
+      id:           r.iddireccionesfrecuentes,
+      clienteId:    r.clientes_idclientes,
+      rol:          r.roldireccionesfrecuentes as 'remitente' | 'destinatario',
+      nombre:       r.nombredireccionesfrecuentes,
+      empresa:      r.empresadireccionesfrecuentes,
+      telefono:     r.telefonodirfrecuentes,
+      email:        r.emaildirfrecuentes,
+      direccion:    r.direcciondirfrecuentes,
+      ciudad:       r.ciudaddirfrecuentes,
+      departamento: r.departamentodirfrecuentes,
+      pais:         r.paisdirfrecuentes,
+      codigoPostal: r.codigo_postaldirfrecuentes,
+      documento:    r.documentodirfrecuentes,
+      usos:         r.usosdirfrecuentes,
+      ultimoUso:    r.ultimo_usodirfrecuentes,
+    };
+  }
+
+  async findDireccionesFrecuentes(
+    clienteId: number,
+    rol?: 'remitente' | 'destinatario',
+  ): Promise<DireccionFrecuenteEntity[]> {
+    const rows = await this.prisma.direccionFrecuente.findMany({
+      where: {
+        clientes_idclientes:      clienteId,
+        ...(rol ? { roldireccionesfrecuentes: rol } : {}),
+      },
+      orderBy: [
+        { usosdirfrecuentes:       'desc' },
+        { ultimo_usodirfrecuentes: 'desc' },
+      ],
+      take: 30,
+    });
+    return rows.map((r) => this._mapDireccion(r));
+  }
+
+  async findDireccionesPorDocumento(
+    documento: string,
+    rol?: 'remitente' | 'destinatario',
+  ): Promise<DireccionFrecuenteEntity[]> {
+    const rows = await this.prisma.direccionFrecuente.findMany({
+      where: {
+        documentodirfrecuentes:   documento,
+        ...(rol ? { roldireccionesfrecuentes: rol } : {}),
+      },
+      orderBy: [
+        { usosdirfrecuentes:       'desc' },
+        { ultimo_usodirfrecuentes: 'desc' },
+      ],
+      take: 30,
+    });
+    return rows.map((r) => this._mapDireccion(r));
   }
 }

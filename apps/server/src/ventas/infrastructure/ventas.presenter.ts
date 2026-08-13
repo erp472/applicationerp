@@ -21,8 +21,9 @@ export class VentasPresenter {
       medioPago:    entity.medioPago,
       estado:       entity.estado,
       createdAt:    entity.createdAt.toISOString(),
-      detalle:      entity.detalle?.map(VentasPresenter.toDetalle) ?? [],
-      enviosPendientes: entity.envios?.map(VentasPresenter.toEnvio) ?? [],
+      detalle:               entity.detalle?.map(VentasPresenter.toDetalle) ?? [],
+      enviosPendientes:      entity.envios?.map(VentasPresenter.toEnvio) ?? [],
+      apartadosPendientes:   entity.apartadosPendientes?.map(VentasPresenter.toApartado) ?? [],
     };
   }
 
@@ -30,12 +31,14 @@ export class VentasPresenter {
     return {
       id:             entity.id,
       productoId:     entity.productoId,
-      nombreProducto: entity.nombreProducto ?? null,
-      tipoProducto:   entity.tipoProducto   ?? null,
+      nombreProducto: entity.nombreProducto  ?? null,
+      codigoProducto: entity.codigoProducto  ?? null,
+      tipoProducto:   entity.tipoProducto    ?? null,
       cantidad:       entity.cantidad,
       precioUnitario: entity.precioUnitario,
       descuento:      entity.descuento,
       subtotal:       entity.subtotal,
+      porcentajeTax:  entity.porcentajeTax   ?? 0,
     };
   }
 
@@ -74,6 +77,7 @@ export class VentasPresenter {
       tamano:       entity.tamano,
       estado:       entity.estado,
       clienteId:    entity.clienteId,
+      ventaId:      entity.ventaId,
       fechaInicio:  entity.fechaInicio?.toISOString().slice(0, 10) ?? null,
       fechaFin:     entity.fechaFin?.toISOString().slice(0, 10) ?? null,
       valor:        entity.valor,
@@ -107,52 +111,62 @@ export class VentasPresenter {
       pesoFisicoKg:         entity.pesoFisicoKg,
       pesoTarificadoKg:     entity.pesoTarificadoKg,
       valorServicio:        entity.valorServicio,
+      valorSeguro:          entity.valorSeguro,
+      valorEstampillas:     entity.valorEstampillas,
+      valorCertificacion:   entity.valorCertificacion,
       valorTotal:           entity.valorTotal,
       estado:               entity.estado,
       createdAt:            entity.createdAt.toISOString(),
     };
   }
 
-  static toGuia(entity: EnvioEntity) {
+  static toGuia(entity: EnvioEntity, servicioNombre?: string, fechaEntregaEstimada?: string | null) {
     const esInternacional = entity.tipo.startsWith('internacional');
     return {
       numeroGuia:   entity.numeroGuia,
       codigoBarras: entity.numeroGuia,
       tipo:         esInternacional ? 'internacional' : 'nacional',
-      tipoServicio: entity.tipo,
+      tipoServicio: servicioNombre ?? entity.tipo,
       remitente: {
-        nombre:    entity.remitenteNombre,
-        documento: entity.remitenteDocumento,
-        telefono:  entity.remitenteTelefono,
-        email:     entity.remitenteEmail,
-        direccion: entity.remitenteDireccion,
-        ciudad:    entity.remitenteCiudad,
-        pais:      'CO',
+        nombre:       entity.remitenteNombre,
+        documento:    entity.remitenteDocumento,
+        telefono:     entity.remitenteTelefono,
+        email:        entity.remitenteEmail,
+        direccion:    entity.remitenteDireccion,
+        ciudad:       entity.remitenteCiudad,
+        codigoPostal: entity.remitenteCodigoPostal,
+        pais:         'CO',
       },
       destinatario: {
-        nombre:    entity.destinatarioNombre,
-        documento: entity.destinatarioDocumento,
-        telefono:  entity.destinatarioTelefono,
-        email:     entity.destinatarioEmail,
-        direccion: entity.destinatarioDireccion,
-        ciudad:    entity.destinatarioCiudad,
-        pais:      entity.destinatarioPais,
+        nombre:       entity.destinatarioNombre,
+        documento:    entity.destinatarioDocumento,
+        telefono:     entity.destinatarioTelefono,
+        email:        entity.destinatarioEmail,
+        direccion:    entity.destinatarioDireccion,
+        ciudad:       entity.destinatarioCiudad,
+        codigoPostal: entity.destinatarioCodigoPostal,
+        pais:         entity.destinatarioPais,
       },
       peso: {
-        fisicoKg:     entity.pesoFisicoKg,
-        tarificadoKg: entity.pesoTarificadoKg,
-        altoCm:       entity.altoCm,
-        anchoCm:      entity.anchoCm,
-        largoCm:      entity.largoCm,
+        fisicoKg:      entity.pesoFisicoKg,
+        tarificadoKg:  entity.pesoTarificadoKg,
+        altoCm:        entity.altoCm,
+        anchoCm:       entity.anchoCm,
+        largoCm:       entity.largoCm,
+        volumetricoKg: entity.pesoVolumetricoKg,
       },
       valores: {
         servicio:   entity.valorServicio,
+        manejo:     entity.valorCertificacion,
         seguro:     entity.valorSeguro,
         declarado:  entity.valorDeclarado,
         total:      entity.valorTotal,
       },
-      estado:      entity.estado,
-      generadoEn:  entity.createdAt.toISOString(),
+      estado:               entity.estado,
+      generadoEn:           entity.createdAt.toISOString(),
+      ordenServicio:        entity.id,
+      fechaEntregaEstimada: fechaEntregaEstimada ?? null,
+      centroOperativo:      null,
     };
   }
 }

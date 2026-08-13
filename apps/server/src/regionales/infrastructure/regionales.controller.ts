@@ -112,4 +112,24 @@ export class RegionalesController {
   async remove(@Param('id', ParseIntPipe) id: number) {
     return RegionalesPresenter.toResponse(await this.service.remove(id));
   }
+
+  @Get(':id/consolidado')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Consolidado financiero de la regional agrupado por medio de pago' })
+  @ApiParam({ name: 'id', type: Number })
+  @ApiResponse({ status: 200, description: 'Consolidado con total y desglose por medio de pago' })
+  @ApiResponse({ status: 404, description: 'Regional no encontrada' })
+  async getConsolidado(@Param('id', ParseIntPipe) id: number) {
+    return this.service.getConsolidadoRegional(id);
+  }
+
+  @Get(':id/sucursales-activas')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Resumen de sucursales activas vs inactivas hoy en la regional' })
+  @ApiParam({ name: 'id', type: Number })
+  @ApiResponse({ status: 200, description: 'Conteos y porcentaje de sucursales con sesión abierta hoy' })
+  @ApiResponse({ status: 404, description: 'Regional no encontrada' })
+  async getSucursalesActivas(@Param('id', ParseIntPipe) id: number) {
+    return this.service.getSucursalesActivas(id);
+  }
 }

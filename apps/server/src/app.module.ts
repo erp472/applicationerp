@@ -1,11 +1,10 @@
 import { Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
-import { AppController } from './app.controller.js';
-import { AppService } from './app.service.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { MetricsModule } from './metrics/metrics.module.js';
+import { HealthModule } from './health/health.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { UsersModule } from './users/users.module.js';
 import { DevicesModule } from './devices/devices.module.js';
@@ -30,10 +29,15 @@ import { SacasModule } from './sacas/sacas.module.js';
 import { AuditContextInterceptor } from './common/interceptors/audit-context.interceptor.js';
 
 @Module({
-  imports: [ScheduleModule.forRoot(), PrismaModule, AuditModule, MetricsModule, AuthModule, UsersModule, DevicesModule, PermisosModule, FeatureFlagsModule, GeoModule, ComerciosModule, RegionalesModule, SucursalesModule, EquiposModule, ProductosModule, ServiciosModule, CajasModule, VentasModule, ClientesModule, InventarioModule, GirosModule, RecaudosModule, RealtimeModule, SigmaModule, SacasModule],
-  controllers: [AppController],
+  imports: [
+    ScheduleModule.forRoot(),
+    PrismaModule, AuditModule, MetricsModule, HealthModule,
+    AuthModule, UsersModule, DevicesModule, PermisosModule, FeatureFlagsModule,
+    GeoModule, ComerciosModule, RegionalesModule, SucursalesModule, EquiposModule,
+    ProductosModule, ServiciosModule, CajasModule, VentasModule, ClientesModule,
+    InventarioModule, GirosModule, RecaudosModule, RealtimeModule, SigmaModule, SacasModule,
+  ],
   providers: [
-    AppService,
     { provide: APP_INTERCEPTOR, useClass: AuditContextInterceptor },
   ],
 })

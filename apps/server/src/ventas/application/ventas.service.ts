@@ -1,8 +1,9 @@
-import { Injectable, Inject, ForbiddenException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, Optional, ForbiddenException, ConflictException, NotFoundException } from '@nestjs/common';
 import { CajasService }       from '../../cajas/application/cajas.service.js';
 import { InventarioService }  from '../../inventario/application/inventario.service.js';
 import { AuditService }       from '../../audit/audit.service.js';
 import { PrismaService }      from '../../prisma/prisma.service.js';
+import { RealtimeService }    from '../../realtime/realtime.service.js';
 import { auditStore }     from '../../common/audit-context.js';
 import { VENTAS_REPOSITORY } from '../domain/venta.repository.js';
 import type { IVentasRepository } from '../domain/venta.repository.js';
@@ -30,10 +31,12 @@ import {
   calcularTotalesCarrito,
   validarEfectivoSuficiente,
 } from '../domain/business-rules.js';
+import type { MedioPago } from '../../cajas/domain/caja.entity.js';
 import { calcularPesoVolumetrico } from '../domain/calculos/peso-volumetrico.js';
 import { calcularPesoVolumetricoIntl } from '../domain/calculos/peso-volumetrico-intl.js';
 import { calcularPesoFacturado } from '../domain/calculos/peso-facturado.js';
 import { validarPesoMaximo } from '../domain/calculos/validar-peso-maximo.js';
+import { validarDimensionesMaximas } from '../domain/calculos/validar-dimensiones-maximas.js';
 import { calcularKgAdicional } from '../domain/calculos/kg-adicional.js';
 import { calcularValorServicioTotal } from '../domain/calculos/valor-servicio-total.js';
 import { calcularSeguroPostal } from '../domain/calculos/seguro-postal.js';
@@ -45,11 +48,15 @@ import { calcularValorEstampillasRequeridas } from '../domain/calculos/valor-est
 import { calcularPrecioPorCantidad } from '../domain/calculos/precio-por-cantidad.js';
 import { calcularTotalEnvioNacional } from '../domain/calculos/total-envio-nacional.js';
 import { calcularTotalEnvioInternacional } from '../domain/calculos/total-envio-internacional.js';
+import { calcularCertificacionCorreo } from '../domain/calculos/calcular-certificacion-correo.js';
 import { calcularDiasParaVencer } from '../domain/calculos/dias-para-vencer.js';
 import { evaluarAlertaVencimientoApartado } from '../domain/calculos/alerta-vencimiento.js';
 import { buildAnulacionVenta } from '../domain/calculos/anulacion-venta.js';
 import { calcularRenovacionApartado } from '../domain/calculos/renovacion-apartado.js';
 import { calcularTarifaInternacionalMs } from '../domain/calculos/tarifa-internacional-ms.js';
+import { verificarStockDisponible } from '../../inventario/domain/calculos/stock-disponible.js';
+import { calcularDisponibilidadApartados } from '../domain/calculos/disponibilidad-apartados.js';
+import { calcularDescuentoVolumen } from '../domain/calculos/descuento-volumen.js';
 import { calcularTiempoEntregaEstimado } from '../domain/calculos/tiempo-entrega-estimado.js';
 import { validarValorDeclaradoIntl }      from '../domain/calculos/validar-valor-declarado-intl.js';
 import { calcularImpuestosAduanaDestino } from '../domain/calculos/impuestos-aduana-destino.js';
@@ -58,15 +65,17 @@ import { validarPreporteado }            from '../domain/calculos/preporteado.js
 import { validarPermitePreporteado }     from '../domain/calculos/valida-preporteado.js';
 import { buildMixtoPreporteado }         from '../domain/calculos/mixto-preporteado.js';
 import { calcularConversionMoneda }      from '../domain/calculos/conversion-moneda.js';
+import { validarLimitesCantidad }        from '../domain/calculos/validar-limites-cantidad.js';
 import type { RenovarApartadoDto } from '../dto/renovar-apartado.dto.js';
 import type { IniciarVentaDto }       from '../dto/iniciar-venta.dto.js';
 import type { AgregarProductoDto }    from '../dto/agregar-producto.dto.js';
 import type { ConfirmarVentaDto }     from '../dto/confirmar-venta.dto.js';
 import type { AnularVentaDto }        from '../dto/anular-venta.dto.js';
-import type { ContratarApartadoDto }       from '../dto/contratar-apartado.dto.js';
-import type { CrearApartadoAdminDto }       from '../dto/crear-apartado-admin.dto.js';
-import type { UpdateApartadoAdminDto }      from '../dto/update-apartado-admin.dto.js';
-import type { CrearEnvioDto }         from '../dto/crear-envio.dto.js';
+import type { ContratarApartadoDto }           from '../dto/contratar-apartado.dto.js';
+import type { AgregarApartadoCarritoDto }       from '../dto/agregar-apartado-carrito.dto.js';
+import type { CrearApartadoAdminDto }           from '../dto/crear-apartado-admin.dto.js';
+import type { UpdateApartadoAdminDto }          from '../dto/update-apartado-admin.dto.js';
+import type { CrearEnvioDto }                   from '../dto/crear-envio.dto.js';
 
 @Injectable()
 export class VentasService {
@@ -77,6 +86,7 @@ export class VentasService {
     private readonly inventarioService: InventarioService,
     private readonly audit: AuditService,
     private readonly prisma: PrismaService,
+    @Optional() private readonly realtime?: RealtimeService,
   ) {}
 
   // ── Catálogo ─────────────────────────────────────────────────────────────────
@@ -87,6 +97,13 @@ export class VentasService {
 
   async getTarifasEspecial(productoId: number) {
     return this.repo.findTarifasEspecial(productoId);
+  }
+
+  async setTarifasEspecial(
+    productoId: number,
+    tarifas: Array<{ minCantidad: number; maxCantidad: number | null; precio: number }>,
+  ) {
+    return this.repo.setTarifasEspecial(productoId, tarifas);
   }
 
   // ── Buscar cliente ────────────────────────────────────────────────────────────
@@ -145,13 +162,14 @@ export class VentasService {
     const producto = await this.repo.findProductoById(dto.productoId, sesion.sucursalId);
     if (!producto) throw new ProductoNoEncontradoError(dto.productoId);
 
-    // Validar límites de cantidad para servicios especiales (tipo='otro')
     if (producto.tipo === 'otro') {
-      if (producto.cantidadMinima !== null && dto.cantidad < producto.cantidadMinima) {
-        throw new CantidadMinimaError(producto.nombre, producto.cantidadMinima);
-      }
-      if (producto.cantidadMaxima !== null && dto.cantidad > producto.cantidadMaxima) {
-        throw new CantidadMaximaError(producto.nombre, producto.cantidadMaxima);
+      try {
+        validarLimitesCantidad(dto.cantidad, producto.cantidadMinima, producto.cantidadMaxima);
+      } catch (err: unknown) {
+        const msg = (err as Error).message;
+        if (msg.includes('mínimo')) throw new CantidadMinimaError(producto.nombre, producto.cantidadMinima!);
+        if (msg.includes('máximo')) throw new CantidadMaximaError(producto.nombre, producto.cantidadMaxima!);
+        throw err;
       }
     }
 
@@ -159,13 +177,14 @@ export class VentasService {
     if (producto.tipo === 'otro') {
       const tarifas = await this.repo.findTarifasEspecial(dto.productoId);
       if (tarifas.length > 0) {
-        precioUnitario = Number(calcularPrecioPorCantidad(
+        precioUnitario = Number(calcularDescuentoVolumen(
           tarifas.map(t => ({
             minCantidad:    t.minCantidad,
             maxCantidad:    t.maxCantidad,
             precioUnitario: String(t.precio),
           })),
           dto.cantidad,
+          String(producto.precio),
         ));
       }
     }
@@ -210,12 +229,15 @@ export class VentasService {
 
     const cotizacion = await this.cotizarEnvio(
       dto.servicioId,
-      dto.peseFisicoKg,
+      dto.pesoFisicoKg,
       dto.altoCm,
       dto.anchoCm,
       dto.largoCm,
       dto.destinatario.pais,
       dto.destinatario.ciudad,
+      undefined,
+      undefined,
+      dto.tipoTrayecto,
     );
 
     const valorSeguro = dto.seguroAdicional && dto.valorDeclarado
@@ -236,6 +258,8 @@ export class VentasService {
       validarValorDeclaradoIntl(String(dto.valorDeclarado));
     }
 
+    const valorCertificacion = esInternacional ? 0 : cotizacion.valorCertificacion;
+
     const valorTotal = esInternacional
       ? Number(calcularTotalEnvioInternacional(
           String(cotizacion.valorServicio),
@@ -246,6 +270,8 @@ export class VentasService {
           String(cotizacion.valorServicio),
           estampillasResult.valorEstampillas,
           String(valorSeguro),
+          '0',
+          String(valorCertificacion),
         ));
 
     if (dto.medioPago === 'preporteado') {
@@ -268,16 +294,12 @@ export class VentasService {
 
     const numeroGuia = await this._generarNumeroGuia();
 
-    const cliente = await this.repo.findClienteByDocumento(
-      dto.remitente.documento ? 'CC' : '', dto.remitente.documento ?? '',
-    );
-
     const envio = await this.repo.crearEnvio({
       ventaId,
       sucursalId:           sesion.sucursalId,
       sesionCajaId:         sesion.id,
       usuarioId,
-      clienteId:            cliente?.id,
+      clienteId:            venta.clienteId ?? undefined,
       servicioId:           dto.servicioId,
       tipo:                 cotizacion.servicio.tipo,
       numeroGuia,
@@ -297,7 +319,7 @@ export class VentasService {
       destinatarioCiudad:   dto.destinatario.ciudad,
       destinatarioPais:     dto.destinatario.pais,
       destinatarioCp:       dto.destinatario.codigoPostal,
-      pesoFisicoKg:         dto.peseFisicoKg,
+      pesoFisicoKg:         dto.pesoFisicoKg,
       altoCm:               dto.altoCm,
       anchoCm:              dto.anchoCm,
       largoCm:              dto.largoCm,
@@ -307,11 +329,16 @@ export class VentasService {
       valorServicio:        cotizacion.valorServicio,
       valorEstampillas:     Number(estampillasResult.valorEstampillas),
       valorSeguro,
+      valorCertificacion,
       valorTotal,
       medioPago:            dto.medioPago as any,
       contenido:            dto.contenido,
       observaciones:        dto.observaciones,
     });
+
+    if (venta.clienteId) {
+      await this._guardarDireccionesFrecuentes(venta.clienteId, dto);
+    }
 
     await this._recalcularTotales(ventaId);
 
@@ -337,7 +364,11 @@ export class VentasService {
     const venta = await this.repo.findVentaConDetalle(ventaId);
     if (!venta) throw new VentaNoEncontradaError(ventaId);
     validarVentaActiva(ventaId, venta.estado);
-    validarCarritoNoVacio(venta.detalle?.length ?? 0, venta.envios?.length ?? 0);
+    validarCarritoNoVacio(
+      venta.detalle?.length ?? 0,
+      venta.envios?.length ?? 0,
+      venta.apartadosPendientes?.length ?? 0,
+    );
 
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
     if (!sesion) throw new SesionCajaInactivaError(cajaId);
@@ -347,8 +378,12 @@ export class VentasService {
     const todosItems = venta.detalle ?? [];
     for (const item of todosItems) {
       const stock = await this.inventarioService.getStock(sesion.sucursalId, item.productoId);
-      if (stock !== null && stock < item.cantidad) {
-        throw new StockInsuficienteError(item.nombreProducto ?? `producto ${item.productoId}`, stock, item.cantidad);
+      if (stock !== null) {
+        try {
+          verificarStockDisponible(stock, item.cantidad, 0);
+        } catch {
+          throw new StockInsuficienteError(item.nombreProducto ?? `producto ${item.productoId}`, stock, item.cantidad);
+        }
       }
     }
 
@@ -396,9 +431,24 @@ export class VentasService {
       guiasGeneradas.push(envioFacturado);
     }
 
+    // Finalizar apartados reservados vinculados a esta venta (cambian de reservado → ocupado)
+    const apartadosPendientes = await this.repo.findApartadosPendientesByVenta(ventaId);
+    for (const apartado of apartadosPendientes) {
+      await this.repo.finalizarApartadoReservado(apartado.id);
+      await this.cajasService.registrarMovimientoVenta({
+        sesionCajaId:   sesion.id,
+        tipo:           'apartado_postal',
+        monto:          String(apartado.valor ?? 0),
+        medioPago:      dto.medioPago as any,
+        referenciaId:   apartado.id,
+        referenciaTipo: 'ApartadoPostal',
+      });
+    }
+
     // Determinar el tipo de movimiento según los productos de la venta
-    const tieneEnvios = guiasGeneradas.length > 0;
-    const tipoMovimiento = tieneEnvios
+    const tieneEnvios     = guiasGeneradas.length > 0;
+    const tieneApartados  = apartadosPendientes.length > 0;
+    const tipoMovimiento  = (tieneEnvios || tieneApartados)
       ? 'venta_servicio' as const
       : this._resolverTipoMovimiento(venta.detalle ?? []);
 
@@ -430,7 +480,25 @@ export class VentasService {
       },
     });
 
+    this.realtime?.broadcast('ventas.venta_confirmada', {
+      sucursalId: sesion.sucursalId,
+      cajaId,
+      ventaId,
+      total:      venta.total,
+      medioPago:  dto.medioPago,
+      items:      (venta.detalle ?? []).map(i => ({
+        nombre:   i.nombreProducto ?? `Producto ${i.productoId}`,
+        codigo:   i.codigoProducto,
+        cantidad: i.cantidad,
+        subtotal: i.subtotal,
+      })),
+    });
+
     return { venta: ventaActualizada, movimiento, saldoActual, alertas, cambio, guias: guiasGeneradas };
+  }
+
+  async getVentasDia(sucursalId: number) {
+    return this.repo.findVentasBySucursalHoy(sucursalId);
   }
 
   // ── Anular venta ──────────────────────────────────────────────────────────────
@@ -448,6 +516,12 @@ export class VentasService {
     const enviosPendientes = await this.repo.findEnviosPendientesByVenta(ventaId);
     for (const envio of enviosPendientes) {
       await this.repo.anularEnvio(envio.id);
+    }
+
+    // Liberar apartados reservados vinculados (vuelven a 'disponible')
+    const apartadosReservados = await this.repo.findApartadosPendientesByVenta(ventaId);
+    for (const apartado of apartadosReservados) {
+      await this.repo.liberarApartadoReservado(apartado.id);
     }
 
     const ventaAnulada = await this.repo.anularVenta(ventaId);
@@ -516,14 +590,72 @@ export class VentasService {
 
   async getApartadosDisponibles(sucursalId: number, tamano?: string) {
     const items = await this.repo.findApartadosDisponibles(sucursalId, tamano as any);
-    return items.map(item => this._enriquecerApartado(item));
+    const enriquecidos = items.map(item => this._enriquecerApartado(item));
+    const disponibilidad = calcularDisponibilidadApartados(
+      enriquecidos.map(i => ({ apartadoId: i.id, estado: i.estado, tamano: i.tamano, sucursalId: i.sucursalId })),
+      sucursalId,
+      tamano,
+    );
+    return { totalDisponibles: disponibilidad.totalDisponibles, lista: enriquecidos };
   }
 
   async getServiciosPostales(sucursalId: number) {
     return this.repo.findServiciosBySucursal(sucursalId);
   }
 
-  private static readonly TARIFA_ANUAL_APARTADO_POSTAL = 87_500 * 12;
+  private static readonly TARIFA_ANUAL_APARTADO_POSTAL = 87_500;
+
+  // ── Apartado en carrito (flujo correcto con pago al finalizar) ──────────────
+
+  async agregarApartadoAlCarrito(ventaId: number, cajaId: number, clienteId: number, dto: AgregarApartadoCarritoDto) {
+    const venta = await this.repo.findVentaById(ventaId);
+    if (!venta) throw new VentaNoEncontradaError(ventaId);
+    validarVentaActiva(ventaId, venta.estado);
+
+    const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
+    if (!sesion) throw new SesionCajaInactivaError(cajaId);
+    validarVentaEnSesion(ventaId, venta.sesionCajaId, sesion.id);
+
+    const apartado = await this.repo.findApartadoByNumero(dto.sucursalId, dto.numeroApartado);
+    if (!apartado) throw new ApartadoNoEncontradoError(dto.numeroApartado);
+    if (apartado.estado !== 'disponible') throw new ApartadoNoDisponibleError(dto.numeroApartado);
+
+    const fechaInicio = new Date(dto.fechaInicio);
+    const fechaFin    = new Date(calcularFechaVencimiento(dto.fechaInicio, dto.meses));
+    const precioBase  = calcularPrecioPorMeses(String(VentasService.TARIFA_ANUAL_APARTADO_POSTAL), dto.meses);
+    const ivaResult   = calcularIvaApartado(precioBase, '19', true);
+
+    const apartadoReservado = await this.repo.reservarApartado({
+      apartadoId:   apartado.id,
+      tamano:       dto.tamano,
+      clienteId,
+      ventaId,
+      sesionCajaId: sesion.id,
+      fechaInicio,
+      fechaFin,
+      monto:        Number(ivaResult.precioTotal),
+      incluyeIva:   true,
+    });
+
+    await this._recalcularTotales(ventaId);
+    return { apartado: apartadoReservado, cotizacion: { base: Number(ivaResult.precioSinTax), iva: Number(ivaResult.iva), total: Number(ivaResult.precioTotal) } };
+  }
+
+  async eliminarApartadoDelCarrito(ventaId: number, apartadoId: number) {
+    const venta = await this.repo.findVentaById(ventaId);
+    if (!venta) throw new VentaNoEncontradaError(ventaId);
+    validarVentaActiva(ventaId, venta.estado);
+
+    const apartado = await this.repo.findApartadoById(apartadoId);
+    if (!apartado || apartado.ventaId !== ventaId) {
+      throw new ApartadoNoEncontradoError(String(apartadoId));
+    }
+
+    await this.repo.liberarApartadoReservado(apartadoId);
+    await this._recalcularTotales(ventaId);
+  }
+
+  // ── Contratación directa de apartado postal (flujo legacy — sin carrito) ────
 
   async contratarApartado(cajaId: number, clienteId: number, dto: ContratarApartadoDto) {
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
@@ -555,6 +687,7 @@ export class VentasService {
       sesionCajaId:   sesion.id,
       tipo:           'apartado_postal',
       monto:          ivaResult.precioTotal,
+      medioPago:      dto.medioPago as MedioPago,
       referenciaId:   apartadoContratado.id,
       referenciaTipo: 'ApartadoPostal',
     });
@@ -640,9 +773,10 @@ export class VentasService {
     largoCm?: number,
     paisDestino = 'CO',
     ciudadDestino?: string,
-    // optional: when provided, cotización includes aduana tax estimate
     porcentajeArancel?: number,
     trmDia?: number,
+    // Tipo de trayecto para servicios nacionales: URBANO | NACIONAL | TE7 | TE8
+    tipoTrayecto?: 'URBANO' | 'NACIONAL' | 'TE7' | 'TE8',
   ) {
     const servicio = await this.repo.findServicioById(servicioId);
     if (!servicio) throw new ServicioNoEncontradoError(servicioId);
@@ -652,6 +786,7 @@ export class VentasService {
     // Use the international volumetric formula for intl services (validates provider max)
     let pesoVolumetrico: number | null = null;
     if (altoCm && anchoCm && largoCm) {
+      validarDimensionesMaximas(altoCm, anchoCm, largoCm, servicio.altoMaxCm, servicio.anchoMaxCm, servicio.largoMaxCm);
       if (esIntl) {
         const intlResult = calcularPesoVolumetricoIntl(altoCm, anchoCm, largoCm, servicio.factorVolumetrico ?? undefined, servicio.pesoMaximoKg ?? undefined);
         if (!intlResult.valido) {
@@ -683,10 +818,13 @@ export class VentasService {
       tarifa = tarifasRows[0] ?? null;
       valorServicio = Number(tarifaCop);
     } else {
-      tarifa = await this.repo.findTarifaEnvio(servicioId, pesoTarificado, paisDestino, ciudadDestino);
+      // Para servicios nacionales, tipoTrayecto determina la tarifa aplicable.
+      // NACIONAL y undefined → null (tarifa por defecto); URBANO/TE7/TE8 → lookup específico.
+      const lookupKey = tipoTrayecto && tipoTrayecto !== 'NACIONAL' ? tipoTrayecto : ciudadDestino;
+      tarifa = await this.repo.findTarifaEnvio(servicioId, pesoTarificado, paisDestino, lookupKey);
       if (!tarifa) throw new TarifaNoEncontradaError(servicioId, pesoTarificado);
-      const valorKgAdicional = tarifa.tarifaKgAdicional != null && tarifa.pesoMaxKg != null
-        ? calcularKgAdicional(pesoTarificado, tarifa.pesoMaxKg, String(tarifa.tarifaKgAdicional))
+      const valorKgAdicional = tarifa.tarifaKgAdicional != null
+        ? calcularKgAdicional(pesoTarificado, tarifa.pesoMinKg, String(tarifa.tarifaKgAdicional))
         : '0';
       valorServicio = Number(calcularValorServicioTotal(String(tarifa.tarifa), valorKgAdicional));
     }
@@ -702,6 +840,8 @@ export class VentasService {
       aduanaEstimadoUSD = calcularImpuestosAduanaDestino(valorUsd, String(porcentajeArancel));
     }
 
+    const valorCertificacion = calcularCertificacionCorreo(servicio.tarifaCertificacion);
+
     return {
       servicio,
       pesoFisicoKg,
@@ -709,6 +849,7 @@ export class VentasService {
       pesoTarificadoKg:      pesoTarificado,
       tarifa,
       valorServicio,
+      valorCertificacion,
       fechaEntregaEstimada,
       aduanaEstimadoUSD,
     };
@@ -718,22 +859,29 @@ export class VentasService {
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
     if (!sesion) throw new SesionCajaInactivaError(cajaId);
 
-    if (dto.esCorrespondencia && dto.peseFisicoKg > 5) {
+    if (dto.esCorrespondencia && dto.pesoFisicoKg > 5) {
       throw new Error('Correspondencia: peso máximo 5 kg (5000 g)');
     }
 
     const cotizacion = await this.cotizarEnvio(
       dto.servicioId,
-      dto.peseFisicoKg,
+      dto.pesoFisicoKg,
       dto.esCorrespondencia ? undefined : dto.altoCm,
       dto.esCorrespondencia ? undefined : dto.anchoCm,
       dto.esCorrespondencia ? undefined : dto.largoCm,
       dto.destinatario.pais,
       dto.destinatario.ciudad,
+      undefined,
+      undefined,
+      dto.tipoTrayecto,
     );
 
     const valorSeguro = dto.seguroAdicional && dto.valorDeclarado
-      ? Number(calcularSeguroPostal(String(dto.valorDeclarado), '0.5'))
+      ? Number(calcularSeguroPostal(
+          String(dto.valorDeclarado),
+          '0.5',
+          cotizacion.servicio.minimoSeguroPostal ?? 0,
+        ))
       : 0;
     const denominacionesEstampilla = cotizacion.servicio.requiereEstampilla
       ? await this.repo.findEstampillasConStock(sesion.sucursalId)
@@ -750,6 +898,8 @@ export class VentasService {
       validarValorDeclaradoIntl(String(dto.valorDeclarado));
     }
 
+    const valorCertificacion = esInternacional ? 0 : cotizacion.valorCertificacion;
+
     const valorTotal = esInternacional
       ? Number(calcularTotalEnvioInternacional(
           String(cotizacion.valorServicio),
@@ -760,6 +910,8 @@ export class VentasService {
           String(cotizacion.valorServicio),
           estampillasResult.valorEstampillas,
           String(valorSeguro),
+          '0',
+          String(valorCertificacion),
         ));
 
     // preporteado: estampillas must exactly cover the service cost
@@ -786,15 +938,16 @@ export class VentasService {
       validarGuiaCp(dto.guiaCp, []);
     }
 
-    const cliente = await this.repo.findClienteByDocumento(
-      dto.remitente.documento ? 'CC' : '', dto.remitente.documento ?? '',
-    );
+    const clientePorDoc = !dto.clienteId && dto.remitente.documento && dto.remitente.tipoDocumento
+      ? await this.repo.findClienteByDocumento(dto.remitente.tipoDocumento, dto.remitente.documento)
+      : null;
+    const clienteIdResuelto = dto.clienteId ?? clientePorDoc?.id;
 
     const envio = await this.repo.crearEnvio({
       sucursalId:           dto.sucursalId,
       sesionCajaId:         sesion.id,
       usuarioId,
-      clienteId:            cliente?.id,
+      clienteId:            clienteIdResuelto,
       servicioId:           dto.servicioId,
       tipo:                 cotizacion.servicio.tipo,
       numeroGuia,
@@ -813,7 +966,7 @@ export class VentasService {
       destinatarioCiudad:   dto.destinatario.ciudad,
       destinatarioPais:     dto.destinatario.pais,
       destinatarioCp:       dto.destinatario.codigoPostal,
-      pesoFisicoKg:         dto.peseFisicoKg,
+      pesoFisicoKg:         dto.pesoFisicoKg,
       altoCm:               dto.altoCm,
       anchoCm:              dto.anchoCm,
       largoCm:              dto.largoCm,
@@ -823,12 +976,17 @@ export class VentasService {
       valorServicio:        cotizacion.valorServicio,
       valorEstampillas:     Number(estampillasResult.valorEstampillas),
       valorSeguro,
+      valorCertificacion,
       valorTotal,
       medioPago:            dto.medioPago as any,
       contenido:            dto.contenido,
       observaciones:        dto.observaciones,
       esCorrespondencia:    dto.esCorrespondencia,
     });
+
+    if (clienteIdResuelto) {
+      await this._guardarDireccionesFrecuentes(clienteIdResuelto, dto);
+    }
 
     const { movimiento, saldoActual, alertas } = await this.cajasService.registrarMovimientoVenta({
       sesionCajaId:   sesion.id,
@@ -873,19 +1031,23 @@ export class VentasService {
       })),
     );
 
-    // Sumar envíos pendientes vinculados al total de la venta
     const totalEnviosPendientes = (ventaFull.envios ?? []).reduce(
       (acc, e) => acc + e.valorTotal,
       0,
     );
 
-    await this.repo.confirmarVenta(ventaId, {
+    const totalApartadosPendientes = (ventaFull.apartadosPendientes ?? []).reduce(
+      (acc, a) => acc + (a.valor ?? 0),
+      0,
+    );
+
+    await this.repo.updateVentaTotales(ventaId, {
       medioPago: ventaFull.medioPago,
       subtotal:  totalesDetalle.subtotal,
       descuento: totalesDetalle.descuento,
       iva:       totalesDetalle.iva,
-      total:     totalesDetalle.total + totalEnviosPendientes,
-    } as any);
+      total:     totalesDetalle.total + totalEnviosPendientes + totalApartadosPendientes,
+    });
   }
 
   private _enriquecerApartado<T extends { fechaFin: Date | null; diasAlertaVencimiento: number; id: number; clienteId: number | null; sucursalId: number; estado: string }>(item: T) {
@@ -991,5 +1153,43 @@ export class VentasService {
       sucursalId:        r.solicitante?.sucursales_idsucursales ?? null,
       createdAt:         r.created_atanulaciones,
     }));
+  }
+
+  async getDireccionesFrecuentes(clienteId: number, rol?: 'remitente' | 'destinatario') {
+    return this.repo.findDireccionesFrecuentes(clienteId, rol);
+  }
+
+  async getDireccionesPorDocumento(documento: string, rol?: 'remitente' | 'destinatario') {
+    return this.repo.findDireccionesPorDocumento(documento, rol);
+  }
+
+  private async _guardarDireccionesFrecuentes(clienteId: number, dto: import('../dto/crear-envio.dto.js').CrearEnvioDto) {
+    await Promise.all([
+      this.repo.upsertDireccionFrecuente({
+        clienteId,
+        rol:         'remitente',
+        nombre:      dto.remitente.nombre,
+        empresa:     dto.remitente.empresa,
+        telefono:    dto.remitente.telefono,
+        email:       dto.remitente.email,
+        ciudad:      dto.remitente.ciudad,
+        pais:        dto.remitente.pais ?? 'CO',
+        codigoPostal: dto.remitente.codigoPostal,
+        documento:   dto.remitente.documento,
+      }),
+      this.repo.upsertDireccionFrecuente({
+        clienteId,
+        rol:         'destinatario',
+        nombre:      dto.destinatario.nombre,
+        empresa:     dto.destinatario.empresa,
+        telefono:    dto.destinatario.telefono,
+        email:       dto.destinatario.email,
+        direccion:   dto.destinatario.direccion,
+        ciudad:      dto.destinatario.ciudad,
+        pais:        dto.destinatario.pais ?? 'CO',
+        codigoPostal: dto.destinatario.codigoPostal,
+        documento:   dto.destinatario.documento,
+      }),
+    ]);
   }
 }

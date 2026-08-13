@@ -29,4 +29,19 @@ describe('calcularSeguroPostal', () => {
     // 50000 * 5 / 100 = 2500
     expect(calcularSeguroPostal('50000', '5')).toBe('2500');
   });
+
+  it('mínimo aplica cuando el cálculo es menor', () => {
+    // 1000 * 0.5 / 100 = 5 → pero mínimo es 500
+    expect(calcularSeguroPostal('1000', '0.5', 500)).toBe('500');
+  });
+
+  it('mínimo no aplica cuando el cálculo ya lo supera', () => {
+    // 200000 * 0.5 / 100 = 1000 → mínimo 500 no aplica
+    expect(calcularSeguroPostal('200000', '0.5', 500)).toBe('1000');
+  });
+
+  it('mínimo exactamente igual al resultado', () => {
+    // 100000 * 0.5 / 100 = 500 → mínimo 500 = resultado
+    expect(calcularSeguroPostal('100000', '0.5', 500)).toBe('500');
+  });
 });

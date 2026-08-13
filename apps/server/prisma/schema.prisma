@@ -191,6 +191,7 @@ enum tamano_apartado_postal {
 
 enum estado_apartado_postal {
   disponible
+  reservado
   ocupado
   vencido
   mantenimiento
@@ -675,6 +676,11 @@ model Servicio {
   factor_volumetricoservicios       Int                 @default(2500)
   tiempo_entrega_diasservicios      Int?
   codigo_sigmaservicios             String?             @db.VarChar(50)
+  tarifa_certificacionservicios     Decimal?            @db.Decimal(18, 2)
+  minimo_seguro_postalservicios     Decimal?            @db.Decimal(18, 2)
+  alto_max_cmservicios              Decimal?            @db.Decimal(8, 1)
+  ancho_max_cmservicios             Decimal?            @db.Decimal(8, 1)
+  largo_max_cmservicios             Decimal?            @db.Decimal(8, 1)
   activoservicios                   Boolean             @default(true)
   created_atservicios               DateTime            @default(now()) @db.Timestamptz(6)
   deleted_atservicios               DateTime?           @db.Timestamptz(6)
@@ -748,16 +754,42 @@ model Cliente {
   comercio    Comercio?    @relation(fields: [comercios_idcomercios], references: [idcomercios])
   tipoCliente TipoCliente? @relation(fields: [tipos_cliente_idtipos_cliente], references: [idtipos_cliente])
 
-  ventas            Venta[]
-  envios            Envio[]
-  apartadosPostales ApartadoPostal[]
-  giros             Giro[]
-  recaudos          Recaudo[]
-  facturas          Factura[]
+  ventas                Venta[]
+  envios                Envio[]
+  apartadosPostales     ApartadoPostal[]
+  giros                 Giro[]
+  recaudos              Recaudo[]
+  facturas              Factura[]
+  direccionesFrecuentes DireccionFrecuente[]
 
   @@unique([tipo_documentoclientes, numero_documentoclientes])
   @@index([tipo_documentoclientes, numero_documentoclientes], map: "idx_clientes_doc")
   @@map("clientes")
+}
+
+model DireccionFrecuente {
+  iddireccionesfrecuentes       Int      @id @default(autoincrement())
+  clientes_idclientes           Int
+  roldireccionesfrecuentes      String   @db.VarChar(20)
+  nombredireccionesfrecuentes   String   @db.VarChar(300)
+  empresadireccionesfrecuentes  String?  @db.VarChar(300)
+  telefonodirfrecuentes         String?  @db.VarChar(20)
+  emaildirfrecuentes            String?  @db.VarChar(200)
+  direcciondirfrecuentes        String?
+  ciudaddirfrecuentes           String?  @db.VarChar(100)
+  departamentodirfrecuentes     String?  @db.VarChar(100)
+  paisdirfrecuentes             String   @default("CO") @db.VarChar(5)
+  codigo_postaldirfrecuentes    String?  @db.VarChar(20)
+  documentodirfrecuentes        String?  @db.VarChar(50)
+  usosdirfrecuentes             Int      @default(1)
+  ultimo_usodirfrecuentes       DateTime @default(now()) @db.Timestamptz(6)
+  created_atdirfrecuentes       DateTime @default(now()) @db.Timestamptz(6)
+
+  cliente Cliente @relation(fields: [clientes_idclientes], references: [idclientes], onDelete: Cascade)
+
+  @@index([clientes_idclientes, roldireccionesfrecuentes], map: "idx_dir_frecuentes_cliente_rol")
+  @@index([documentodirfrecuentes, roldireccionesfrecuentes], map: "idx_dir_frecuentes_doc_rol")
+  @@map("direcciones_frecuentes")
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -946,8 +978,9 @@ model Venta {
   cliente    Cliente?   @relation(fields: [clientes_idclientes], references: [idclientes])
   documento  Documento? @relation(fields: [documentos_iddocumentos], references: [iddocumentos])
 
-  detalle VentaDetalle[]
-  envios  Envio[]
+  detalle             VentaDetalle[]
+  envios              Envio[]
+  apartadosPendientes ApartadoPostal[]
 
   @@index([sesiones_caja_idsesiones_caja], map: "idx_ventas_sesion")
   @@index([created_atventas], map: "idx_ventas_fecha")
@@ -1011,6 +1044,7 @@ model Envio {
   valor_servicioenvios               Decimal     @db.Decimal(18, 2)
   valor_estampillasenvios            Decimal     @default(0) @db.Decimal(18, 2)
   valor_seguroenvios                 Decimal     @default(0) @db.Decimal(18, 2)
+  valor_certificacionenvios          Decimal     @default(0) @db.Decimal(18, 2)
   valor_totalenvios                  Decimal     @db.Decimal(18, 2)
   medio_pagoenvios                   medio_pago?
   estadoenvios                       estado_envio @default(facturado)
@@ -1238,12 +1272,14 @@ model ApartadoPostal {
   incluye_ivaapartados_postales             Boolean                @default(true)
   dias_alerta_vencimientoapartados_postales Int                    @default(30)
   sesiones_caja_idsesiones_caja             Int?
+  ventas_idventas                           Int?
   created_atapartados_postales              DateTime               @default(now()) @db.Timestamptz(6)
   deleted_atapartados_postales              DateTime?              @db.Timestamptz(6)
 
   sucursal   Sucursal    @relation(fields: [sucursales_idsucursales], references: [idsucursales])
   cliente    Cliente?    @relation(fields: [clientes_idclientes], references: [idclientes])
   sesionCaja SesionCaja? @relation(fields: [sesiones_caja_idsesiones_caja], references: [idsesiones_caja])
+  venta      Venta?      @relation(fields: [ventas_idventas], references: [idventas])
 
   @@unique([sucursales_idsucursales, numeroapartados_postales])
   @@map("apartados_postales")
