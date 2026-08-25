@@ -14,7 +14,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { InventarioDomainFilter } from './inventario-domain.filter.js';
 import { InventarioPresenter } from './inventario.presenter.js';
 
-const ROLES_READ  = ['INVENTARIOS', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL'] as const;
+const ROLES_READ  = ['CAJERO', 'USUARIO_POST', 'INVENTARIOS', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL'] as const;
 const ROLES_WRITE = ['INVENTARIOS', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL'] as const;
 
 const EntradaSchema = z.object({

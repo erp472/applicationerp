@@ -25,7 +25,8 @@ import { GirosModule } from './giros/giros.module.js';
 import { RecaudosModule } from './recaudos/recaudos.module.js';
 import { RealtimeModule } from './realtime/realtime.module.js';
 import { SigmaModule } from './sigma/sigma.module.js';
-import { SacasModule } from './sacas/sacas.module.js';
+import { SacasModule }         from './sacas/sacas.module.js';
+import { EnviosMasivosModule } from './envios-masivos/envios-masivos.module.js';
 import { AuditContextInterceptor } from './common/interceptors/audit-context.interceptor.js';
 
 @Module({
@@ -36,6 +37,7 @@ import { AuditContextInterceptor } from './common/interceptors/audit-context.int
     GeoModule, ComerciosModule, RegionalesModule, SucursalesModule, EquiposModule,
     ProductosModule, ServiciosModule, CajasModule, VentasModule, ClientesModule,
     InventarioModule, GirosModule, RecaudosModule, RealtimeModule, SigmaModule, SacasModule,
+    EnviosMasivosModule,
   ],
   providers: [
     { provide: APP_INTERCEPTOR, useClass: AuditContextInterceptor },

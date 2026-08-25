@@ -153,3 +153,19 @@ export class EfectivoInsuficienteError extends VentaDomainError {
     this.name = 'EfectivoInsuficienteError';
   }
 }
+
+export class SaldoInsuficienteError extends VentaDomainError {
+  readonly statusCode = 422;
+  constructor(saldoActual: number, total: number) {
+    super(`Saldo a favor insuficiente: disponible $${saldoActual.toLocaleString('es-CO')}, total a pagar $${total.toLocaleString('es-CO')}`);
+    this.name = 'SaldoInsuficienteError';
+  }
+}
+
+export class ClienteRequeridoError extends VentaDomainError {
+  readonly statusCode = 422;
+  constructor() {
+    super('Se requiere un cliente identificado para pagar con saldo a favor');
+    this.name = 'ClienteRequeridoError';
+  }
+}

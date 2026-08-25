@@ -116,6 +116,7 @@ enum estado_aprobacion {
 
 enum estado_venta {
   activa
+  confirmada
   anulada
 }
 
@@ -270,6 +271,12 @@ enum estado_alerta {
   vista
 }
 
+enum estado_lote_masivo {
+  borrador
+  confirmado
+  anulado
+}
+
 enum operacion_auditoria {
   INSERT
   UPDATE
@@ -412,6 +419,7 @@ model Sucursal {
   conveniosSucursal     ConvenioSucursal[]
   alertas               Alerta[]
   envios                Envio[]
+  enviosMasivos         EnvioMasivo[]
   eventosAuditoria      EventoAuditoria[]
 
   @@map("sucursales")
@@ -531,6 +539,7 @@ model Usuario {
   reposicionesCaja        ReposicionCaja[]
   ventas                  Venta[]
   envios                  Envio[]
+  enviosMasivos           EnvioMasivo[]
   sacas                   Saca[]
   giros                   Giro[]
   recaudos                Recaudo[]
@@ -586,6 +595,7 @@ model Producto {
   codigoproductos             String       @unique @db.VarChar(50)
   nombreproductos             String       @db.VarChar(200)
   descripcionproductos        String?
+  serieproductos              String?      @db.VarChar(100)
   tipoproductos               tipo_producto
   precioproductos             Decimal      @db.Decimal(18, 2)
   precio_sin_taxproductos     Decimal?     @db.Decimal(18, 2)
@@ -676,6 +686,7 @@ model Servicio {
   factor_volumetricoservicios       Int                 @default(2500)
   tiempo_entrega_diasservicios      Int?
   codigo_sigmaservicios             String?             @db.VarChar(50)
+  prefijo_guia_servicios            String?             @db.VarChar(5)
   tarifa_certificacionservicios     Decimal?            @db.Decimal(18, 2)
   minimo_seguro_postalservicios     Decimal?            @db.Decimal(18, 2)
   alto_max_cmservicios              Decimal?            @db.Decimal(8, 1)
@@ -688,6 +699,7 @@ model Servicio {
   serviciosSucursal ServicioSucursal[]
   tarifasServicio   TarifaServicio[]
   envios            Envio[]
+  enviosMasivos     EnvioMasivo[]
 
   @@map("servicios")
 }
@@ -746,6 +758,7 @@ model Cliente {
   tipos_cliente_idtipos_cliente Int?
   nivel_sisbenclientes          Int?
   envios_sisben_anoclientes     Int                      @default(0)
+  saldo_a_favclientes           Decimal                  @default(0) @db.Decimal(18, 2)
   activoclientes                Boolean                  @default(true)
   created_atclientes            DateTime                 @default(now()) @db.Timestamptz(6)
   updated_atclientes            DateTime                 @default(now()) @db.Timestamptz(6)
@@ -756,6 +769,7 @@ model Cliente {
 
   ventas                Venta[]
   envios                Envio[]
+  enviosMasivos         EnvioMasivo[]
   apartadosPostales     ApartadoPostal[]
   giros                 Giro[]
   recaudos              Recaudo[]
@@ -861,6 +875,7 @@ model SesionCaja {
   diferencias      DiferenciaCaja[]
   ventas           Venta[]
   envios           Envio[]
+  enviosMasivos    EnvioMasivo[]
   sacas            Saca[]
   apartadosPostales ApartadoPostal[]
   giros            Giro[]
@@ -1023,6 +1038,7 @@ model Envio {
   remitente_telefonoenvios           String?     @db.VarChar(20)
   remitente_direccionenvios          String?
   remitente_ciudadenvios             String?     @db.VarChar(100)
+  remitente_departamentoenvios       String?     @db.VarChar(100)
   remitente_codigo_postalenvios      String?     @db.VarChar(20)
   destinatario_nombreenvios          String?     @db.VarChar(300)
   destinatario_documentoenvios       String?     @db.VarChar(30)
@@ -1031,6 +1047,7 @@ model Envio {
   destinatario_telefonoenvios        String?     @db.VarChar(20)
   destinatario_direccionenvios       String?
   destinatario_ciudadenvios          String?     @db.VarChar(100)
+  destinatario_departamentoenvios    String?     @db.VarChar(100)
   destinatario_paisenvios            String      @default("CO") @db.VarChar(5)
   destinatario_codigo_postalenvios   String?     @db.VarChar(20)
   peso_fisico_kgenvios               Decimal     @db.Decimal(8, 3)
@@ -1066,8 +1083,9 @@ model Envio {
   servicio   Servicio    @relation(fields: [servicios_idservicios], references: [idservicios])
   venta      Venta?      @relation(fields: [ventas_idventas], references: [idventas])
 
-  items  EnvioItem[]
-  sacas  EnvioSaca[]
+  items      EnvioItem[]
+  sacas      EnvioSaca[]
+  itemMasivo EnvioMasivoItem?
 
   @@index([sucursales_idsucursales, created_atenvios], map: "idx_envios_sucursal_fecha")
   @@index([numero_guiaenvios], map: "idx_envios_guia")
@@ -1553,4 +1571,89 @@ model FeatureFlagUsuario {
 
   @@id([feature_flags_idfeature_flags, usuarios_idusuarios])
   @@map("feature_flag_usuarios")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 22. ENVÍOS POSTALES MASIVOS (preporteado corporativo)
+// ══════════════════════════════════════════════════════════════════════════════
+
+model EnvioMasivo {
+  idenvios_masivos                     Int                @id @default(autoincrement())
+  sucursales_idsucursales              Int
+  sesiones_caja_idsesiones_caja        Int?
+  usuarios_idusuarios                  Int
+  clientes_idclientes                  Int?
+  servicios_idservicios                Int
+  // Remitente compartido (null cuando cada item tiene su propio remitente)
+  remitente_nombreenvios_masivos       String?            @db.VarChar(300)
+  remitente_documentoenvios_masivos    String?            @db.VarChar(30)
+  remitente_emailenvios_masivos        String?            @db.VarChar(200)
+  remitente_telefonoenvios_masivos     String?            @db.VarChar(20)
+  remitente_direccionenvios_masivos    String?
+  remitente_ciudadenvios_masivos       String?            @db.VarChar(100)
+  remitente_cpenvios_masivos           String?            @db.VarChar(20)
+  // Totales calculados en tiempo real
+  total_itemsenvios_masivos            Int                @default(0)
+  total_peso_kgenvios_masivos          Decimal            @default(0) @db.Decimal(10, 3)
+  total_estampillasenvios_masivos      Decimal            @default(0) @db.Decimal(18, 2)
+  total_certificacionenvios_masivos    Decimal            @default(0) @db.Decimal(18, 2)
+  valor_totalenvios_masivos            Decimal            @default(0) @db.Decimal(18, 2)
+  estadoenvios_masivos                 estado_lote_masivo @default(borrador)
+  observacionesenvios_masivos          String?
+  pdf_guias_pathenvios_masivos         String?
+  cobrado_atenvios_masivos             DateTime?          @db.Timestamptz(6)
+  medio_pago_cobroenvios_masivos       String?            @db.VarChar(30)
+  created_atenvios_masivos             DateTime           @default(now()) @db.Timestamptz(6)
+  updated_atenvios_masivos             DateTime           @default(now()) @db.Timestamptz(6)
+
+  sucursal   Sucursal    @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  sesionCaja SesionCaja? @relation(fields: [sesiones_caja_idsesiones_caja], references: [idsesiones_caja])
+  usuario    Usuario     @relation(fields: [usuarios_idusuarios], references: [idusuarios])
+  cliente    Cliente?    @relation(fields: [clientes_idclientes], references: [idclientes])
+  servicio   Servicio    @relation(fields: [servicios_idservicios], references: [idservicios])
+  items      EnvioMasivoItem[]
+
+  @@index([sucursales_idsucursales, created_atenvios_masivos], map: "idx_envios_masivos_sucursal_fecha")
+  @@index([estadoenvios_masivos], map: "idx_envios_masivos_estado")
+  @@map("envios_masivos")
+}
+
+model EnvioMasivoItem {
+  idenvios_masivos_items                          Int     @id @default(autoincrement())
+  envios_masivos_idenvios_masivos                 Int
+  numero_filaenvios_masivos_items                 Int
+  // Destinatario de esta fila
+  destinatario_nombreenvios_masivos_items         String  @db.VarChar(300)
+  destinatario_documentoenvios_masivos_items      String? @db.VarChar(30)
+  destinatario_emailenvios_masivos_items          String? @db.VarChar(200)
+  destinatario_telefonoenvios_masivos_items       String? @db.VarChar(20)
+  destinatario_direccionenvios_masivos_items      String?
+  destinatario_ciudadenvios_masivos_items         String? @db.VarChar(100)
+  destinatario_paisenvios_masivos_items           String  @default("CO") @db.VarChar(5)
+  destinatario_cpenvios_masivos_items             String? @db.VarChar(20)
+  // Remitente propio del item (override del remitente del lote)
+  remitente_nombreenvios_masivos_items            String? @db.VarChar(300)
+  remitente_documentoenvios_masivos_items         String? @db.VarChar(30)
+  remitente_emailenvios_masivos_items             String? @db.VarChar(200)
+  remitente_telefonoenvios_masivos_items          String? @db.VarChar(20)
+  remitente_direccionenvios_masivos_items         String?
+  remitente_ciudadenvios_masivos_items            String? @db.VarChar(100)
+  remitente_cpenvios_masivos_items                String? @db.VarChar(20)
+  // Datos del envío calculados en tiempo real
+  peso_fisico_kgenvios_masivos_items              Decimal @db.Decimal(8, 3)
+  peso_tarificado_kgenvios_masivos_items          Decimal @db.Decimal(8, 3)
+  valor_servicioenvios_masivos_items              Decimal @db.Decimal(18, 2)
+  valor_estampillasenvios_masivos_items           Decimal @default(0) @db.Decimal(18, 2)
+  valor_certificacionenvios_masivos_items         Decimal @default(0) @db.Decimal(18, 2)
+  valor_totalenvios_masivos_items                 Decimal @db.Decimal(18, 2)
+  contenidoenvios_masivos_items                   String? @db.VarChar(200)
+  observacionesenvios_masivos_items               String? @db.VarChar(500)
+  // Referencia al Envio creado al confirmar el lote
+  envios_idenvios                                 Int?    @unique
+
+  lote  EnvioMasivo @relation(fields: [envios_masivos_idenvios_masivos], references: [idenvios_masivos], onDelete: Cascade)
+  envio Envio?       @relation(fields: [envios_idenvios], references: [idenvios])
+
+  @@index([envios_masivos_idenvios_masivos], map: "idx_envios_masivos_items_lote")
+  @@map("envios_masivos_items")
 }

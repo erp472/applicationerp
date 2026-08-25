@@ -1,8 +1,9 @@
 import {
   Controller, Get, Post, Patch, Delete, Put,
-  Body, Param, Query, UseGuards, UseFilters,
+  Body, Param, Query, Res, UseGuards, UseFilters,
   ParseIntPipe, BadRequestException, HttpCode, HttpStatus,
 } from '@nestjs/common';
+import type { FastifyReply } from 'fastify';
 import {
   ApiTags, ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse,
 } from '@nestjs/swagger';
@@ -18,6 +19,7 @@ import { RenovarApartadoSchema }     from '../dto/renovar-apartado.dto.js';
 import { CrearApartadoAdminSchema }  from '../dto/crear-apartado-admin.dto.js';
 import { UpdateApartadoAdminSchema } from '../dto/update-apartado-admin.dto.js';
 import { CrearEnvioSchema }          from '../dto/crear-envio.dto.js';
+import { GuardarDireccionSchema }    from '../dto/guardar-direccion.dto.js';
 import { JwtAuthGuard }           from '../../common/guards/jwt-auth.guard.js';
 import { FeatureFlagGuard }       from '../../common/guards/feature-flag.guard.js';
 import { RolesGuard }             from '../../common/guards/roles.guard.js';
@@ -44,6 +46,15 @@ export class VentasController {
   constructor(private readonly service: VentasService) {}
 
   // ── Catálogo ─────────────────────────────────────────────────────────────────
+
+  @Get('punto/:cajaId/estampillas-disponibles')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Estampillas disponibles por denominación y serie (para preporteado)' })
+  @ApiParam({ name: 'cajaId', type: Number })
+  @ApiResponse({ status: 200, description: 'Lista de denominaciones con stock y serie' })
+  async getEstampillasDisponibles(@Param('cajaId', ParseIntPipe) cajaId: number) {
+    return this.service.getEstampillasDisponibles(cajaId);
+  }
 
   @Get('catalogo/productos')
   @Roles(...ROLES_READ)
@@ -94,6 +105,14 @@ export class VentasController {
     return cliente ? VentasPresenter.toCliente(cliente) : null;
   }
 
+  @Get('clientes/:clienteId/saldo-a-favor')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Consultar saldo a favor acumulado del cliente (por compras filatelia)' })
+  @ApiParam({ name: 'clienteId', type: Number })
+  async getSaldoAFavor(@Param('clienteId', ParseIntPipe) clienteId: number) {
+    return this.service.getSaldoAFavor(clienteId);
+  }
+
   @Get('clientes/:clienteId/direcciones')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Direcciones frecuentes del cliente en envíos anteriores' })
@@ -105,6 +124,20 @@ export class VentasController {
   ) {
     const rolVal = (rol === 'remitente' || rol === 'destinatario') ? rol : undefined;
     return this.service.getDireccionesFrecuentes(clienteId, rolVal);
+  }
+
+  @Post('clientes/:clienteId/direcciones')
+  @Roles(...ROLES_READ)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Guardar dirección frecuente manualmente' })
+  @ApiParam({ name: 'clienteId', type: Number })
+  async guardarDireccionManual(
+    @Param('clienteId', ParseIntPipe) clienteId: number,
+    @Body() body: unknown,
+  ) {
+    const parsed = GuardarDireccionSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    await this.service.guardarDireccionManual(clienteId, parsed.data);
   }
 
   @Get('direcciones')
@@ -197,11 +230,12 @@ export class VentasController {
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
     const result = await this.service.agregarEnvioAlCarrito(ventaId, cajaId, user.id, parsed.data);
     return {
-      envio:       VentasPresenter.toEnvio(result.envio),
-      guia:        VentasPresenter.toGuia(result.envio, result.cotizacion.servicio?.nombre, result.cotizacion.fechaEntregaEstimada?.toISOString() ?? null),
-      cotizacion:  { pesoTarificadoKg: result.cotizacion.pesoTarificadoKg, valorServicio: result.cotizacion.valorServicio },
-      numeroGuia:  result.numeroGuia,
-      estado:      'pendiente',
+      envio:                VentasPresenter.toEnvio(result.envio),
+      guia:                 VentasPresenter.toGuia(result.envio, result.cotizacion.servicio?.nombre, result.cotizacion.fechaEntregaEstimada?.toISOString() ?? null),
+      cotizacion:           { pesoTarificadoKg: result.cotizacion.pesoTarificadoKg, valorServicio: result.cotizacion.valorServicio },
+      numeroGuia:           result.numeroGuia,
+      estado:               'pendiente',
+      seleccionEstampillas: result.seleccionEstampillas,
     };
   }
 
@@ -321,6 +355,18 @@ export class VentasController {
     return this.service.getApartadosDisponibles(sucursalId, tamano);
   }
 
+  @Get('apartados/todos')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Todos los apartados postales de una sucursal (cualquier estado)' })
+  @ApiQuery({ name: 'sucursalId', type: Number, required: true })
+  @ApiQuery({ name: 'tamano', required: false, enum: ['pequeno', 'mediano', 'grande'] })
+  async getApartadosPorSucursal(
+    @Query('sucursalId', ParseIntPipe) sucursalId: number,
+    @Query('tamano') tamano?: string,
+  ) {
+    return this.service.getApartadosPorSucursal(sucursalId, tamano);
+  }
+
   @Post('punto/:cajaId/apartado')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Contratar apartado postal — registra MovimientoCaja tipo apartado_postal' })
@@ -409,7 +455,7 @@ export class VentasController {
   @ApiQuery({ name: 'largoCm',      type: Number,  required: false })
   @ApiQuery({ name: 'paisDestino',       required: false })
   @ApiQuery({ name: 'ciudadDestino',  required: false })
-  @ApiQuery({ name: 'tipoTrayecto',   required: false, enum: ['URBANO','NACIONAL','TE7','TE8'], description: 'Tipo de trayecto para servicios nacionales (reemplaza ciudadDestino en lookup de tarifa)' })
+  @ApiQuery({ name: 'tipoTrayecto',   required: false, enum: ['URBANO','NACIONAL','ESPECIAL'], description: 'Tipo de trayecto para servicios nacionales (reemplaza ciudadDestino en lookup de tarifa)' })
   @ApiQuery({ name: 'porcentajeArancel', type: Number, required: false, description: 'Porcentaje arancel destino — retorna estimado aduana en USD' })
   @ApiQuery({ name: 'trmDia',            type: Number, required: false, description: 'TRM del día para conversión COP→USD en estimado de aduana' })
   async cotizarEnvio(
@@ -420,7 +466,7 @@ export class VentasController {
     @Query('largoCm')         largoCmS?:     string,
     @Query('paisDestino')     paisDestino = 'CO',
     @Query('ciudadDestino')   ciudadDestino?: string,
-    @Query('tipoTrayecto')    tipoTrayecto?: 'URBANO' | 'NACIONAL' | 'TE7' | 'TE8',
+    @Query('tipoTrayecto')    tipoTrayecto?: 'URBANO' | 'NACIONAL' | 'ESPECIAL',
     @Query('porcentajeArancel') porcentajeArancelS?: string,
     @Query('trmDia')            trmDiaS?:            string,
   ) {
@@ -453,12 +499,13 @@ export class VentasController {
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
     const result = await this.service.crearEnvio(cajaId, user.id, parsed.data);
     return {
-      guia:        VentasPresenter.toGuia(result.envio, result.cotizacion.servicio?.nombre, result.cotizacion.fechaEntregaEstimada?.toISOString() ?? null),
-      envio:       VentasPresenter.toEnvio(result.envio),
-      cotizacion:  { pesoTarificadoKg: result.cotizacion.pesoTarificadoKg, valorServicio: result.cotizacion.valorServicio },
-      movimiento:  result.movimiento,
-      saldoActual: result.saldoActual,
-      alertas:     result.alertas,
+      guia:                 VentasPresenter.toGuia(result.envio, result.cotizacion.servicio?.nombre, result.cotizacion.fechaEntregaEstimada?.toISOString() ?? null),
+      envio:                VentasPresenter.toEnvio(result.envio),
+      cotizacion:           { pesoTarificadoKg: result.cotizacion.pesoTarificadoKg, valorServicio: result.cotizacion.valorServicio },
+      movimiento:           result.movimiento,
+      saldoActual:          result.saldoActual,
+      alertas:              result.alertas,
+      seleccionEstampillas: result.seleccionEstampillas,
     };
   }
 
@@ -575,5 +622,22 @@ export class VentasController {
         ? (user.sucursal_id ?? undefined)
         : undefined;
     return this.service.getAnulacionesPendientes(sucursalId);
+  }
+
+  // ── Guía PDF de envío individual ──────────────────────────────────────────────
+
+  @Get('envios/:envioId/guia-pdf')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Descargar guía postal individual en PDF' })
+  @ApiParam({ name: 'envioId', type: Number })
+  async descargarGuiaEnvioPdf(
+    @Param('envioId', ParseIntPipe) envioId: number,
+    @Res() reply: FastifyReply,
+  ) {
+    const buffer = await this.service.getEnvioGuiaPdf(envioId);
+    reply
+      .header('Content-Type', 'application/pdf')
+      .header('Content-Disposition', `attachment; filename="guia-${envioId}.pdf"`)
+      .send(buffer);
   }
 }

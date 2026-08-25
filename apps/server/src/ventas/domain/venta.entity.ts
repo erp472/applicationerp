@@ -1,7 +1,8 @@
 export type EstadoVenta  = 'activa' | 'confirmada' | 'anulada';
 export type MedioPagoVenta =
   | 'efectivo' | 'cheque' | 'tarjeta_debito' | 'tarjeta_credito'
-  | 'transferencia' | 'consignacion' | 'preporteado' | 'mixto_preporteado';
+  | 'transferencia' | 'consignacion' | 'preporteado' | 'mixto_preporteado'
+  | 'saldo_a_favor';
 export type TipoProducto = 'estampilla' | 'filatelia' | 'empaque' | 'material_oficina' | 'giro' | 'paquete' | 'otro';
 
 export class VentaDetalleEntity {
@@ -47,6 +48,7 @@ export class ClienteResumenEntity {
   apellido:        string | null;
   email:           string | null;
   telefono:        string | null;
+  saldoAFavor:     number;
 }
 
 export class ProductoCatalogoEntity {
@@ -172,16 +174,18 @@ export class EnvioEntity {
   remitenteTelefono:        string | null;
   remitenteEmail:           string | null;
   remitenteDireccion:       string | null;
-  remitenteCiudad:          string | null;
-  remitenteCodigoPostal:    string | null;
-  destinatarioNombre:       string | null;
-  destinatarioDocumento:    string | null;
-  destinatarioTelefono:     string | null;
-  destinatarioEmail:        string | null;
-  destinatarioDireccion:    string | null;
-  destinatarioCiudad:       string | null;
-  destinatarioCodigoPostal: string | null;
-  destinatarioPais:         string;
+  remitenteCiudad:            string | null;
+  remitenteDepartamento:      string | null;
+  remitenteCodigoPostal:      string | null;
+  destinatarioNombre:         string | null;
+  destinatarioDocumento:      string | null;
+  destinatarioTelefono:       string | null;
+  destinatarioEmail:          string | null;
+  destinatarioDireccion:      string | null;
+  destinatarioCiudad:         string | null;
+  destinatarioDepartamento:   string | null;
+  destinatarioCodigoPostal:   string | null;
+  destinatarioPais:           string;
   pesoFisicoKg:          number;
   pesoVolumetricoKg:     number | null;
   pesoTarificadoKg:      number;

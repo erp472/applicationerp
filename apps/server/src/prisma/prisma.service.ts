@@ -152,6 +152,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   get envioItem()             { return this.client.envioItem; }
   get direccionFrecuente()    { return this.client.direccionFrecuente; }
 
+  // ── 22. Envíos masivos ─────────────────────────────────────────────────────
+  get envioMasivo()           { return this.client.envioMasivo; }
+  get envioMasivoItem()       { return this.client.envioMasivoItem; }
+
   // ── 12. Facturación ────────────────────────────────────────────────────────
   get factura()         { return this.client.factura; }
   get facturaItem()     { return this.client.facturaItem; }

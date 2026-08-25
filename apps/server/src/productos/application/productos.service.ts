@@ -37,6 +37,7 @@ export class ProductosService {
       codigo:           dto.codigo,
       nombre:           dto.nombre,
       descripcion:      dto.descripcion ?? null,
+      serie:            (dto as any).serie ?? null,
       tipo:             dto.tipo,
       precio:           dto.precio,
       porcentajeTax:    dto.porcentaje_tax,
@@ -75,6 +76,7 @@ export class ProductosService {
     return this.repo.update(id, {
       nombre:            dto.nombre,
       descripcion:       dto.descripcion,
+      serie:             (dto as any).serie,
       precio:            dto.precio,
       porcentajeTax:     dto.porcentaje_tax,
       precioSinTax,

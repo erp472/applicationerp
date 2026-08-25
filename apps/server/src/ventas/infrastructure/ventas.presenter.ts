@@ -51,6 +51,7 @@ export class VentasPresenter {
       apellido:        entity.apellido,
       email:           entity.email,
       telefono:        entity.telefono,
+      saldoAFavor:     entity.saldoAFavor,
     };
   }
 
@@ -134,6 +135,7 @@ export class VentasPresenter {
         email:        entity.remitenteEmail,
         direccion:    entity.remitenteDireccion,
         ciudad:       entity.remitenteCiudad,
+        departamento: entity.remitenteDepartamento,
         codigoPostal: entity.remitenteCodigoPostal,
         pais:         'CO',
       },
@@ -144,6 +146,7 @@ export class VentasPresenter {
         email:        entity.destinatarioEmail,
         direccion:    entity.destinatarioDireccion,
         ciudad:       entity.destinatarioCiudad,
+        departamento: entity.destinatarioDepartamento,
         codigoPostal: entity.destinatarioCodigoPostal,
         pais:         entity.destinatarioPais,
       },

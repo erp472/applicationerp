@@ -20,10 +20,17 @@ import { ProductosDomainFilter } from './productos-domain.filter.js';
 
 const ROLES_ADMIN = ['ADMIN_SISTEMA', 'ADMIN_NACIONAL'] as const;
 
+export const SERIES_ESTAMPILLA = [
+  'Banco de la Moneda',
+  'Salto de Tequendama',
+  'Laupat',
+] as const;
+
 const CreateEstampillaSchema = z.object({
   codigo: z.string().min(1).max(50),
   nombre: z.string().min(1).max(200),
   precio: z.number().positive(),
+  serie:  z.string().max(100).optional(),
 });
 type CreateEstampillaDto = z.infer<typeof CreateEstampillaSchema>;
 
@@ -79,6 +86,7 @@ export class EstampillasAdminController {
         codigo: { type: 'string', example: 'ES-NUEVA' },
         nombre: { type: 'string', example: 'ES Nueva Estampilla Colombia' },
         precio: { type: 'number', example: 1500 },
+        serie:  { type: 'string', example: 'Banco de la Moneda', enum: [...SERIES_ESTAMPILLA] },
       },
     },
   })
@@ -90,7 +98,7 @@ export class EstampillasAdminController {
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
     const dto: CreateEstampillaDto & { tipo: 'estampilla'; porcentaje_tax: number } = {
       ...parsed.data,
-      tipo: 'estampilla',
+      tipo:           'estampilla',
       porcentaje_tax: 0,
     };
     return ProductosPresenter.toResponse(await this.service.create(dto));
@@ -105,6 +113,7 @@ export class EstampillasAdminController {
       properties: {
         nombre: { type: 'string', example: 'ES Nombre Actualizado' },
         precio: { type: 'number', example: 2000 },
+        serie:  { type: 'string', example: 'Laupat', enum: [...SERIES_ESTAMPILLA] },
         activo: { type: 'boolean', example: true },
       },
     },

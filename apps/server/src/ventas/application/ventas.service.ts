@@ -21,6 +21,8 @@ import {
   StockInsuficienteError,
   CantidadMinimaError,
   CantidadMaximaError,
+  SaldoInsuficienteError,
+  ClienteRequeridoError,
 } from '../domain/venta.errors.js';
 import {
   validarSesionActivaParaVenta,
@@ -76,6 +78,7 @@ import type { AgregarApartadoCarritoDto }       from '../dto/agregar-apartado-ca
 import type { CrearApartadoAdminDto }           from '../dto/crear-apartado-admin.dto.js';
 import type { UpdateApartadoAdminDto }          from '../dto/update-apartado-admin.dto.js';
 import type { CrearEnvioDto }                   from '../dto/crear-envio.dto.js';
+import { generarGuiaEnvioPdf } from '../domain/guia-envio-pdf.generator.js';
 
 @Injectable()
 export class VentasService {
@@ -110,6 +113,12 @@ export class VentasService {
 
   async buscarCliente(tipo: string, numero: string) {
     return this.repo.findClienteByDocumento(tipo, numero);
+  }
+
+  async getEstampillasDisponibles(cajaId: number) {
+    const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
+    if (!sesion) return [];
+    return this.repo.findEstampillasConStock(sesion.sucursalId);
   }
 
   // ── Iniciar venta ─────────────────────────────────────────────────────────────
@@ -309,16 +318,18 @@ export class VentasService {
       remitenteEmail:       dto.remitente.email,
       remitenteTelefono:    dto.remitente.telefono,
       remitenteDireccion:   dto.remitente.direccion,
-      remitenteCiudad:      dto.remitente.ciudad,
-      remitenteCp:          dto.remitente.codigoPostal,
-      destinatarioNombre:   dto.destinatario.nombre,
-      destinatarioDocumento: dto.destinatario.documento,
-      destinatarioEmail:    dto.destinatario.email,
-      destinatarioTelefono: dto.destinatario.telefono,
-      destinatarioDireccion: dto.destinatario.direccion,
-      destinatarioCiudad:   dto.destinatario.ciudad,
-      destinatarioPais:     dto.destinatario.pais,
-      destinatarioCp:       dto.destinatario.codigoPostal,
+      remitenteCiudad:          dto.remitente.ciudad,
+      remitenteDepartamento:    dto.remitente.departamento,
+      remitenteCp:              dto.remitente.codigoPostal,
+      destinatarioNombre:       dto.destinatario.nombre,
+      destinatarioDocumento:    dto.destinatario.documento,
+      destinatarioEmail:        dto.destinatario.email,
+      destinatarioTelefono:     dto.destinatario.telefono,
+      destinatarioDireccion:    dto.destinatario.direccion,
+      destinatarioCiudad:       dto.destinatario.ciudad,
+      destinatarioDepartamento: dto.destinatario.departamento,
+      destinatarioPais:         dto.destinatario.pais,
+      destinatarioCp:           dto.destinatario.codigoPostal,
       pesoFisicoKg:         dto.pesoFisicoKg,
       altoCm:               dto.altoCm,
       anchoCm:              dto.anchoCm,
@@ -342,7 +353,7 @@ export class VentasService {
 
     await this._recalcularTotales(ventaId);
 
-    return { envio, cotizacion, numeroGuia };
+    return { envio, cotizacion, numeroGuia, seleccionEstampillas: estampillasResult.seleccion };
   }
 
   async eliminarEnvioDelCarrito(ventaId: number, envioId: number) {
@@ -389,6 +400,23 @@ export class VentasService {
 
     if (dto.medioPago === 'efectivo') {
       validarEfectivoSuficiente(dto.efectivoRecibido!, venta.total);
+    }
+    if (dto.medioPago === 'preporteado') {
+      validarPreporteado(String(dto.montoEstampillas!), String(venta.total));
+    }
+    if (dto.medioPago === 'mixto_preporteado') {
+      buildMixtoPreporteado(
+        String(dto.montoEstampillas!),
+        String(dto.montoEfectivo!),
+        String(venta.total),
+      );
+    }
+    if (dto.medioPago === 'saldo_a_favor') {
+      if (!venta.clienteId) throw new ClienteRequeridoError();
+      const clienteSaldo = await this.repo.findClienteById(venta.clienteId);
+      if (!clienteSaldo || clienteSaldo.saldoAFavor < venta.total) {
+        throw new SaldoInsuficienteError(clienteSaldo?.saldoAFavor ?? 0, venta.total);
+      }
     }
 
     const ventaActualizada = await this.repo.confirmarVenta(ventaId, {
@@ -445,6 +473,32 @@ export class VentasService {
       });
     }
 
+    // Filatelia → acumular saldo a favor para el cliente identificado
+    const tieneFilatelia = (venta.detalle ?? []).some(d => d.tipoProducto === 'filatelia');
+    if (tieneFilatelia && venta.clienteId) {
+      const montoFilatelia = (venta.detalle ?? [])
+        .filter(d => d.tipoProducto === 'filatelia')
+        .reduce((sum, d) => sum + d.subtotal, 0);
+      await this.repo.acumularSaldoAFavor(venta.clienteId, montoFilatelia);
+    }
+
+    // Preporteado / mixto → descontar del saldo a favor del cliente si tiene saldo
+    if (venta.clienteId && (dto.medioPago === 'preporteado' || dto.medioPago === 'mixto_preporteado')) {
+      const clienteData = await this.repo.findClienteById(venta.clienteId);
+      if (clienteData && clienteData.saldoAFavor > 0) {
+        const montoPrep = dto.medioPago === 'mixto_preporteado'
+          ? (dto.montoEstampillas ?? 0)
+          : venta.total;
+        const deducir = Math.min(montoPrep, clienteData.saldoAFavor);
+        if (deducir > 0) await this.repo.deducirSaldoAFavor(venta.clienteId, deducir);
+      }
+    }
+
+    // Saldo a favor puro → deducir del balance del cliente
+    if (dto.medioPago === 'saldo_a_favor' && venta.clienteId) {
+      await this.repo.deducirSaldoAFavor(venta.clienteId, venta.total);
+    }
+
     // Determinar el tipo de movimiento según los productos de la venta
     const tieneEnvios     = guiasGeneradas.length > 0;
     const tieneApartados  = apartadosPendientes.length > 0;
@@ -499,6 +553,12 @@ export class VentasService {
 
   async getVentasDia(sucursalId: number) {
     return this.repo.findVentasBySucursalHoy(sucursalId);
+  }
+
+  async getSaldoAFavor(clienteId: number): Promise<{ saldoAFavor: number }> {
+    const cliente = await this.repo.findClienteById(clienteId);
+    if (!cliente) throw new ClienteNoEncontradoError('id', String(clienteId));
+    return { saldoAFavor: cliente.saldoAFavor };
   }
 
   // ── Anular venta ──────────────────────────────────────────────────────────────
@@ -599,6 +659,11 @@ export class VentasService {
     return { totalDisponibles: disponibilidad.totalDisponibles, lista: enriquecidos };
   }
 
+  async getApartadosPorSucursal(sucursalId: number, tamano?: string) {
+    const items = await this.repo.findApartadosPorSucursal(sucursalId, tamano as any);
+    return items.map(item => this._enriquecerApartado(item));
+  }
+
   async getServiciosPostales(sucursalId: number) {
     return this.repo.findServiciosBySucursal(sucursalId);
   }
@@ -623,7 +688,7 @@ export class VentasService {
     const fechaInicio = new Date(dto.fechaInicio);
     const fechaFin    = new Date(calcularFechaVencimiento(dto.fechaInicio, dto.meses));
     const precioBase  = calcularPrecioPorMeses(String(VentasService.TARIFA_ANUAL_APARTADO_POSTAL), dto.meses);
-    const ivaResult   = calcularIvaApartado(precioBase, '19', true);
+    const ivaResult   = calcularIvaApartado(precioBase, '19', false);
 
     const apartadoReservado = await this.repo.reservarApartado({
       apartadoId:   apartado.id,
@@ -634,7 +699,7 @@ export class VentasService {
       fechaInicio,
       fechaFin,
       monto:        Number(ivaResult.precioTotal),
-      incluyeIva:   true,
+      incluyeIva:   false,
     });
 
     await this._recalcularTotales(ventaId);
@@ -669,7 +734,7 @@ export class VentasService {
     const fechaFin    = new Date(calcularFechaVencimiento(dto.fechaInicio, dto.meses));
 
     const precioBase = calcularPrecioPorMeses(String(VentasService.TARIFA_ANUAL_APARTADO_POSTAL), dto.meses);
-    const ivaResult  = calcularIvaApartado(precioBase, '19', true);
+    const ivaResult  = calcularIvaApartado(precioBase, '19', false);
 
     const apartadoContratado = await this.repo.contratarApartado({
       sucursalId:   apartado.sucursalId,
@@ -680,7 +745,7 @@ export class VentasService {
       fechaInicio,
       fechaFin,
       monto:        Number(ivaResult.precioTotal),
-      incluyeIva:   true,
+      incluyeIva:   false,
     });
 
     const { movimiento, saldoActual, alertas } = await this.cajasService.registrarMovimientoVenta({
@@ -775,8 +840,8 @@ export class VentasService {
     ciudadDestino?: string,
     porcentajeArancel?: number,
     trmDia?: number,
-    // Tipo de trayecto para servicios nacionales: URBANO | NACIONAL | TE7 | TE8
-    tipoTrayecto?: 'URBANO' | 'NACIONAL' | 'TE7' | 'TE8',
+    // Tipo de trayecto para servicios nacionales: URBANO | NACIONAL | ESPECIAL
+    tipoTrayecto?: 'URBANO' | 'NACIONAL' | 'ESPECIAL',
   ) {
     const servicio = await this.repo.findServicioById(servicioId);
     if (!servicio) throw new ServicioNoEncontradoError(servicioId);
@@ -819,7 +884,7 @@ export class VentasService {
       valorServicio = Number(tarifaCop);
     } else {
       // Para servicios nacionales, tipoTrayecto determina la tarifa aplicable.
-      // NACIONAL y undefined → null (tarifa por defecto); URBANO/TE7/TE8 → lookup específico.
+      // NACIONAL y undefined → ciudadDestino como lookup; URBANO/ESPECIAL → lookup específico.
       const lookupKey = tipoTrayecto && tipoTrayecto !== 'NACIONAL' ? tipoTrayecto : ciudadDestino;
       tarifa = await this.repo.findTarifaEnvio(servicioId, pesoTarificado, paisDestino, lookupKey);
       if (!tarifa) throw new TarifaNoEncontradaError(servicioId, pesoTarificado);
@@ -956,16 +1021,18 @@ export class VentasService {
       remitenteEmail:       dto.remitente.email,
       remitenteTelefono:    dto.remitente.telefono,
       remitenteDireccion:   dto.remitente.direccion,
-      remitenteCiudad:      dto.remitente.ciudad,
-      remitenteCp:          dto.remitente.codigoPostal,
-      destinatarioNombre:   dto.destinatario.nombre,
-      destinatarioDocumento: dto.destinatario.documento,
-      destinatarioEmail:    dto.destinatario.email,
-      destinatarioTelefono: dto.destinatario.telefono,
-      destinatarioDireccion: dto.destinatario.direccion,
-      destinatarioCiudad:   dto.destinatario.ciudad,
-      destinatarioPais:     dto.destinatario.pais,
-      destinatarioCp:       dto.destinatario.codigoPostal,
+      remitenteCiudad:          dto.remitente.ciudad,
+      remitenteDepartamento:    dto.remitente.departamento,
+      remitenteCp:              dto.remitente.codigoPostal,
+      destinatarioNombre:       dto.destinatario.nombre,
+      destinatarioDocumento:    dto.destinatario.documento,
+      destinatarioEmail:        dto.destinatario.email,
+      destinatarioTelefono:     dto.destinatario.telefono,
+      destinatarioDireccion:    dto.destinatario.direccion,
+      destinatarioCiudad:       dto.destinatario.ciudad,
+      destinatarioDepartamento: dto.destinatario.departamento,
+      destinatarioPais:         dto.destinatario.pais,
+      destinatarioCp:           dto.destinatario.codigoPostal,
       pesoFisicoKg:         dto.pesoFisicoKg,
       altoCm:               dto.altoCm,
       anchoCm:              dto.anchoCm,
@@ -997,7 +1064,21 @@ export class VentasService {
       referenciaTipo: 'Envio',
     });
 
-    return { envio, cotizacion, movimiento, saldoActual, alertas };
+    return { envio, cotizacion, movimiento, saldoActual, alertas, seleccionEstampillas: estampillasResult.seleccion };
+  }
+
+  // ── Guía PDF de envío individual ──────────────────────────────────────────────
+
+  async getEnvioGuiaPdf(envioId: number): Promise<Buffer> {
+    const envio = await this.repo.findEnvioById(envioId);
+    if (!envio) throw new NotFoundException(`Envío ${envioId} no encontrado`);
+
+    const servicio = await this.prisma.servicio.findUnique({
+      where:  { idservicios: envio.servicioId },
+      select: { nombreservicios: true },
+    });
+
+    return generarGuiaEnvioPdf(envio, servicio?.nombreservicios ?? envio.tipo);
   }
 
   // ── Resumen del turno ─────────────────────────────────────────────────────────
@@ -1161,6 +1242,25 @@ export class VentasService {
 
   async getDireccionesPorDocumento(documento: string, rol?: 'remitente' | 'destinatario') {
     return this.repo.findDireccionesPorDocumento(documento, rol);
+  }
+
+  async guardarDireccionManual(
+    clienteId: number,
+    data: {
+      rol:          'remitente' | 'destinatario';
+      nombre:       string;
+      empresa?:     string;
+      telefono?:    string;
+      email?:       string;
+      direccion?:   string;
+      ciudad?:      string;
+      departamento?: string;
+      pais:         string;
+      codigoPostal?: string;
+      documento?:   string;
+    },
+  ): Promise<void> {
+    await this.repo.upsertDireccionFrecuente({ clienteId, ...data });
   }
 
   private async _guardarDireccionesFrecuentes(clienteId: number, dto: import('../dto/crear-envio.dto.js').CrearEnvioDto) {

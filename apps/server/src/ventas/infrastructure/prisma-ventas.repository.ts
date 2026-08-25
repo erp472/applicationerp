@@ -79,6 +79,7 @@ const SELECT_CLIENTE = {
   apellidoclientes:         true,
   emailclientes:            true,
   telefonoclientes:         true,
+  saldo_a_favclientes:      true,
 } satisfies Prisma.ClienteSelect;
 
 const SELECT_PRODUCTO = {
@@ -145,6 +146,7 @@ function toClienteEntity(row: ClienteRow): ClienteResumenEntity {
     apellido:        row.apellidoclientes ?? null,
     email:           row.emailclientes ?? null,
     telefono:        row.telefonoclientes ?? null,
+    saldoAFavor:     Number(row.saldo_a_favclientes ?? 0),
   };
 }
 
@@ -228,6 +230,7 @@ function toEnvioEntity(row: any): EnvioEntity {
     remitenteEmail:           row.remitente_emailenvios ?? null,
     remitenteDireccion:       row.remitente_direccionenvios ?? null,
     remitenteCiudad:          row.remitente_ciudadenvios ?? null,
+    remitenteDepartamento:    row.remitente_departamentoenvios ?? null,
     remitenteCodigoPostal:    row.remitente_codigo_postalenvios ?? null,
     destinatarioNombre:       row.destinatario_nombreenvios ?? null,
     destinatarioDocumento:    row.destinatario_documentoenvios ?? null,
@@ -235,6 +238,7 @@ function toEnvioEntity(row: any): EnvioEntity {
     destinatarioEmail:        row.destinatario_emailenvios ?? null,
     destinatarioDireccion:    row.destinatario_direccionenvios ?? null,
     destinatarioCiudad:       row.destinatario_ciudadenvios ?? null,
+    destinatarioDepartamento: row.destinatario_departamentoenvios ?? null,
     destinatarioCodigoPostal: row.destinatario_codigo_postalenvios ?? null,
     destinatarioPais:         row.destinatario_paisenvios,
     pesoFisicoKg:          Number(row.peso_fisico_kgenvios),
@@ -292,6 +296,28 @@ export class PrismaVentasRepository implements IVentasRepository {
       select: SELECT_CLIENTE,
     });
     return row ? toClienteEntity(row) : null;
+  }
+
+  async findClienteById(clienteId: number): Promise<ClienteResumenEntity | null> {
+    const row = await this.prisma.cliente.findUnique({
+      where:  { idclientes: clienteId },
+      select: SELECT_CLIENTE,
+    });
+    return row ? toClienteEntity(row) : null;
+  }
+
+  async acumularSaldoAFavor(clienteId: number, monto: number): Promise<void> {
+    await this.prisma.cliente.update({
+      where: { idclientes: clienteId },
+      data:  { saldo_a_favclientes: { increment: monto } },
+    });
+  }
+
+  async deducirSaldoAFavor(clienteId: number, monto: number): Promise<void> {
+    await this.prisma.cliente.update({
+      where: { idclientes: clienteId },
+      data:  { saldo_a_favclientes: { decrement: monto } },
+    });
   }
 
   // ── Catálogo ────────────────────────────────────────────────────────────────
@@ -496,6 +522,21 @@ export class PrismaVentasRepository implements IVentasRepository {
         ...(tamano && { tamanoapartados_postales: tamano }),
       },
       orderBy: { numeroapartados_postales: 'asc' },
+    });
+    return rows.map(toApartadoEntity);
+  }
+
+  async findApartadosPorSucursal(sucursalId: number, tamano?: TamanoApartado): Promise<ApartadoPostalEntity[]> {
+    const rows = await this.prisma.apartadoPostal.findMany({
+      where: {
+        sucursales_idsucursales: sucursalId,
+        deleted_atapartados_postales: null,
+        ...(tamano && { tamanoapartados_postales: tamano }),
+      },
+      orderBy: [
+        { estadoapartados_postales: 'asc' },
+        { numeroapartados_postales: 'asc' },
+      ],
     });
     return rows.map(toApartadoEntity);
   }
@@ -759,7 +800,7 @@ export class PrismaVentasRepository implements IVentasRepository {
     return rows.map(r => r.pais_destinotarifas_servicio);
   }
 
-  async findEstampillasConStock(sucursalId: number): Promise<{ denominacion: string; stock: number }[]> {
+  async findEstampillasConStock(sucursalId: number): Promise<{ denominacion: string; stock: number; serie: string | null }[]> {
     const rows = await this.prisma.producto.findMany({
       where: {
         tipoproductos:       'estampilla',
@@ -768,7 +809,8 @@ export class PrismaVentasRepository implements IVentasRepository {
         productosSucursal:   { some: { sucursales_idsucursales: sucursalId, activoproductos_sucursal: true } },
       },
       select: {
-        precioproductos: true,
+        precioproductos:  true,
+        serieproductos:   true,
         inventarioSucursal: {
           where:  { sucursales_idsucursales: sucursalId },
           select: { cantidad_actualinventario_sucursal: true },
@@ -782,6 +824,7 @@ export class PrismaVentasRepository implements IVentasRepository {
       .map(r => ({
         denominacion: String(Math.round(Number(r.precioproductos))),
         stock:        r.inventarioSucursal[0]?.cantidad_actualinventario_sucursal ?? 0,
+        serie:        r.serieproductos ?? null,
       }));
   }
 
@@ -800,16 +843,18 @@ export class PrismaVentasRepository implements IVentasRepository {
         remitente_emailenvios:           data.remitenteEmail ?? null,
         remitente_telefonoenvios:        data.remitenteTelefono ?? null,
         remitente_direccionenvios:       data.remitenteDireccion ?? null,
-        remitente_ciudadenvios:          data.remitenteCiudad ?? null,
-        remitente_codigo_postalenvios:   data.remitenteCp ?? null,
-        destinatario_nombreenvios:       data.destinatarioNombre,
-        destinatario_documentoenvios:    data.destinatarioDocumento ?? null,
-        destinatario_emailenvios:        data.destinatarioEmail ?? null,
-        destinatario_telefonoenvios:     data.destinatarioTelefono ?? null,
-        destinatario_direccionenvios:    data.destinatarioDireccion ?? null,
-        destinatario_ciudadenvios:       data.destinatarioCiudad ?? null,
-        destinatario_paisenvios:         data.destinatarioPais,
-        destinatario_codigo_postalenvios: data.destinatarioCp ?? null,
+        remitente_ciudadenvios:               data.remitenteCiudad ?? null,
+        remitente_departamentoenvios:         data.remitenteDepartamento ?? null,
+        remitente_codigo_postalenvios:        data.remitenteCp ?? null,
+        destinatario_nombreenvios:            data.destinatarioNombre,
+        destinatario_documentoenvios:         data.destinatarioDocumento ?? null,
+        destinatario_emailenvios:             data.destinatarioEmail ?? null,
+        destinatario_telefonoenvios:          data.destinatarioTelefono ?? null,
+        destinatario_direccionenvios:         data.destinatarioDireccion ?? null,
+        destinatario_ciudadenvios:            data.destinatarioCiudad ?? null,
+        destinatario_departamentoenvios:      data.destinatarioDepartamento ?? null,
+        destinatario_paisenvios:              data.destinatarioPais,
+        destinatario_codigo_postalenvios:     data.destinatarioCp ?? null,
         peso_fisico_kgenvios:            data.pesoFisicoKg,
         alto_cmenvios:                   data.altoCm ?? null,
         ancho_cmenvios:                  data.anchoCm ?? null,
@@ -837,6 +882,12 @@ export class PrismaVentasRepository implements IVentasRepository {
       where: { idenvios: id },
       data:  { estadoenvios: 'anulado', updated_atenvios: new Date() },
     });
+    return toEnvioEntity(row);
+  }
+
+  async findEnvioById(id: number): Promise<EnvioEntity | null> {
+    const row = await this.prisma.envio.findUnique({ where: { idenvios: id } });
+    if (!row) return null;
     return toEnvioEntity(row);
   }
 

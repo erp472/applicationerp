@@ -90,16 +90,18 @@ export interface CrearEnvioData {
   remitenteEmail?:      string;
   remitenteTelefono?:   string;
   remitenteDireccion?:  string;
-  remitenteCiudad?:     string;
-  remitenteCp?:         string;
-  destinatarioNombre:   string;
-  destinatarioDocumento?: string;
-  destinatarioEmail?:   string;
-  destinatarioTelefono?: string;
-  destinatarioDireccion?: string;
-  destinatarioCiudad?:  string;
-  destinatarioPais:     string;
-  destinatarioCp?:      string;
+  remitenteCiudad?:         string;
+  remitenteDepartamento?:   string;
+  remitenteCp?:             string;
+  destinatarioNombre:       string;
+  destinatarioDocumento?:   string;
+  destinatarioEmail?:       string;
+  destinatarioTelefono?:    string;
+  destinatarioDireccion?:   string;
+  destinatarioCiudad?:      string;
+  destinatarioDepartamento?: string;
+  destinatarioPais:         string;
+  destinatarioCp?:          string;
   pesoFisicoKg:         number;
   altoCm?:              number;
   anchoCm?:             number;
@@ -121,6 +123,9 @@ export interface CrearEnvioData {
 export interface IVentasRepository {
   // Clientes
   findClienteByDocumento(tipo: string, numero: string): Promise<ClienteResumenEntity | null>;
+  findClienteById(clienteId: number): Promise<ClienteResumenEntity | null>;
+  acumularSaldoAFavor(clienteId: number, monto: number): Promise<void>;
+  deducirSaldoAFavor(clienteId: number, monto: number): Promise<void>;
 
   // Catálogo productos
   findProductosBySucursal(sucursalId: number, tipo?: TipoProducto): Promise<ProductoCatalogoEntity[]>;
@@ -143,6 +148,7 @@ export interface IVentasRepository {
 
   // Apartado Postal — operativo
   findApartadosDisponibles(sucursalId: number, tamano?: TamanoApartado): Promise<ApartadoPostalEntity[]>;
+  findApartadosPorSucursal(sucursalId: number, tamano?: TamanoApartado): Promise<ApartadoPostalEntity[]>;
   findApartadoByNumero(sucursalId: number, numero: string): Promise<ApartadoPostalEntity | null>;
   contratarApartado(data: ContratarApartadoData): Promise<ApartadoPostalEntity>;
   reservarApartado(data: ReservarApartadoData): Promise<ApartadoPostalEntity>;
@@ -165,9 +171,10 @@ export interface IVentasRepository {
   findTarifaEnvio(servicioId: number, pesoKg: number, paisDestino: string, ciudadDestino?: string): Promise<TarifaEnvioEntity | null>;
   findTarifasEnvioByPais(servicioId: number, paisDestino: string): Promise<TarifaEnvioEntity[]>;
   findPaisesDestinoByServicio(servicioId: number): Promise<string[]>;
-  findEstampillasConStock(sucursalId: number): Promise<{ denominacion: string; stock: number }[]>;
+  findEstampillasConStock(sucursalId: number): Promise<{ denominacion: string; stock: number; serie: string | null }[]>;
   crearEnvio(data: CrearEnvioData): Promise<EnvioEntity>;
   anularEnvio(id: number): Promise<EnvioEntity>;
+  findEnvioById(id: number): Promise<EnvioEntity | null>;
   findEnviosPendientesByVenta(ventaId: number): Promise<EnvioEntity[]>;
   facturarEnvio(id: number): Promise<EnvioEntity>;
 

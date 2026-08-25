@@ -5,6 +5,7 @@ export interface ProductoResponse {
   codigo:           string;
   nombre:           string;
   descripcion:      string | null;
+  serie:            string | null;
   tipo:             string;
   precio:           number;
   precioSinTax:     number | null;
@@ -31,6 +32,7 @@ export class ProductosPresenter {
       codigo:           entity.codigo,
       nombre:           entity.nombre,
       descripcion:      entity.descripcion,
+      serie:            entity.serie,
       tipo:             entity.tipo,
       precio:           entity.precio,
       precioSinTax:     entity.precioSinTax,

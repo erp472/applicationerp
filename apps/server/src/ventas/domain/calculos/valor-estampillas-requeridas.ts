@@ -44,11 +44,14 @@ export function calcularValorEstampillasRequeridas(
     }
   }
 
-  if (restante !== 0) {
+  const cubierto = Number(valorServicio) - restante;
+
+  if (restante > 0) {
     throw new Error(
-      `No hay combinación de estampillas disponibles que cubra exactamente ${valorServicio}. Faltante: ${restante}`,
+      `No hay combinación de estampillas disponibles para cubrir ${valorServicio} ` +
+        `(cubierto: ${cubierto}, faltante: ${restante}).`,
     );
   }
 
-  return { valorEstampillas: valorServicio, seleccion };
+  return { valorEstampillas: String(cubierto), seleccion };
 }

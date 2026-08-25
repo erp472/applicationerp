@@ -349,6 +349,25 @@ async function main() {
     { codigoproductos: 'ME-SDP-EO',   nombreproductos: "ME Sobre 'De-Para' Extra Oficio",  tipoproductos: 'empaque' as const,         precioproductos:   450, porcentaje_taxproductos: 0 },
     // Material de oficina
     { codigoproductos: 'PAPEL-BOND',  nombreproductos: 'Papel Bond A4 (500h)',             tipoproductos: 'material_oficina' as const, precioproductos: 15000, porcentaje_taxproductos: 19 },
+    // Filatelia
+    {
+      codigoproductos:         'FIL-001',
+      nombreproductos:         'Carpeta Primer Día — Fauna Endémica Colombiana',
+      descripcionproductos:    'Carpeta de primer día de emisión con sello y matasellos especial. Serie Fauna Endémica de Colombia 2024.',
+      serieproductos:          'Fauna Endémica de Colombia 2024',
+      tipoproductos:           'filatelia' as const,
+      precioproductos:         35000,
+      porcentaje_taxproductos: 0,
+    },
+    {
+      codigoproductos:         'FIL-002',
+      nombreproductos:         'Hoja Bloque — Centenario Banco de la República',
+      descripcionproductos:    'Hoja bloque conmemorativa del centenario del Banco de la República 1923-2023. Edición limitada.',
+      serieproductos:          'Conmemorativa Institucional',
+      tipoproductos:           'filatelia' as const,
+      precioproductos:         28000,
+      porcentaje_taxproductos: 0,
+    },
   ]
 
   const productos: Record<string, { idproductos: number }> = {}
@@ -410,6 +429,7 @@ async function main() {
       peso_maximo_kgservicios: 2,
       tiempo_entrega_diasservicios: 8,
       codigo_sigmaservicios: 'NPDC',
+      prefijo_guia_servicios: 'RA',
       tarifa_certificacionservicios: 1800,
     },
     {
@@ -435,6 +455,7 @@ async function main() {
       peso_maximo_kgservicios: 30,
       tiempo_entrega_diasservicios: 8,
       codigo_sigmaservicios: 'NPPC',
+      prefijo_guia_servicios: 'RA',
       tarifa_certificacionservicios: 1800,
     },
     // ── Correo Prioritario ────────────────────────────────────────────────────
@@ -461,6 +482,7 @@ async function main() {
       peso_maximo_kgservicios: 2,
       tiempo_entrega_diasservicios: 3,
       codigo_sigmaservicios: 'PDC',
+      prefijo_guia_servicios: 'RA',
       tarifa_certificacionservicios: 1800,
     },
     {
@@ -486,6 +508,7 @@ async function main() {
       peso_maximo_kgservicios: 30,
       tiempo_entrega_diasservicios: 3,
       codigo_sigmaservicios: 'PPC',
+      prefijo_guia_servicios: 'RA',
       tarifa_certificacionservicios: 1800,
     },
     {
@@ -550,11 +573,20 @@ async function main() {
 
   const servicios: Record<string, { idservicios: number }> = {}
   for (const s of serviciosData) {
-    const { codigoservicios, tarifa_certificacionservicios: cert, ...rest } = s as any
+    const { codigoservicios, tarifa_certificacionservicios: cert, prefijo_guia_servicios: prefijoGuia, ...rest } = s as any
     const servicio = await prisma.servicio.upsert({
       where:  { codigoservicios },
-      update: { tarifa_certificacionservicios: cert ?? null },
-      create: { codigoservicios, ...rest, tarifa_certificacionservicios: cert ?? null, activoservicios: true },
+      update: {
+        tarifa_certificacionservicios: cert ?? null,
+        prefijo_guia_servicios:        prefijoGuia ?? null,
+      },
+      create: {
+        codigoservicios,
+        ...rest,
+        tarifa_certificacionservicios: cert ?? null,
+        prefijo_guia_servicios:        prefijoGuia ?? null,
+        activoservicios:               true,
+      },
     })
     servicios[codigoservicios] = servicio
   }
@@ -793,7 +825,27 @@ async function main() {
       })
     }
   }
-  console.log('✓ Inventario inicial para estampillas y empaques')
+  const filatelia = Object.entries(productos).filter(([k]) => k.startsWith('FIL-'))
+  for (const suc of sucursales) {
+    for (const [, prod] of filatelia) {
+      await prisma.inventarioSucursal.upsert({
+        where: {
+          sucursales_idsucursales_productos_idproductos: {
+            sucursales_idsucursales: suc.idsucursales,
+            productos_idproductos:   prod.idproductos,
+          },
+        },
+        update: {},
+        create: {
+          sucursales_idsucursales:             suc.idsucursales,
+          productos_idproductos:               prod.idproductos,
+          cantidad_actualinventario_sucursal:  50,
+          cantidad_minimainventario_sucursal:  5,
+        },
+      })
+    }
+  }
+  console.log('✓ Inventario inicial para estampillas, empaques y filatelia')
 
   // ── 15. FEATURE FLAGS ─────────────────────────────────────────────────────
   // Los módulos existentes viven en la migración 20260702000001_v1_1_0_data_feature_flags.
