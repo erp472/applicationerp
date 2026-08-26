@@ -21,8 +21,6 @@ import {
   StockInsuficienteError,
   CantidadMinimaError,
   CantidadMaximaError,
-  SaldoInsuficienteError,
-  ClienteRequeridoError,
 } from '../domain/venta.errors.js';
 import {
   validarSesionActivaParaVenta,
@@ -78,7 +76,9 @@ import type { AgregarApartadoCarritoDto }       from '../dto/agregar-apartado-ca
 import type { CrearApartadoAdminDto }           from '../dto/crear-apartado-admin.dto.js';
 import type { UpdateApartadoAdminDto }          from '../dto/update-apartado-admin.dto.js';
 import type { CrearEnvioDto }                   from '../dto/crear-envio.dto.js';
-import { generarGuiaEnvioPdf } from '../domain/guia-envio-pdf.generator.js';
+import { generarGuiaEnvioSvg } from '../domain/guia-svg.generator.js';
+import { StorageService }       from '../../storage/storage.service.js';
+import * as fs from 'node:fs';
 
 @Injectable()
 export class VentasService {
@@ -89,6 +89,7 @@ export class VentasService {
     private readonly inventarioService: InventarioService,
     private readonly audit: AuditService,
     private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
     @Optional() private readonly realtime?: RealtimeService,
   ) {}
 
@@ -256,11 +257,14 @@ export class VentasService {
     const denominacionesEstampilla = cotizacion.servicio.requiereEstampilla
       ? await this.repo.findEstampillasConStock(sesion.sucursalId)
       : [];
-    const estampillasResult = calcularValorEstampillasRequeridas(
-      cotizacion.servicio.requiereEstampilla ?? false,
-      String(cotizacion.valorServicio),
-      denominacionesEstampilla,
-    );
+    let estampillasResult = { valorEstampillas: '0', seleccion: [] as import('../domain/calculos/valor-estampillas-requeridas.js').SeleccionEstampilla[] };
+    try {
+      estampillasResult = calcularValorEstampillasRequeridas(
+        cotizacion.servicio.requiereEstampilla ?? false,
+        String(cotizacion.valorServicio),
+        denominacionesEstampilla,
+      );
+    } catch { /* sin stock suficiente — el cajero gestiona las estampillas físicamente */ }
     const esInternacional = dto.destinatario.pais && dto.destinatario.pais !== 'CO';
 
     if (esInternacional && dto.valorDeclarado) {
@@ -411,11 +415,14 @@ export class VentasService {
         String(venta.total),
       );
     }
-    if (dto.medioPago === 'saldo_a_favor') {
-      if (!venta.clienteId) throw new ClienteRequeridoError();
-      const clienteSaldo = await this.repo.findClienteById(venta.clienteId);
-      if (!clienteSaldo || clienteSaldo.saldoAFavor < venta.total) {
-        throw new SaldoInsuficienteError(clienteSaldo?.saldoAFavor ?? 0, venta.total);
+    if (dto.medioPago === 'estampilla') {
+      const totalEstampillas = (dto.estampillasUtilizadas ?? []).reduce((s, e) => s + e.valor, 0);
+      const montoCash        = dto.montoEfectivo ?? 0;
+      if (Math.round(totalEstampillas + montoCash) !== Math.round(venta.total)) {
+        throw new Error(
+          `Pago con estampillas no cuadra: estampillas ${totalEstampillas} + efectivo ${montoCash} ` +
+          `= ${totalEstampillas + montoCash}, total venta ${venta.total}`,
+        );
       }
     }
 
@@ -473,38 +480,19 @@ export class VentasService {
       });
     }
 
-    // Filatelia → acumular saldo a favor para el cliente identificado
-    const tieneFilatelia = (venta.detalle ?? []).some(d => d.tipoProducto === 'filatelia');
-    if (tieneFilatelia && venta.clienteId) {
-      const montoFilatelia = (venta.detalle ?? [])
-        .filter(d => d.tipoProducto === 'filatelia')
-        .reduce((sum, d) => sum + d.subtotal, 0);
-      await this.repo.acumularSaldoAFavor(venta.clienteId, montoFilatelia);
-    }
-
-    // Preporteado / mixto → descontar del saldo a favor del cliente si tiene saldo
-    if (venta.clienteId && (dto.medioPago === 'preporteado' || dto.medioPago === 'mixto_preporteado')) {
-      const clienteData = await this.repo.findClienteById(venta.clienteId);
-      if (clienteData && clienteData.saldoAFavor > 0) {
-        const montoPrep = dto.medioPago === 'mixto_preporteado'
-          ? (dto.montoEstampillas ?? 0)
-          : venta.total;
-        const deducir = Math.min(montoPrep, clienteData.saldoAFavor);
-        if (deducir > 0) await this.repo.deducirSaldoAFavor(venta.clienteId, deducir);
-      }
-    }
-
-    // Saldo a favor puro → deducir del balance del cliente
-    if (dto.medioPago === 'saldo_a_favor' && venta.clienteId) {
-      await this.repo.deducirSaldoAFavor(venta.clienteId, venta.total);
-    }
-
     // Determinar el tipo de movimiento según los productos de la venta
     const tieneEnvios     = guiasGeneradas.length > 0;
     const tieneApartados  = apartadosPendientes.length > 0;
     const tipoMovimiento  = (tieneEnvios || tieneApartados)
       ? 'venta_servicio' as const
       : this._resolverTipoMovimiento(venta.detalle ?? []);
+
+    const descripcionMovimiento = dto.medioPago === 'estampilla' && dto.estampillasUtilizadas?.length
+      ? [
+          `Estampillas: ${dto.estampillasUtilizadas.map(e => `${e.codigo}($${e.valor})`).join(', ')}`,
+          dto.montoEfectivo ? `Efectivo: $${dto.montoEfectivo}` : null,
+        ].filter(Boolean).join(' + ')
+      : undefined;
 
     const { movimiento, saldoActual, alertas } = await this.cajasService.registrarMovimientoVenta({
       sesionCajaId:   sesion.id,
@@ -513,10 +501,13 @@ export class VentasService {
       medioPago:      dto.medioPago as any,
       referenciaId:   ventaId,
       referenciaTipo: 'Venta',
+      descripcion:    descripcionMovimiento,
     });
 
     const cambio = dto.medioPago === 'efectivo' && dto.efectivoRecibido
       ? Math.max(0, dto.efectivoRecibido - venta.total)
+      : dto.medioPago === 'estampilla' && dto.montoEfectivo && dto.efectivoRecibido
+      ? Math.max(0, dto.efectivoRecibido - dto.montoEfectivo)
       : 0;
 
     const { userId, ip } = auditStore.getStore() ?? {};
@@ -951,11 +942,14 @@ export class VentasService {
     const denominacionesEstampilla = cotizacion.servicio.requiereEstampilla
       ? await this.repo.findEstampillasConStock(sesion.sucursalId)
       : [];
-    const estampillasResult = calcularValorEstampillasRequeridas(
-      cotizacion.servicio.requiereEstampilla ?? false,
-      String(cotizacion.valorServicio),
-      denominacionesEstampilla,
-    );
+    let estampillasResult = { valorEstampillas: '0', seleccion: [] as import('../domain/calculos/valor-estampillas-requeridas.js').SeleccionEstampilla[] };
+    try {
+      estampillasResult = calcularValorEstampillasRequeridas(
+        cotizacion.servicio.requiereEstampilla ?? false,
+        String(cotizacion.valorServicio),
+        denominacionesEstampilla,
+      );
+    } catch { /* sin stock suficiente — el cajero gestiona las estampillas físicamente */ }
     const esInternacional = dto.destinatario.pais && dto.destinatario.pais !== 'CO';
 
     // international: validate declared value ceiling
@@ -1070,15 +1064,60 @@ export class VentasService {
   // ── Guía PDF de envío individual ──────────────────────────────────────────────
 
   async getEnvioGuiaPdf(envioId: number): Promise<Buffer> {
+    const envioRow = await this.prisma.envio.findUnique({
+      where:  { idenvios: envioId },
+      select: { pdf_guia_pathenvios: true, numero_guiaenvios: true, servicios_idservicios: true, sucursales_idsucursales: true },
+    });
+    if (!envioRow) throw new NotFoundException(`Envío ${envioId} no encontrado`);
+
+    // Serve from disk if already generated
+    if (envioRow.pdf_guia_pathenvios) {
+      const exists = await this.storage.exists(envioRow.pdf_guia_pathenvios);
+      if (exists) {
+        const absPath = this.storage.absolutePath(envioRow.pdf_guia_pathenvios);
+        return fs.promises.readFile(absPath);
+      }
+    }
+
+    // Generate, store, and record the path
     const envio = await this.repo.findEnvioById(envioId);
     if (!envio) throw new NotFoundException(`Envío ${envioId} no encontrado`);
 
-    const servicio = await this.prisma.servicio.findUnique({
-      where:  { idservicios: envio.servicioId },
-      select: { nombreservicios: true },
+    const [servicio, sucursal] = await Promise.all([
+      this.prisma.servicio.findUnique({
+        where:  { idservicios: envioRow.servicios_idservicios },
+        select: { nombreservicios: true },
+      }),
+      this.prisma.sucursal.findUnique({
+        where:  { idsucursales: envioRow.sucursales_idsucursales },
+        select: { codigosucursales: true, nombresucursales: true },
+      }),
+    ]);
+
+    const buffer  = await generarGuiaEnvioSvg(
+      envio,
+      servicio?.nombreservicios ?? envio.tipo,
+      { codigo: sucursal?.codigosucursales ?? '', nombre: sucursal?.nombresucursales ?? '' },
+    );
+    const relPath = `guias/${envioRow.numero_guiaenvios}.svg`;
+
+    await this.storage.savePdf(relPath, buffer);
+    await this.prisma.envio.update({
+      where: { idenvios: envioId },
+      data:  { pdf_guia_pathenvios: relPath, updated_atenvios: new Date() },
     });
 
-    return generarGuiaEnvioPdf(envio, servicio?.nombreservicios ?? envio.tipo);
+    return buffer;
+  }
+
+  async getEnvioGuiaPdfPath(envioId: number): Promise<string | null> {
+    const row = await this.prisma.envio.findUnique({
+      where:  { idenvios: envioId },
+      select: { pdf_guia_pathenvios: true },
+    });
+    if (!row?.pdf_guia_pathenvios) return null;
+    const exists = await this.storage.exists(row.pdf_guia_pathenvios);
+    return exists ? this.storage.absolutePath(row.pdf_guia_pathenvios) : null;
   }
 
   // ── Resumen del turno ─────────────────────────────────────────────────────────

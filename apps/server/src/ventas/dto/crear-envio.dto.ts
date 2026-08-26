@@ -29,7 +29,7 @@ export const CrearEnvioSchema = z.object({
   asignarCaja:      z.boolean().default(false),
   contenido:        z.string().max(200).optional(),
   observaciones:    z.string().max(500).optional(),
-  medioPago:        z.enum(['efectivo', 'tarjeta_debito', 'tarjeta_credito', 'transferencia', 'consignacion', 'preporteado', 'mixto_preporteado']),
+  medioPago:        z.enum(['efectivo', 'tarjeta_debito', 'tarjeta_credito', 'transferencia', 'consignacion', 'preporteado', 'mixto_preporteado', 'estampilla']),
   // preporteado / mixto_preporteado breakdown (required when medioPago uses estampillas)
   montoEstampillas: z.number().positive().optional(),
   montoEfectivo:    z.number().positive().optional(),

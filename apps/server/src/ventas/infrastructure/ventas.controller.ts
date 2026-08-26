@@ -628,7 +628,7 @@ export class VentasController {
 
   @Get('envios/:envioId/guia-pdf')
   @Roles(...ROLES_READ)
-  @ApiOperation({ summary: 'Descargar guía postal individual en PDF' })
+  @ApiOperation({ summary: 'Descargar guía postal individual en SVG' })
   @ApiParam({ name: 'envioId', type: Number })
   async descargarGuiaEnvioPdf(
     @Param('envioId', ParseIntPipe) envioId: number,
@@ -636,8 +636,8 @@ export class VentasController {
   ) {
     const buffer = await this.service.getEnvioGuiaPdf(envioId);
     reply
-      .header('Content-Type', 'application/pdf')
-      .header('Content-Disposition', `attachment; filename="guia-${envioId}.pdf"`)
+      .header('Content-Type', 'image/svg+xml')
+      .header('Content-Disposition', `attachment; filename="guia-${envioId}.svg"`)
       .send(buffer);
   }
 }

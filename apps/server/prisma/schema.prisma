@@ -94,6 +94,7 @@ enum medio_pago {
   consignacion
   preporteado
   mixto_preporteado
+  estampilla
 }
 
 enum medio_consignacion {
@@ -1071,6 +1072,7 @@ model Envio {
   referencia_sigmaenvios             String?     @db.VarChar(100)
   documentos_generadosenvios         Json        @default("[]") @db.JsonB
   sincronizado_sigmaenvios           Boolean     @default(false)
+  pdf_guia_pathenvios                String?     @db.VarChar(500)
   created_atenvios                   DateTime    @default(now()) @db.Timestamptz(6)
   updated_atenvios                   DateTime    @default(now()) @db.Timestamptz(6)
 

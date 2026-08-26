@@ -10,7 +10,7 @@ export type TipoMovimientoCaja =
   | 'anulacion' | 'recaudo'
   | 'pago_administrativo' | 'traslado_caja_fuerte'
   | 'moneda_circulante';
-export type MedioPago = 'efectivo' | 'tarjeta_debito' | 'tarjeta_credito' | 'transferencia' | 'consignacion' | 'cheque' | 'preporteado' | 'mixto_preporteado';
+export type MedioPago = 'efectivo' | 'tarjeta_debito' | 'tarjeta_credito' | 'transferencia' | 'consignacion' | 'cheque' | 'preporteado' | 'mixto_preporteado' | 'estampilla';
 export type MedioConsignacion = 'banco' | 'transportadora';
 export type TipoCuentaBancaria = 'ahorros' | 'corriente';
 export type EstadoAprobacion = 'pendiente' | 'aprobada' | 'rechazada' | 'en_transito' | 'confirmada';

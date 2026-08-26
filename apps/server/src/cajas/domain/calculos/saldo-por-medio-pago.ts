@@ -7,6 +7,7 @@ export const MEDIOS_VALIDOS = new Set([
   'cheque',
   'preporteado',
   'mixto_preporteado',
+  'estampilla',
 ] as const);
 
 export type MedioPago =
@@ -17,7 +18,8 @@ export type MedioPago =
   | 'consignacion'
   | 'cheque'
   | 'preporteado'
-  | 'mixto_preporteado';
+  | 'mixto_preporteado'
+  | 'estampilla';
 
 export interface MovimientoMedioPago {
   medioPago?: string;

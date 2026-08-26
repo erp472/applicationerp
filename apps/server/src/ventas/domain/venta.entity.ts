@@ -2,7 +2,7 @@ export type EstadoVenta  = 'activa' | 'confirmada' | 'anulada';
 export type MedioPagoVenta =
   | 'efectivo' | 'cheque' | 'tarjeta_debito' | 'tarjeta_credito'
   | 'transferencia' | 'consignacion' | 'preporteado' | 'mixto_preporteado'
-  | 'saldo_a_favor';
+  | 'estampilla';
 export type TipoProducto = 'estampilla' | 'filatelia' | 'empaque' | 'material_oficina' | 'giro' | 'paquete' | 'otro';
 
 export class VentaDetalleEntity {

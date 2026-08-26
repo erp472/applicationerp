@@ -6,6 +6,7 @@ import { VENTAS_REPOSITORY }           from './domain/venta.repository.js';
 import { CajasModule }                 from '../cajas/cajas.module.js';
 import { InventarioModule }            from '../inventario/inventario.module.js';
 import { RealtimeModule }              from '../realtime/realtime.module.js';
+import { StorageService }              from '../storage/storage.service.js';
 
 @Module({
   imports:     [CajasModule, InventarioModule, RealtimeModule],
@@ -13,6 +14,7 @@ import { RealtimeModule }              from '../realtime/realtime.module.js';
   providers: [
     VentasService,
     { provide: VENTAS_REPOSITORY, useClass: PrismaVentasRepository },
+    StorageService,
   ],
   exports: [VentasService],
 })

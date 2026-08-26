@@ -854,12 +854,13 @@ export class CajasService {
   // ── Registrar movimiento de venta (usado por VentasModule) ──────────────────
 
   async registrarMovimientoVenta(params: {
-    sesionCajaId:   number;
-    tipo:           TipoMovimientoCaja;
-    monto:          string;
-    medioPago?:     MedioPago;
-    referenciaId?:  number;
+    sesionCajaId:    number;
+    tipo:            TipoMovimientoCaja;
+    monto:           string;
+    medioPago?:      MedioPago;
+    referenciaId?:   number;
     referenciaTipo?: string;
+    descripcion?:    string;
   }) {
     const sesion = await this.sesionesRepo.findById(params.sesionCajaId);
     if (!sesion) throw new SesionNoEncontradaError(params.sesionCajaId);
@@ -872,6 +873,7 @@ export class CajasService {
       medioPago:      params.medioPago,
       referenciaId:   params.referenciaId,
       referenciaTipo: params.referenciaTipo,
+      descripcion:    params.descripcion,
     });
 
     const caja    = await this.cajasRepo.findById(sesion.cajaId);
