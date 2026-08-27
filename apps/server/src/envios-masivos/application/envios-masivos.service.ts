@@ -459,8 +459,9 @@ export class EnviosMasivosService {
     const lote = await this.prisma.envioMasivo.findUnique({
       where:   { idenvios_masivos: loteId },
       include: {
-        items:   { orderBy: { numero_filaenvios_masivos_items: 'asc' } },
+        items:    { orderBy: { numero_filaenvios_masivos_items: 'asc' } },
         servicio: { select: { nombreservicios: true } },
+        sucursal: { select: { codigosucursales: true, nombresucursales: true } },
       },
     });
     if (!lote) throw new NotFoundException(`Lote ${loteId} no encontrado`);
@@ -528,7 +529,11 @@ export class EnviosMasivosService {
       };
     });
 
-    const buffer  = await generarGuiasMasivasPdf(pdfItems);
+    const sucursal = {
+      codigo: lote.sucursal?.codigosucursales ?? '',
+      nombre: lote.sucursal?.nombresucursales ?? '',
+    };
+    const buffer  = await generarGuiasMasivasPdf(pdfItems, sucursal);
     const relPath = `guias-masivas/lote-${loteId}.pdf`;
     await this.storage.savePdf(relPath, buffer);
 

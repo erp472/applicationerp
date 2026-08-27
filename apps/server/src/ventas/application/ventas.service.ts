@@ -77,6 +77,7 @@ import type { CrearApartadoAdminDto }           from '../dto/crear-apartado-admi
 import type { UpdateApartadoAdminDto }          from '../dto/update-apartado-admin.dto.js';
 import type { CrearEnvioDto }                   from '../dto/crear-envio.dto.js';
 import { generarGuiaEnvioSvg } from '../domain/guia-svg.generator.js';
+import { svgToPdf }            from '../../common/svg-to-pdf.js';
 import { StorageService }       from '../../storage/storage.service.js';
 import * as fs from 'node:fs';
 
@@ -487,7 +488,7 @@ export class VentasService {
       ? 'venta_servicio' as const
       : this._resolverTipoMovimiento(venta.detalle ?? []);
 
-    const descripcionMovimiento = dto.medioPago === 'estampilla' && dto.estampillasUtilizadas?.length
+    const descripcionMovimiento = dto.estampillasUtilizadas?.length
       ? [
           `Estampillas: ${dto.estampillasUtilizadas.map(e => `${e.codigo}($${e.valor})`).join(', ')}`,
           dto.montoEfectivo ? `Efectivo: $${dto.montoEfectivo}` : null,
@@ -506,7 +507,7 @@ export class VentasService {
 
     const cambio = dto.medioPago === 'efectivo' && dto.efectivoRecibido
       ? Math.max(0, dto.efectivoRecibido - venta.total)
-      : dto.medioPago === 'estampilla' && dto.montoEfectivo && dto.efectivoRecibido
+      : dto.montoEfectivo && dto.efectivoRecibido
       ? Math.max(0, dto.efectivoRecibido - dto.montoEfectivo)
       : 0;
 
@@ -1094,12 +1095,13 @@ export class VentasService {
       }),
     ]);
 
-    const buffer  = await generarGuiaEnvioSvg(
+    const svgBuffer = await generarGuiaEnvioSvg(
       envio,
       servicio?.nombreservicios ?? envio.tipo,
       { codigo: sucursal?.codigosucursales ?? '', nombre: sucursal?.nombresucursales ?? '' },
     );
-    const relPath = `guias/${envioRow.numero_guiaenvios}.svg`;
+    const buffer  = await svgToPdf(svgBuffer);
+    const relPath = `guias/${envioRow.numero_guiaenvios}.pdf`;
 
     await this.storage.savePdf(relPath, buffer);
     await this.prisma.envio.update({
