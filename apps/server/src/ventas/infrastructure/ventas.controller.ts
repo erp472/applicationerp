@@ -28,6 +28,7 @@ import { Feature }                from '../../common/decorators/feature.decorato
 import { CurrentUser }            from '../../common/decorators/current-user.decorator.js';
 import { VentasPresenter }        from './ventas.presenter.js';
 import { VentasDomainFilter }     from './ventas-domain.filter.js';
+import { CajasDomainFilter }      from '../../cajas/infrastructure/cajas-domain.filter.js';
 import type { TipoProducto }      from '../domain/venta.entity.js';
 
 // Solo CAJERO hace ventas — SUPERVISOR_REGIONAL no opera la caja auxiliar
@@ -41,7 +42,7 @@ const ROLES_READ       = ['CAJERO', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA', 'ADM
 @Controller('ventas')
 @UseGuards(JwtAuthGuard, FeatureFlagGuard, RolesGuard)
 @Feature('modulo:ventas')
-@UseFilters(new VentasDomainFilter())
+@UseFilters(new VentasDomainFilter(), new CajasDomainFilter())
 export class VentasController {
   constructor(private readonly service: VentasService) {}
 
@@ -638,6 +639,27 @@ export class VentasController {
     reply
       .header('Content-Type', 'application/pdf')
       .header('Content-Disposition', `attachment; filename="guia-${envioId}.pdf"`)
+      .send(buffer);
+  }
+
+  // ── Recibo de venta en PDF ────────────────────────────────────────────────────
+
+  @Get(':ventaId/recibo-pdf')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Generar recibo de venta en PDF' })
+  @ApiParam({ name: 'ventaId', type: Number })
+  @ApiQuery({ name: 'efectivo', required: false, type: Number, description: 'Efectivo recibido para calcular cambio' })
+  @ApiResponse({ status: 200, description: 'PDF del recibo' })
+  async descargarReciboPdf(
+    @Param('ventaId', ParseIntPipe) ventaId: number,
+    @Query('efectivo') efectivoRaw: string | undefined,
+    @Res() reply: FastifyReply,
+  ) {
+    const efectivoRecibido = efectivoRaw ? parseFloat(efectivoRaw) : undefined;
+    const buffer = await this.service.getVentaReciboPdf(ventaId, efectivoRecibido);
+    reply
+      .header('Content-Type', 'application/pdf')
+      .header('Content-Disposition', `inline; filename="recibo-${ventaId}.pdf"`)
       .send(buffer);
   }
 }

@@ -1,4 +1,5 @@
 import { Controller, Post, Get, Body, Headers, UseGuards, BadRequestException } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ZodError } from 'zod';
 import {
   ApiTags,
@@ -19,6 +20,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('login')
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @ApiOperation({ summary: 'Iniciar sesión', description: 'Devuelve un JWT Bearer token' })
   @ApiBody({
     schema: {

@@ -33,7 +33,25 @@ const prisma  = new PrismaClient({ adapter } as any);
 async function loadEnvioEntity(idenvios: number) {
   const row = await prisma.envio.findUnique({
     where: { idenvios },
-    include: {
+    select: {
+      idenvios: true, numero_guiaenvios: true, tipoenvios: true,
+      sucursales_idsucursales: true, created_atenvios: true,
+      remitente_nombreenvios: true, remitente_documentoenvios: true,
+      remitente_telefonoenvios: true, remitente_emailenvios: true,
+      remitente_direccionenvios: true, remitente_ciudadenvios: true,
+      remitente_departamentoenvios: true, remitente_codigo_postalenvios: true,
+      destinatario_nombreenvios: true, destinatario_documentoenvios: true,
+      destinatario_telefonoenvios: true, destinatario_emailenvios: true,
+      destinatario_direccionenvios: true, destinatario_ciudadenvios: true,
+      destinatario_departamentoenvios: true, destinatario_paisenvios: true,
+      destinatario_codigo_postalenvios: true,
+      peso_fisico_kgenvios: true, peso_volumetrico_kgenvios: true,
+      peso_tarificado_kgenvios: true,
+      alto_cmenvios: true, ancho_cmenvios: true, largo_cmenvios: true,
+      valor_declaradoenvios: true, valor_servicioenvios: true,
+      valor_estampillasenvios: true, valor_seguroenvios: true,
+      valor_certificacionenvios: true, valor_totalenvios: true,
+      medio_pagoenvios: true, estadoenvios: true,
       sucursal: { select: { codigosucursales: true, nombresucursales: true } },
       servicio: { select: { nombreservicios: true } },
     },

@@ -21,17 +21,27 @@ async function main() {
     select: { idsucursales: true },
   })
 
-  const equipo = await prisma.equipoAutorizado.upsert({
-    where:  { mac_addressequipos_autorizados: MAC },
-    update: { activoequipos_autorizados: true },
-    create: {
-      sucursales_idsucursales:              sucursal.idsucursales,
-      mac_addressequipos_autorizados:       MAC,
-      nombreequipos_autorizados:            'Equipo Cajero Principal',
-      sistema_operativoequipos_autorizados: 'macos',
-      activoequipos_autorizados:            true,
+  const existing = await prisma.equipoAutorizado.findFirst({
+    where: {
+      mac_addressequipos_autorizados: MAC,
+      sucursales_idsucursales:        sucursal.idsucursales,
     },
   })
+
+  const equipo = existing
+    ? await prisma.equipoAutorizado.update({
+        where:  { idequipos_autorizados: existing.idequipos_autorizados },
+        data:   { activoequipos_autorizados: true },
+      })
+    : await prisma.equipoAutorizado.create({
+        data: {
+          sucursales_idsucursales:              sucursal.idsucursales,
+          mac_addressequipos_autorizados:       MAC,
+          nombreequipos_autorizados:            'Equipo Cajero Principal',
+          sistema_operativoequipos_autorizados: 'macos',
+          activoequipos_autorizados:            true,
+        },
+      })
 
   console.log(`✓ Equipo registrado`)
   console.log(`  id:       ${equipo.idequipos_autorizados}`)

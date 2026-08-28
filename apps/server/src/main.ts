@@ -9,12 +9,10 @@ import fastifyWebsocket from '@fastify/websocket';
 import { trace } from '@opentelemetry/api';
 import { JwtService } from '@nestjs/jwt';
 import { AppModule } from './app.module.js';
+import { ConfigService } from './config/config.service.js';
 import { RealtimeService } from './realtime/realtime.service.js';
 
 async function bootstrap() {
-  const isDev = process.env.NODE_ENV !== 'production';
-
-  // 🤓 active this FastifyApplication then visibility the factory and server to create logger
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter({
@@ -26,21 +24,24 @@ async function bootstrap() {
           if (!ctx) return {};
           return { trace_id: ctx.traceId, span_id: ctx.spanId };
         },
-        ...(isDev && { transport: { target: 'pino-pretty', options: { colorize: true } } }),
+        ...(process.env.NODE_ENV !== 'production' && {
+          transport: { target: 'pino-pretty', options: { colorize: true } },
+        }),
       },
     }),
   );
 
+  const config = app.get(ConfigService);
+
   await app.register(cors, {
-    // '*' + credentials:true es inválido en CORS — usamos true para reflejar el Origin de la request
-    origin: process.env.CORS_ORIGIN ?? true,
+    // En dev: permite cualquier origen. En prod: whitelist explícita desde CORS_ORIGIN (comma-separated).
+    origin: config.isDev ? true : config.corsOrigins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
   });
 
-  // 🤓 active helmet
   await app.register(helmet, {
-    contentSecurityPolicy: isDev ? false : undefined,
+    contentSecurityPolicy: config.isDev ? false : undefined,
   });
 
   // 🤓 register @fastify/websocket for /realtime endpoint
@@ -77,17 +78,16 @@ async function bootstrap() {
     },
   );
 
-  // 🤓 active swagger increase version with next release
-  const config = new DocumentBuilder()
+  const swaggerConfig = new DocumentBuilder()
     .setTitle('Sistema 4-72 POS')
     .setDescription('API del sistema ERP 4-72')
     .setVersion('1.0')
     .addBearerAuth()
     .build();
-  const document = SwaggerModule.createDocument(app, config);
+  const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api/docs', app, document);
 
-  await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
+  await app.listen(config.port, '0.0.0.0');
 }
 
 //🤓 send to bootstraping but use vitetest

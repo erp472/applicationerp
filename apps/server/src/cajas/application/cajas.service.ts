@@ -781,13 +781,6 @@ export class CajasService {
 
     const { debeForzar } = evaluarCierreForzado(sesion.fechaApertura, new Date(), 24);
 
-    await this.sesionesRepo.registrarMovimiento({
-      sesionCajaId: sesionPrincipalId,
-      tipo:         'cierre',
-      monto:        totalArqueo,
-      descripcion:  'Cierre de caja principal',
-    });
-
     // RF-3.03: la diferencia queda en estado pendiente hasta aprobación del supervisor.
     let diferenciaCierre: { id: number; tipo: 'sobrante' | 'faltante'; monto: string } | null = null;
     if (Math.abs(diferencia) > 0.01) {

@@ -81,6 +81,7 @@ export class PrismaCajasRepository implements ICajasRepository {
         deleted_atcajas:             null,
         activocajas:                 true,
       },
+      orderBy: { idcajas: 'asc' },
       select: SELECT_CAJA,
     });
     return row ? toEntity(row) : null;

@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ConfigModule } from './config/config.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { MetricsModule } from './metrics/metrics.module.js';
@@ -28,9 +30,12 @@ import { SigmaModule } from './sigma/sigma.module.js';
 import { SacasModule }         from './sacas/sacas.module.js';
 import { EnviosMasivosModule } from './envios-masivos/envios-masivos.module.js';
 import { AuditContextInterceptor } from './common/interceptors/audit-context.interceptor.js';
+import { AllExceptionsFilter } from './common/filters/http-exception.filter.js';
 
 @Module({
   imports: [
+    ConfigModule,
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 60 }]),
     ScheduleModule.forRoot(),
     PrismaModule, AuditModule, MetricsModule, HealthModule,
     AuthModule, UsersModule, DevicesModule, PermisosModule, FeatureFlagsModule,
@@ -40,6 +45,8 @@ import { AuditContextInterceptor } from './common/interceptors/audit-context.int
     EnviosMasivosModule,
   ],
   providers: [
+    { provide: APP_FILTER,      useClass: AllExceptionsFilter },
+    { provide: APP_GUARD,       useClass: ThrottlerGuard },
     { provide: APP_INTERCEPTOR, useClass: AuditContextInterceptor },
   ],
 })

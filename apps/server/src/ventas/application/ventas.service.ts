@@ -77,6 +77,7 @@ import type { CrearApartadoAdminDto }           from '../dto/crear-apartado-admi
 import type { UpdateApartadoAdminDto }          from '../dto/update-apartado-admin.dto.js';
 import type { CrearEnvioDto }                   from '../dto/crear-envio.dto.js';
 import { generarGuiaEnvioSvg } from '../domain/guia-svg.generator.js';
+import { generarReciboPdf }   from '../domain/recibo-pdf.generator.js';
 import { svgToPdf }            from '../../common/svg-to-pdf.js';
 import { StorageService }       from '../../storage/storage.service.js';
 import * as fs from 'node:fs';
@@ -469,9 +470,10 @@ export class VentasService {
 
     // Finalizar apartados reservados vinculados a esta venta (cambian de reservado → ocupado)
     const apartadosPendientes = await this.repo.findApartadosPendientesByVenta(ventaId);
+    let lastApartadoResult: Awaited<ReturnType<typeof this.cajasService.registrarMovimientoVenta>> | null = null;
     for (const apartado of apartadosPendientes) {
       await this.repo.finalizarApartadoReservado(apartado.id);
-      await this.cajasService.registrarMovimientoVenta({
+      lastApartadoResult = await this.cajasService.registrarMovimientoVenta({
         sesionCajaId:   sesion.id,
         tipo:           'apartado_postal',
         monto:          String(apartado.valor ?? 0),
@@ -495,15 +497,31 @@ export class VentasService {
         ].filter(Boolean).join(' + ')
       : undefined;
 
-    const { movimiento, saldoActual, alertas } = await this.cajasService.registrarMovimientoVenta({
-      sesionCajaId:   sesion.id,
-      tipo:           tipoMovimiento,
-      monto:          String(venta.total),
-      medioPago:      dto.medioPago as any,
-      referenciaId:   ventaId,
-      referenciaTipo: 'Venta',
-      descripcion:    descripcionMovimiento,
-    });
+    // venta.total includes apartados (added by _recalcularTotales). Apartados were already
+    // registered individually above, so subtract them to avoid double-counting in caja ledger.
+    const totalApartados = apartadosPendientes.reduce((acc, a) => acc + Number(a.valor ?? 0), 0);
+    const montoMovVenta  = venta.total - totalApartados;
+
+    let movimiento: Awaited<ReturnType<typeof this.cajasService.registrarMovimientoVenta>>['movimiento'];
+    let saldoActual: string;
+    let alertas: Awaited<ReturnType<typeof this.cajasService.registrarMovimientoVenta>>['alertas'];
+
+    if (montoMovVenta > 0.001) {
+      ({ movimiento, saldoActual, alertas } = await this.cajasService.registrarMovimientoVenta({
+        sesionCajaId:   sesion.id,
+        tipo:           tipoMovimiento,
+        monto:          String(montoMovVenta),
+        medioPago:      dto.medioPago as any,
+        referenciaId:   ventaId,
+        referenciaTipo: 'Venta',
+        descripcion:    descripcionMovimiento,
+      }));
+    } else {
+      // Venta is composed entirely of apartados — last apartado movement carries the result
+      movimiento  = lastApartadoResult!.movimiento;
+      saldoActual = lastApartadoResult!.saldoActual;
+      alertas     = lastApartadoResult!.alertas;
+    }
 
     const cambio = dto.medioPago === 'efectivo' && dto.efectivoRecibido
       ? Math.max(0, dto.efectivoRecibido - venta.total)
@@ -1332,5 +1350,77 @@ export class VentasService {
         documento:   dto.destinatario.documento,
       }),
     ]);
+  }
+
+  // ── Recibo de venta en PDF ────────────────────────────────────────────────────
+
+  async getVentaReciboPdf(ventaId: number, efectivoRecibido?: number): Promise<Buffer> {
+    const venta = await this.prisma.venta.findUnique({
+      where: { idventas: ventaId },
+      include: {
+        sesionCaja: {
+          include: {
+            caja: {
+              include: {
+                sucursal: {
+                  select: { nombresucursales: true, direccionsucursales: true, telefonosucursales: true },
+                },
+              },
+            },
+            cajeroAsignado: { select: { nombreusuarios: true } },
+          },
+        },
+        usuario: { select: { nombreusuarios: true } },
+        cliente: {
+          select: {
+            nombreclientes: true,
+            tipo_documentoclientes: true,
+            numero_documentoclientes: true,
+          },
+        },
+        detalle: {
+          include: { producto: { select: { nombreproductos: true } } },
+        },
+      },
+    });
+
+    if (!venta) throw new NotFoundException(`Venta ${ventaId} no encontrada`);
+
+    const sucursal = venta.sesionCaja.caja.sucursal;
+    const cajero   = venta.sesionCaja.cajeroAsignado ?? venta.usuario;
+    const cambio   = efectivoRecibido != null
+      ? Math.max(0, efectivoRecibido - Number(venta.totalventas))
+      : undefined;
+
+    return generarReciboPdf({
+      ventaId: venta.idventas,
+      fecha:   venta.created_atventas,
+      sucursal: {
+        nombre:    sucursal.nombresucursales,
+        direccion: sucursal.direccionsucursales ?? null,
+        telefono:  sucursal.telefonosucursales  ?? null,
+      },
+      cajero: { nombre: cajero.nombreusuarios },
+      caja:   { nombre: venta.sesionCaja.caja.nombrecajas },
+      cliente: venta.cliente ? {
+        nombre:    venta.cliente.nombreclientes,
+        tipoDoc:   venta.cliente.tipo_documentoclientes,
+        numeroDoc: venta.cliente.numero_documentoclientes,
+      } : null,
+      items: venta.detalle.map((d) => ({
+        descripcion:    d.producto.nombreproductos,
+        cantidad:       d.cantidadventas_detalle,
+        precioUnitario: Number(d.precio_unitarioventas_detalle),
+        descuento:      Number(d.descuentoventas_detalle),
+        subtotal:       Number(d.subtotalventas_detalle),
+      })),
+      subtotal:         Number(venta.subtotalventas),
+      descuento:        Number(venta.descuentoventas),
+      iva:              Number(venta.ivaventas),
+      total:            Number(venta.totalventas),
+      medioPago:        venta.medio_pagoventas,
+      efectivoRecibido,
+      cambio,
+    });
   }
 }
