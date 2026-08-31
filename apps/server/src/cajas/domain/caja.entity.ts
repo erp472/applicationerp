@@ -28,6 +28,7 @@ export class CajaEntity {
   limiteAlerta: string | null;
   tTarget: string | null;
   activo: boolean;
+  cajeroFijoId: number | null;
 }
 
 export class CajaPadreEntity {
@@ -36,6 +37,9 @@ export class CajaPadreEntity {
   nombre: string;
   baseGeneral: string;
   horaReset: Date | null;
+  supervisorId: number | null;
+  supervisorNombre: string | null;
+  supervisorEmail: string | null;
 }
 
 export class SesionCajaEntity {
@@ -129,6 +133,8 @@ export interface PanelPunto {
   acumuladoMonedaCirculante: string;
   /** Σ montos de reposiciones con estado=en_transito en este punto (RF-4.01) */
   tTransito: string;
+  /** Base restante que puede asignarse a nuevas cajas auxiliares (BR-CAJ-011) */
+  baseDisponible: string;
   debeReset: boolean;
   horaReset: string | null;
 }
@@ -140,6 +146,7 @@ export interface CardAuxiliar {
   nombre: string;
   tipo: TipoCaja;
   cajeroId: number | null;
+  cajeroFijoId: number | null;
   estado: EstadoSesionCaja | 'sin_sesion';
   /** Balance de la caja fuerte del auxiliar (= saldo de la sesión activa) */
   saldoActual: string | null;
@@ -172,10 +179,18 @@ export interface ServicioSucursalItem {
   activo: boolean;
 }
 
+export interface PerfilUsuario {
+  id:         number;
+  nombre:     string;
+  rol:        string;
+  sucursalId: number | null;
+}
+
 export interface CajaPosPanel {
   id: number;
   codigo: string;
   nombre: string;
+  tipo: TipoCaja;
   sesionActiva: boolean;
   sesionId: number | null;
 }
@@ -194,18 +209,24 @@ export interface CajaAsignacionSesion {
 }
 
 export interface CajaAsignacion {
-  id:           number;
-  codigo:       string;
-  nombre:       string;
-  tipo:         TipoCaja;
-  activo:       boolean;
-  sesionActiva: CajaAsignacionSesion | null;
+  id:                 number;
+  codigo:             string;
+  nombre:             string;
+  tipo:               TipoCaja;
+  activo:             boolean;
+  cajeroFijoId:       number | null;
+  cajeroFijoNombre:   string | null;
+  cajeroFijoEmail:    string | null;
+  sesionActiva:       CajaAsignacionSesion | null;
 }
 
 export interface AsignacionSucursal {
-  cajaPadreId:   number | null;
-  cajaPadreNombre: string | null;
-  cajas:         CajaAsignacion[];
+  cajaPadreId:      number | null;
+  cajaPadreNombre:  string | null;
+  supervisorId:     number | null;
+  supervisorNombre: string | null;
+  supervisorEmail:  string | null;
+  cajas:            CajaAsignacion[];
 }
 
 export interface SucursalPanelItem {
@@ -216,7 +237,7 @@ export interface SucursalPanelItem {
   regional:       string;
   ciudad:         string | null;
   departamento:   string | null;
-  cajaPos:        CajaPosPanel | null;
+  cajas:          CajaPosPanel[];
   servicios:      ServicioSucursalItem[];
 }
 

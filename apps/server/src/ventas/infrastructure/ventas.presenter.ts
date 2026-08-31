@@ -8,6 +8,14 @@ import type {
   EnvioEntity,
 } from '../domain/venta.entity.js';
 
+// El Envio sólo guarda los ids de servicio y sucursal, pero la guía imprime el
+// código/nombre de ambos. Quien construya la guía debe resolverlos antes.
+export interface GuiaContexto {
+  servicio:             { codigo: string; nombre: string };
+  sucursal:             { codigo: string; nombre: string };
+  fechaEntregaEstimada: string | null;
+}
+
 export class VentasPresenter {
   static toVenta(entity: VentaEntity) {
     return {
@@ -121,13 +129,18 @@ export class VentasPresenter {
     };
   }
 
-  static toGuia(entity: EnvioEntity, servicioNombre?: string, fechaEntregaEstimada?: string | null) {
+  static toGuia(entity: EnvioEntity, ctx?: GuiaContexto) {
     const esInternacional = entity.tipo.startsWith('internacional');
     return {
+      // Lo necesita el cliente para pedir el PDF oficial a /ventas/envios/:id/guia-pdf.
+      envioId:      entity.id,
       numeroGuia:   entity.numeroGuia,
-      codigoBarras: entity.numeroGuia,
-      tipo:         esInternacional ? 'internacional' : 'nacional',
-      tipoServicio: servicioNombre ?? entity.tipo,
+      // El código de barras de la guía es el S10 (RA185194038CO); sólo existe
+      // para servicios con rastreo, el resto cae al número de guía.
+      codigoBarras:   entity.codigoTracking ?? entity.numeroGuia,
+      tipo:           esInternacional ? 'internacional' : 'nacional',
+      tipoServicio:   ctx?.servicio.nombre ?? entity.tipo,
+      codigoServicio: ctx?.servicio.codigo ?? '',
       remitente: {
         nombre:       entity.remitenteNombre,
         documento:    entity.remitenteDocumento,
@@ -165,11 +178,14 @@ export class VentasPresenter {
         declarado:  entity.valorDeclarado,
         total:      entity.valorTotal,
       },
+      contenido:            entity.contenido,
+      observaciones:        entity.observaciones,
       estado:               entity.estado,
       generadoEn:           entity.createdAt.toISOString(),
       ordenServicio:        entity.id,
-      fechaEntregaEstimada: fechaEntregaEstimada ?? null,
-      centroOperativo:      null,
+      fechaEntregaEstimada: ctx?.fechaEntregaEstimada ?? null,
+      centroOperativo:       ctx?.sucursal.nombre ?? null,
+      centroOperativoCodigo: ctx?.sucursal.codigo ?? null,
     };
   }
 }

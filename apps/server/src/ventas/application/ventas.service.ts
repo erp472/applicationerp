@@ -7,7 +7,8 @@ import { RealtimeService }    from '../../realtime/realtime.service.js';
 import { auditStore }     from '../../common/audit-context.js';
 import { VENTAS_REPOSITORY } from '../domain/venta.repository.js';
 import type { IVentasRepository } from '../domain/venta.repository.js';
-import type { TipoProducto } from '../domain/venta.entity.js';
+import type { TipoProducto, EnvioEntity } from '../domain/venta.entity.js';
+import type { GuiaContexto } from '../infrastructure/ventas.presenter.js';
 import {
   VentaNoEncontradaError,
   ClienteNoEncontradoError,
@@ -32,6 +33,8 @@ import {
   validarEfectivoSuficiente,
 } from '../domain/business-rules.js';
 import type { MedioPago } from '../../cajas/domain/caja.entity.js';
+import { puedeOperarSesion } from '../../cajas/domain/calculos/asignacion-caja.js';
+import type { DuenoSesion } from '../../cajas/domain/calculos/asignacion-caja.js';
 import { calcularPesoVolumetrico } from '../domain/calculos/peso-volumetrico.js';
 import { calcularPesoVolumetricoIntl } from '../domain/calculos/peso-volumetrico-intl.js';
 import { calcularPesoFacturado } from '../domain/calculos/peso-facturado.js';
@@ -43,7 +46,7 @@ import { calcularSeguroPostal } from '../domain/calculos/seguro-postal.js';
 import { calcularFechaVencimiento } from '../domain/calculos/fecha-vencimiento.js';
 import { calcularPrecioPorMeses } from '../domain/calculos/precio-por-meses.js';
 import { calcularIvaApartado } from '../domain/calculos/iva-apartado.js';
-import { generarNumeroGuiaSecuencia } from '../domain/calculos/numero-guia-secuencia.js';
+import { generarNumeroGuiaSecuencia, generarCodigoTrackingS10 } from '../domain/calculos/numero-guia-secuencia.js';
 import { calcularValorEstampillasRequeridas } from '../domain/calculos/valor-estampillas-requeridas.js';
 import { calcularPrecioPorCantidad } from '../domain/calculos/precio-por-cantidad.js';
 import { calcularTotalEnvioNacional } from '../domain/calculos/total-envio-nacional.js';
@@ -124,16 +127,21 @@ export class VentasService {
     return this.repo.findEstampillasConStock(sesion.sucursalId);
   }
 
-  // ── Iniciar venta ─────────────────────────────────────────────────────────────
-
-  async iniciarVenta(cajaId: number, dto: IniciarVentaDto, usuarioId: number, userRol: string) {
-    const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
-    validarSesionActivaParaVenta(cajaId, sesion?.id ?? null);
-
-    // CAJERO solo puede operar la caja que le fue asignada
-    if (userRol === 'CAJERO' && sesion!.cajeroAsignadoId !== null && sesion!.cajeroAsignadoId !== usuarioId) {
+  // Toda operación de venta queda atribuida al cajero de la sesión, así que solo él puede
+  // ejecutarla: si un tercero vende aquí, el movimiento le cuelga a un custodio que no lo hizo
+  // y el arqueo se lo cobra a él.
+  private assertOperaLaSesion(sesion: DuenoSesion, usuarioId: number): void {
+    if (!puedeOperarSesion(sesion, usuarioId)) {
       throw new ForbiddenException('Esta caja está asignada a otro cajero');
     }
+  }
+
+  // ── Iniciar venta ─────────────────────────────────────────────────────────────
+
+  async iniciarVenta(cajaId: number, dto: IniciarVentaDto, usuarioId: number) {
+    const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
+    validarSesionActivaParaVenta(cajaId, sesion?.id ?? null);
+    this.assertOperaLaSesion(sesion!, usuarioId);
 
     const cliente = await this.repo.findClienteByDocumento(dto.tipoDocumento, dto.numeroDocumento);
     if (!cliente) throw new ClienteNoEncontradoError(dto.tipoDocumento, dto.numeroDocumento);
@@ -162,7 +170,7 @@ export class VentasService {
     return venta;
   }
 
-  async agregarProducto(ventaId: number, dto: AgregarProductoDto, cajaId: number) {
+  async agregarProducto(ventaId: number, dto: AgregarProductoDto, cajaId: number, usuarioId: number) {
     const venta = await this.repo.findVentaById(ventaId);
     if (!venta) throw new VentaNoEncontradaError(ventaId);
     validarVentaActiva(ventaId, venta.estado);
@@ -170,6 +178,7 @@ export class VentasService {
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
     if (!sesion) throw new SesionCajaInactivaError(cajaId);
     validarVentaEnSesion(ventaId, venta.sesionCajaId, sesion.id);
+    this.assertOperaLaSesion(sesion, usuarioId);
 
     const producto = await this.repo.findProductoById(dto.productoId, sesion.sucursalId);
     if (!producto) throw new ProductoNoEncontradoError(dto.productoId);
@@ -238,6 +247,7 @@ export class VentasService {
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
     if (!sesion) throw new SesionCajaInactivaError(cajaId);
     validarVentaEnSesion(ventaId, venta.sesionCajaId, sesion.id);
+    this.assertOperaLaSesion(sesion, usuarioId);
 
     const cotizacion = await this.cotizarEnvio(
       dto.servicioId,
@@ -307,7 +317,7 @@ export class VentasService {
       validarGuiaCp(dto.guiaCp, []);
     }
 
-    const numeroGuia = await this._generarNumeroGuia();
+    const { numeroGuia, codigoTracking } = await this._generarNumeroGuia(dto.servicioId);
 
     const envio = await this.repo.crearEnvio({
       ventaId,
@@ -318,6 +328,7 @@ export class VentasService {
       servicioId:           dto.servicioId,
       tipo:                 cotizacion.servicio.tipo,
       numeroGuia,
+      codigoTracking,
       estado:               'pendiente',
       remitenteNombre:      dto.remitente.nombre,
       remitenteDocumento:   dto.remitente.documento,
@@ -390,6 +401,7 @@ export class VentasService {
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
     if (!sesion) throw new SesionCajaInactivaError(cajaId);
     validarVentaEnSesion(ventaId, venta.sesionCajaId, sesion.id);
+    this.assertOperaLaSesion(sesion, usuarioId);
 
     // Validar stock para todos los productos que tienen inventario registrado
     const todosItems = venta.detalle ?? [];
@@ -512,6 +524,7 @@ export class VentasService {
         tipo:           tipoMovimiento,
         monto:          String(montoMovVenta),
         medioPago:      dto.medioPago as any,
+        montoEfectivo:  dto.montoEfectivo,
         referenciaId:   ventaId,
         referenciaTipo: 'Venta',
         descripcion:    descripcionMovimiento,
@@ -581,6 +594,7 @@ export class VentasService {
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
     if (!sesion) throw new SesionCajaInactivaError(cajaId);
     validarVentaEnSesion(ventaId, venta.sesionCajaId, sesion.id);
+    this.assertOperaLaSesion(sesion, usuarioId);
 
     // Anular envíos pendientes vinculados (no generaron guías aún)
     const enviosPendientes = await this.repo.findEnviosPendientesByVenta(ventaId);
@@ -933,6 +947,7 @@ export class VentasService {
   async crearEnvio(cajaId: number, usuarioId: number, dto: CrearEnvioDto) {
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
     if (!sesion) throw new SesionCajaInactivaError(cajaId);
+    this.assertOperaLaSesion(sesion, usuarioId);
 
     if (dto.esCorrespondencia && dto.pesoFisicoKg > 5) {
       throw new Error('Correspondencia: peso máximo 5 kg (5000 g)');
@@ -1009,7 +1024,7 @@ export class VentasService {
       );
     }
 
-    const numeroGuia = await this._generarNumeroGuia();
+    const { numeroGuia, codigoTracking } = await this._generarNumeroGuia(dto.servicioId);
 
     // international CP guide: validate format — DB unique constraint handles duplicates
     if (esInternacional && dto.guiaCp) {
@@ -1029,6 +1044,7 @@ export class VentasService {
       servicioId:           dto.servicioId,
       tipo:                 cotizacion.servicio.tipo,
       numeroGuia,
+      codigoTracking,
       remitenteNombre:      dto.remitente.nombre,
       remitenteDocumento:   dto.remitente.documento,
       remitenteEmail:       dto.remitente.email,
@@ -1082,6 +1098,49 @@ export class VentasService {
 
   // ── Guía PDF de envío individual ──────────────────────────────────────────────
 
+  // El borrador de la guía se arma en el cliente antes de que exista el envío, y
+  // /sucursales está cerrado al rol CAJERO, así que el punto de admisión se sirve
+  // desde aquí.
+  async getPuntoAdmision(sucursalId: number): Promise<{ codigo: string; nombre: string }> {
+    const sucursal = await this.prisma.sucursal.findUnique({
+      where:  { idsucursales: sucursalId },
+      select: { codigosucursales: true, nombresucursales: true },
+    });
+    if (!sucursal) throw new NotFoundException(`Sucursal ${sucursalId} no encontrada`);
+    return { codigo: sucursal.codigosucursales, nombre: sucursal.nombresucursales };
+  }
+
+  // Resuelve servicio y punto de admisión de un envío. Sin esto la guía sale sin
+  // datos de servicio: el EnvioEntity sólo lleva los ids.
+  async getContextoGuia(envio: EnvioEntity): Promise<GuiaContexto> {
+    const [servicio, sucursal] = await Promise.all([
+      this.prisma.servicio.findUnique({
+        where:  { idservicios: envio.servicioId },
+        select: { codigoservicios: true, nombreservicios: true, tiempo_entrega_diasservicios: true },
+      }),
+      this.prisma.sucursal.findUnique({
+        where:  { idsucursales: envio.sucursalId },
+        select: { codigosucursales: true, nombresucursales: true },
+      }),
+    ]);
+
+    const dias = servicio?.tiempo_entrega_diasservicios ?? null;
+
+    return {
+      servicio: {
+        codigo: servicio?.codigoservicios  ?? '',
+        nombre: servicio?.nombreservicios  ?? envio.tipo,
+      },
+      sucursal: {
+        codigo: sucursal?.codigosucursales ?? '',
+        nombre: sucursal?.nombresucursales ?? '',
+      },
+      fechaEntregaEstimada: dias != null
+        ? new Date(envio.createdAt.getTime() + dias * 86_400_000).toISOString()
+        : null,
+    };
+  }
+
   async getEnvioGuiaPdf(envioId: number): Promise<Buffer> {
     const envioRow = await this.prisma.envio.findUnique({
       where:  { idenvios: envioId },
@@ -1102,21 +1161,13 @@ export class VentasService {
     const envio = await this.repo.findEnvioById(envioId);
     if (!envio) throw new NotFoundException(`Envío ${envioId} no encontrado`);
 
-    const [servicio, sucursal] = await Promise.all([
-      this.prisma.servicio.findUnique({
-        where:  { idservicios: envioRow.servicios_idservicios },
-        select: { nombreservicios: true },
-      }),
-      this.prisma.sucursal.findUnique({
-        where:  { idsucursales: envioRow.sucursales_idsucursales },
-        select: { codigosucursales: true, nombresucursales: true },
-      }),
-    ]);
+    const ctx = await this.getContextoGuia(envio);
 
     const svgBuffer = await generarGuiaEnvioSvg(
       envio,
-      servicio?.nombreservicios ?? envio.tipo,
-      { codigo: sucursal?.codigosucursales ?? '', nombre: sucursal?.nombresucursales ?? '' },
+      ctx.servicio,
+      ctx.sucursal,
+      ctx.fechaEntregaEstimada ? new Date(ctx.fechaEntregaEstimada) : undefined,
     );
     const buffer  = await svgToPdf(svgBuffer);
     const relPath = `guias/${envioRow.numero_guiaenvios}.pdf`;
@@ -1206,9 +1257,19 @@ export class VentasService {
     return { ...item, diasRestantes, alertaVencimiento };
   }
 
-  private async _generarNumeroGuia(): Promise<string> {
+  private async _generarNumeroGuia(
+    servicioId: number,
+  ): Promise<{ numeroGuia: string; codigoTracking: string | null }> {
+    const servicio = await this.prisma.servicio.findUnique({
+      where:  { idservicios: servicioId },
+      select: { prefijo_guia_servicios: true },
+    });
+    const prefijoS10 = servicio?.prefijo_guia_servicios ?? null;
     const consecutivo = await this.repo.nextConsecutivoGuia();
-    return generarNumeroGuiaSecuencia('GU', consecutivo);
+    return {
+      numeroGuia:     generarNumeroGuiaSecuencia(prefijoS10 ?? 'GU', consecutivo),
+      codigoTracking: prefijoS10 ? generarCodigoTrackingS10(prefijoS10, consecutivo) : null,
+    };
   }
 
   private _resolverTipoMovimiento(detalle: Array<{ tipoProducto?: string | null }>) {

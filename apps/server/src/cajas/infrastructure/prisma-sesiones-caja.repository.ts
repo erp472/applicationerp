@@ -13,9 +13,9 @@ import type {
   TipoAlerta,
   BalancePagosRow,
 } from '../domain/caja.entity.js';
-import { evaluarAlertas, TIPOS_MOVIMIENTO_ENTRADA, TIPOS_MOVIMIENTO_SALIDA } from '../domain/business-rules.js';
+import { evaluarAlertas, TIPOS_MOVIMIENTO_ENTRADA, TIPOS_MOVIMIENTO_SALIDA, deltaEfectivo } from '../domain/business-rules.js';
 import { calcularSaldoPorMedioPago } from '../domain/calculos/saldo-por-medio-pago.js';
-import { componerPanelStatus } from '../domain/calculos/panel-status-punto.js';
+import { componerPanelStatus, calcularBaseDisponible } from '../domain/calculos/panel-status-punto.js';
 import { evaluarHoraReset } from '../domain/calculos/hora-reset.js';
 
 const SELECT_SESION = {
@@ -144,8 +144,12 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
   async findAbiertaByCajero(cajeroId: number): Promise<SesionCajaEntity | null> {
     const row = await this.prisma.sesionCaja.findFirst({
       where: {
-        usuarios_idusuarios_cajero_asignado: cajeroId,
         estadosesiones_caja: 'abierta',
+        OR: [
+          { usuarios_idusuarios_cajero_asignado: cajeroId },
+          // Cajero abrió su propia sesión sin especificarse como cajeroAsignadoId
+          { usuarios_idusuarios_cajero_asignado: null, usuarios_idusuarios_apertura: cajeroId },
+        ],
       },
       select: SELECT_SESION,
     });
@@ -208,15 +212,23 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
       where: { idsesiones_caja: sesionId },
       select: {
         monto_aperturasesiones_caja: true,
-        movimientosCaja: { select: { tipomovimientos_caja: true, montomovimientos_caja: true } },
+        movimientosCaja: {
+          select: {
+            tipomovimientos_caja:       true,
+            montomovimientos_caja:      true,
+            medio_pagomovimientos_caja: true,
+          },
+        },
       },
     });
 
     let saldo = Number(sesion.monto_aperturasesiones_caja);
     for (const m of sesion.movimientosCaja) {
-      const monto = Number(m.montomovimientos_caja);
-      if (TIPOS_MOVIMIENTO_ENTRADA.has(m.tipomovimientos_caja)) saldo += monto;
-      else if (TIPOS_MOVIMIENTO_SALIDA.has(m.tipomovimientos_caja)) saldo -= monto;
+      saldo += deltaEfectivo(
+        m.tipomovimientos_caja,
+        Number(m.montomovimientos_caja),
+        m.medio_pagomovimientos_caja,
+      );
     }
     return saldo.toFixed(2);
   }
@@ -231,7 +243,13 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
         idsesiones_caja: true,
         caja: { select: { tipocajas: true } },
         monto_aperturasesiones_caja: true,
-        movimientosCaja: { select: { tipomovimientos_caja: true, montomovimientos_caja: true } },
+        movimientosCaja: {
+          select: {
+            tipomovimientos_caja:       true,
+            montomovimientos_caja:      true,
+            medio_pagomovimientos_caja: true,
+          },
+        },
       },
     });
 
@@ -240,9 +258,11 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
     for (const s of sesiones) {
       let saldo = Number(s.monto_aperturasesiones_caja);
       for (const m of s.movimientosCaja) {
-        const monto = Number(m.montomovimientos_caja);
-        if (TIPOS_MOVIMIENTO_ENTRADA.has(m.tipomovimientos_caja)) saldo += monto;
-        else if (TIPOS_MOVIMIENTO_SALIDA.has(m.tipomovimientos_caja)) saldo -= monto;
+        saldo += deltaEfectivo(
+          m.tipomovimientos_caja,
+          Number(m.montomovimientos_caja),
+          m.medio_pagomovimientos_caja,
+        );
       }
       if (s.caja.tipocajas === 'pagos') pagos += saldo;
       else general += saldo;
@@ -297,28 +317,34 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
     return toMovEntity(row);
   }
 
-  // RNF-5.02: ambas patas de una transferencia se persisten en una única transacción ACID.
-  // Si cualquiera falla, ninguna se escribe — conservación de masa garantizada.
+  // RNF-5.02: los movimientos relacionados se persisten en una única transacción ACID.
+  // Si cualquiera falla, ninguno se escribe — conservación de masa garantizada.
+  async registrarMovimientosAtomicos(
+    movimientos: RegistrarMovimientoData[],
+  ): Promise<MovimientoCajaEntity[]> {
+    const rows = await this.prisma.$transaction(
+      movimientos.map(d => this.prisma.movimientoCaja.create({
+        data: {
+          sesiones_caja_idsesiones_caja:   d.sesionCajaId,
+          tipomovimientos_caja:            d.tipo,
+          montomovimientos_caja:           d.monto,
+          medio_pagomovimientos_caja:      d.medioPago,
+          referencia_idmovimientos_caja:   d.referenciaId,
+          referencia_tipomovimientos_caja: d.referenciaTipo,
+          descripcionmovimientos_caja:     d.descripcion,
+        },
+        select: SELECT_MOV,
+      })),
+    );
+    return rows.map(toMovEntity);
+  }
+
   async registrarTransferenciaAtomica(
     salida: RegistrarMovimientoData,
     entrada: RegistrarMovimientoData,
   ): Promise<[MovimientoCajaEntity, MovimientoCajaEntity]> {
-    const buildData = (d: RegistrarMovimientoData) => ({
-      sesiones_caja_idsesiones_caja:   d.sesionCajaId,
-      tipomovimientos_caja:            d.tipo,
-      montomovimientos_caja:           d.monto,
-      medio_pagomovimientos_caja:      d.medioPago,
-      referencia_idmovimientos_caja:   d.referenciaId,
-      referencia_tipomovimientos_caja: d.referenciaTipo,
-      descripcionmovimientos_caja:     d.descripcion,
-    });
-
-    const [mov1, mov2] = await this.prisma.$transaction([
-      this.prisma.movimientoCaja.create({ data: buildData(salida),  select: SELECT_MOV }),
-      this.prisma.movimientoCaja.create({ data: buildData(entrada), select: SELECT_MOV }),
-    ]);
-
-    return [toMovEntity(mov1), toMovEntity(mov2)];
+    const [mov1, mov2] = await this.registrarMovimientosAtomicos([salida, entrada]);
+    return [mov1, mov2];
   }
 
   private readonly SELECT_REPOSICION = {
@@ -614,13 +640,14 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
         cajas: {
           where: { activocajas: true, deleted_atcajas: null },
           select: {
-            idcajas:            true,
-            codigocajas:        true,
-            nombrecajas:        true,
-            tipocajas:          true,
-            base_diacajas:      true,
-            limite_alertacajas: true,
-            t_targetcajas:      true,
+            idcajas:                          true,
+            codigocajas:                      true,
+            nombrecajas:                      true,
+            tipocajas:                        true,
+            base_diacajas:                    true,
+            limite_alertacajas:               true,
+            t_targetcajas:                    true,
+            usuarios_idusuarios_cajero_fijo:  true,
             sesiones: {
               where: { estadosesiones_caja: 'abierta' },
               take: 1,
@@ -647,7 +674,7 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
       return {
         sucursalId:  0,
         cajaPadreId,
-        panel: { baseGeneral: '0', cajaGeneral: '0', cajaFuerteGeneral: '0', basePagos: '0', cajaPagos: '0', cajaFuertePagos: '0', acumuladoMonedaCirculante: '0', tTransito: '0', debeReset: false, horaReset: null },
+        panel: { baseGeneral: '0', cajaGeneral: '0', cajaFuerteGeneral: '0', basePagos: '0', cajaPagos: '0', cajaFuertePagos: '0', acumuladoMonedaCirculante: '0', tTransito: '0', baseDisponible: '0', debeReset: false, horaReset: null },
         cajas: [],
       };
     }
@@ -658,6 +685,9 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
     let cajonPagosTotal      = 0;
     let basePagos            = '0';
     let acumuladoMoneda      = 0;
+    // BR-CAJ-011: base disponible para nuevas aperturas
+    let cajaFuerteAbiertaSaldo: number | null = null;  // null = Caja Fuerte no está abierta
+    let sumOpenAuxMontoApertura = 0;                   // suma de montoApertura de aux standalone
 
     const cards: CardAuxiliar[] = cajaPadre.cajas.map((caja) => {
       const sesionActiva = caja.sesiones[0] ?? null;
@@ -670,6 +700,7 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
           nombre:       caja.nombrecajas,
           tipo:         caja.tipocajas as import('../domain/caja.entity.js').TipoCaja,
           cajeroId:     null,
+          cajeroFijoId: caja.usuarios_idusuarios_cajero_fijo,
           estado:       'sin_sesion' as const,
           saldoActual:  null,
           baseDia:      caja.base_diacajas.toString(),
@@ -693,8 +724,13 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
 
       for (const m of sesionActiva.movimientosCaja) {
         const monto = Number(m.montomovimientos_caja);
-        if (TIPOS_MOVIMIENTO_ENTRADA.has(m.tipomovimientos_caja)) { saldo += monto; ingresos += monto; }
-        else if (TIPOS_MOVIMIENTO_SALIDA.has(m.tipomovimientos_caja)) { saldo -= monto; egresos += monto; }
+        // ingresos/egresos describen el cajón, igual que saldoActual: un pago con
+        // tarjeta o preporteado no mueve efectivo. La facturación por medio de pago
+        // va aparte en saldoPorMedioPago.
+        const delta = deltaEfectivo(m.tipomovimientos_caja, monto, m.medio_pagomovimientos_caja);
+        saldo += delta;
+        if (delta > 0)      ingresos += delta;
+        else if (delta < 0) egresos  += -delta;
         if (m.tipomovimientos_caja === 'moneda_circulante') monedaCirculante += monto;
         if (m.tipomovimientos_caja === 'traslado_caja_fuerte') trasladoVault += monto;
       }
@@ -737,11 +773,15 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
         // Su saldo incluye cambio_custodia_in de auxiliares ya cerradas (vía TIPOS_ENTRADA).
         cajonGeneralTotal  += saldo;
         fuerteGeneralTotal += saldo;
+        cajaFuerteAbiertaSaldo = saldo;  // BR-CAJ-011: saldo real de la Caja Fuerte
       } else {
-        // pos, menor → cajón operativo del cajero auxiliar
+        // pos, menor → efectivo fuera de la bóveda. La menor es un bolsillo del punto
+        // (sin cajero propio), pero su saldo tampoco está dentro de la Caja Fuerte.
         cajonGeneralTotal  += saldo;
         // C5: traslados mid-turn de aux → ya están en la bóveda física aunque la aux sigue abierta
         fuerteGeneralTotal += trasladoVault;
+        // BR-CAJ-011: montoApertura > 0 solo en aperturas standalone (sin Caja Fuerte activa)
+        sumOpenAuxMontoApertura += Number(sesionActiva.monto_aperturasesiones_caja);
       }
 
       return {
@@ -750,7 +790,10 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
         codigo:        caja.codigocajas,
         nombre:        caja.nombrecajas,
         tipo:          caja.tipocajas as import('../domain/caja.entity.js').TipoCaja,
-        cajeroId:      sesionActiva.usuarios_idusuarios_cajero_asignado ?? sesionActiva.usuarios_idusuarios_apertura,
+        cajeroId:      sesionActiva.usuarios_idusuarios_cajero_asignado
+                        ?? caja.usuarios_idusuarios_cajero_fijo
+                        ?? sesionActiva.usuarios_idusuarios_apertura,
+        cajeroFijoId:  caja.usuarios_idusuarios_cajero_fijo,
         estado:        'abierta' as const,
         saldoActual:   saldo.toFixed(2),
         baseDia,
@@ -795,6 +838,11 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
         const { debeResetear } = horaResetStr
           ? evaluarHoraReset(horaAhora, horaResetStr)
           : { debeResetear: false };
+        const baseDisponible = calcularBaseDisponible(
+          Number(cajaPadre.base_generalcajas_padres),
+          cajaFuerteAbiertaSaldo,
+          sumOpenAuxMontoApertura,
+        );
         return componerPanelStatus(
           cajaPadre.base_generalcajas_padres.toString(),
           cajonGeneralTotal.toFixed(2),
@@ -804,6 +852,7 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
           cajaFuertePagosTotal.toFixed(2),
           acumuladoMoneda.toFixed(2),
           tTransito,
+          baseDisponible.toFixed(2),
           debeResetear,
           horaResetStr,
         );

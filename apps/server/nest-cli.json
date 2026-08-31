@@ -6,6 +6,6 @@
     "deleteOutDir": true,
     "builder": "tsc",
     "tsConfigPath": "tsconfig.build.json",
-    "assets": [{ "include": "**/*.svg", "watchAssets": true }]
+    "assets": [{ "include": "**/*.svg", "outDir": "dist/src", "watchAssets": true }]
   }
 }

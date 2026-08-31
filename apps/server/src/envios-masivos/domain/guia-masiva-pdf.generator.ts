@@ -1,5 +1,5 @@
 import type { GuiaData, SucursalGuiaInfo } from '../../ventas/domain/guia-svg.generator.js';
-import { renderGuiaSvg }                  from '../../ventas/domain/guia-svg.generator.js';
+import { renderGuiaSvg, codigoCorto, truncarPalabra, partirDireccion } from '../../ventas/domain/guia-svg.generator.js';
 import { svgsToPdf }                      from '../../common/svg-to-pdf.js';
 
 export interface GuiaPdfItem {
@@ -58,14 +58,17 @@ function buildGuiaDataFromItem(item: GuiaPdfItem, sucursal: SucursalGuiaInfo): G
   const admision = fmtDate(item.fecha);
   const guia     = item.numeroGuia;
   const tracking = item.codigoTracking ?? guia;
+  const [remDir,  remRef]  = partirDireccion(item.remitente.direccion    ?? '');
+  const [destDir, destRef] = partirDireccion(item.destinatario.direccion ?? '');
 
   return {
-    centroOperativo:    sucursal.nombre,
+    centroOperativo:    truncarPalabra(sucursal.nombre, 18),
     fechaAdmision:      admision,
     fechaApproxEntrega: '',
 
     remitenteNombre:    item.remitente.nombre,
-    remitenteDireccion: item.remitente.direccion    ?? '',
+    remitenteDireccion:  remDir,
+    remitenteReferencia: remRef,
     remitenteNit:       item.remitente.documento    ?? '',
     remitenteCiudad:    item.remitente.ciudad       ?? '',
     remitenteDepto:     '',
@@ -73,10 +76,12 @@ function buildGuiaDataFromItem(item: GuiaPdfItem, sucursal: SucursalGuiaInfo): G
     remitenteCP:        item.remitente.cp           ?? '',
 
     destinatarioNombre:    item.destinatario.nombre,
-    destinatarioDireccion: item.destinatario.direccion ?? '',
+    destinatarioDireccion:  destDir,
+    destinatarioReferencia: destRef,
     destinatarioCiudad:    item.destinatario.ciudad    ?? '',
     destinatarioDepto:     '',
     destinatarioTel:       item.destinatario.telefono  ?? '',
+    destinatarioCP:        item.destinatario.cp        ?? '',
 
     codigoOperativo: item.servicio,
 
@@ -119,8 +124,8 @@ function buildGuiaDataFromItem(item: GuiaPdfItem, sucursal: SucursalGuiaInfo): G
     pieLegal2: 'El usuario deja expresa constancia que tuvo conocimiento del contrato que se encuentra publicado en la pagina web, 4-72 tratará sus datos personales para probar la entrega del envío. Para ejercer algún reclamo: servicioalcliente@4-72.com.co Para consultar la Política de',
     pieLegal3: 'Tratamiento: www.4-72.com.co',
 
-    lateral_derecho_centro: sucursal.nombre,
-    lateral_derecho_codigo: sucursal.codigo,
+    lateral_derecho_centro: truncarPalabra(sucursal.nombre, 15),
+    lateral_derecho_codigo: codigoCorto(sucursal.codigo),
   };
 }
 

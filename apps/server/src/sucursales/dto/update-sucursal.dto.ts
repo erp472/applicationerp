@@ -14,6 +14,7 @@ const TimeSchema = z
   .optional();
 
 export const UpdateSucursalSchema = z.object({
+  regional_id:      z.coerce.number().int().positive().optional(),
   nombre:           z.string().min(2).max(200).optional(),
   tipo:             TipoSucursalEnum.optional(),
   direccion:        z.string().max(500).nullable().optional(),

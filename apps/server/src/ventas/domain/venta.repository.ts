@@ -84,6 +84,7 @@ export interface CrearEnvioData {
   servicioId:           number;
   tipo:                 string;
   numeroGuia:           string;
+  codigoTracking?:      string | null;
   estado?:              'pendiente' | 'facturado';
   remitenteNombre:      string;
   remitenteDocumento?:  string;

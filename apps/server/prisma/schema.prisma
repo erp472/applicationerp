@@ -553,6 +553,8 @@ model Usuario {
   anulacionesAprobadas     Anulacion[]           @relation("AnulacionAprobador")
   diferenciasComoCustodio  DiferenciaCaja[]      @relation("DiferenciaCustodio")
   diferenciasComoAprobador DiferenciaCaja[]      @relation("DiferenciaAprobador")
+  cajasComoFijo            Caja[]                @relation("CajaCajeroFijo")
+  puntosSupervisados       CajaPadre[]           @relation("CajaPadreSupervisor")
   eventosAuditoria         EventoAuditoria[]
   consultasInspektor      ConsultaInspektor[]
   featureFlagsUsuarios    FeatureFlagUsuario[]
@@ -812,37 +814,41 @@ model DireccionFrecuente {
 // ══════════════════════════════════════════════════════════════════════════════
 
 model CajaPadre {
-  idcajas_padres           Int       @id @default(autoincrement())
-  sucursales_idsucursales  Int
-  nombrecajas_padres       String    @db.VarChar(100)
-  base_generalcajas_padres Decimal   @default(0) @db.Decimal(18, 2)
-  hora_resetcajas_padres   DateTime? @db.Time(6)
-  created_atcajas_padres   DateTime  @default(now()) @db.Timestamptz(6)
-  deleted_atcajas_padres   DateTime? @db.Timestamptz(6)
+  idcajas_padres                    Int       @id @default(autoincrement())
+  sucursales_idsucursales           Int
+  usuarios_idusuarios_supervisor    Int?
+  nombrecajas_padres                String    @db.VarChar(100)
+  base_generalcajas_padres          Decimal   @default(0) @db.Decimal(18, 2)
+  hora_resetcajas_padres            DateTime? @db.Time(6)
+  created_atcajas_padres            DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_atcajas_padres            DateTime? @db.Timestamptz(6)
 
-  sucursal Sucursal @relation(fields: [sucursales_idsucursales], references: [idsucursales])
-  cajas    Caja[]
+  sucursal   Sucursal  @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  supervisor Usuario?  @relation("CajaPadreSupervisor", fields: [usuarios_idusuarios_supervisor], references: [idusuarios])
+  cajas      Caja[]
 
   @@map("cajas_padres")
 }
 
 model Caja {
-  idcajas                     Int       @id @default(autoincrement())
-  sucursales_idsucursales     Int
-  cajas_padres_idcajas_padres Int?
-  codigocajas                 String    @db.VarChar(20)
-  nombrecajas                 String    @db.VarChar(100)
-  tipocajas                   tipo_caja
-  base_diacajas               Decimal   @default(0) @db.Decimal(18, 2)
-  limite_alertacajas          Decimal?  @db.Decimal(18, 2)
-  t_targetcajas               Decimal?  @db.Decimal(18, 2)
-  activocajas                 Boolean   @default(true)
-  created_atcajas             DateTime  @default(now()) @db.Timestamptz(6)
-  deleted_atcajas             DateTime? @db.Timestamptz(6)
+  idcajas                           Int       @id @default(autoincrement())
+  sucursales_idsucursales           Int
+  cajas_padres_idcajas_padres       Int?
+  usuarios_idusuarios_cajero_fijo   Int?
+  codigocajas                       String    @db.VarChar(20)
+  nombrecajas                       String    @db.VarChar(100)
+  tipocajas                         tipo_caja
+  base_diacajas                     Decimal   @default(0) @db.Decimal(18, 2)
+  limite_alertacajas                Decimal?  @db.Decimal(18, 2)
+  t_targetcajas                     Decimal?  @db.Decimal(18, 2)
+  activocajas                       Boolean   @default(true)
+  created_atcajas                   DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_atcajas                   DateTime? @db.Timestamptz(6)
 
-  sucursal   Sucursal   @relation(fields: [sucursales_idsucursales], references: [idsucursales])
-  cajaPadre  CajaPadre? @relation(fields: [cajas_padres_idcajas_padres], references: [idcajas_padres])
-  sesiones   SesionCaja[]
+  sucursal       Sucursal   @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  cajaPadre      CajaPadre? @relation(fields: [cajas_padres_idcajas_padres], references: [idcajas_padres])
+  cajeroFijo     Usuario?   @relation("CajaCajeroFijo", fields: [usuarios_idusuarios_cajero_fijo], references: [idusuarios])
+  sesiones       SesionCaja[]
 
   @@unique([codigocajas, sucursales_idsucursales])
   @@map("cajas")
@@ -1058,6 +1064,7 @@ model Envio {
   peso_volumetrico_kgenvios          Decimal?    @db.Decimal(8, 3)
   peso_tarificado_kgenvios           Decimal     @db.Decimal(8, 3)
   valor_declaradoenvios              Decimal?    @db.Decimal(18, 2)
+  contenidoenvios                    String?     @db.VarChar(200)
   observacionesenvios                String?
   valor_servicioenvios               Decimal     @db.Decimal(18, 2)
   valor_estampillasenvios            Decimal     @default(0) @db.Decimal(18, 2)

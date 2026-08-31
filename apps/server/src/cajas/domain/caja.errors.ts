@@ -50,11 +50,27 @@ export class SaldoInsuficienteError extends CajaDomainError {
   }
 }
 
-export class BaseMinimaVioladaError extends CajaDomainError {
+// BR-CAJ-010: el punto no puede custodiar más efectivo del que la Caja General le asignó
+export class AperturaExcedeAsignacionPuntoError extends CajaDomainError {
   readonly statusCode = 422;
-  constructor(resultante: string, baseMinima: string) {
-    super(`La operación dejaría la Caja General en $${resultante}, por debajo del mínimo de $${baseMinima}`);
-    this.name = 'BaseMinimaVioladaError';
+  constructor(montoApertura: string, baseGeneral: string, punto: string) {
+    super(
+      `La apertura de $${montoApertura} supera la base asignada al punto ${punto} ($${baseGeneral}). ` +
+      `El excedente pertenece a la Caja General y no puede custodiarlo el punto.`,
+    );
+    this.name = 'AperturaExcedeAsignacionPuntoError';
+  }
+}
+
+// BR-CAJ-009: la base de una auxiliar no puede exceder su fondo configurado
+export class BaseExcedeLimiteCajaError extends CajaDomainError {
+  readonly statusCode = 422;
+  constructor(baseAsignada: string, baseDia: string, codigo: string) {
+    super(
+      `La base asignada $${baseAsignada} supera el fondo configurado de la caja ${codigo} ($${baseDia}). ` +
+      `El excedente pertenece a la Caja Fuerte del punto.`,
+    );
+    this.name = 'BaseExcedeLimiteCajaError';
   }
 }
 
@@ -106,6 +122,42 @@ export class CajeroYaAsignadoError extends CajaDomainError {
   }
 }
 
+// La Caja Fuerte y la Caja Menor son bolsillos de la caja principal: las custodia el
+// supervisor del punto y no admiten un cajero propio.
+export class CajaNoAsignableError extends CajaDomainError {
+  readonly statusCode = 422;
+  constructor(codigo: string, tipo: string) {
+    super(
+      `La caja ${codigo} es de tipo ${tipo}: forma parte de la caja principal del punto y no admite ` +
+      `un cajero asignado. Solo las cajas que venden o prestan servicios reciben cajero.`,
+    );
+    this.name = 'CajaNoAsignableError';
+  }
+}
+
+// Una caja operativa sin cajero deja la sesión sin dueño, y sin dueño cualquier cajero
+// puede vender en ella: la venta deja de ser trazable al cajero y a su supervisor.
+export class CajaSinCajeroError extends CajaDomainError {
+  readonly statusCode = 422;
+  constructor(codigo: string) {
+    super(
+      `La caja ${codigo} no tiene cajero asignado. Asigne un cajero fijo desde la gestión del ` +
+      `punto o indique uno en la apertura antes de abrirla.`,
+    );
+    this.name = 'CajaSinCajeroError';
+  }
+}
+
+// El responsable de un punto o de una caja tiene que tener el rol que corresponde y estar
+// destacado en esa sucursal; si no, se rompe la segregación de funciones (RF-1.03).
+export class UsuarioNoAsignableError extends CajaDomainError {
+  readonly statusCode = 422;
+  constructor(mensaje: string) {
+    super(mensaje);
+    this.name = 'UsuarioNoAsignableError';
+  }
+}
+
 export class DiferenciaNoEncontradaError extends CajaDomainError {
   readonly statusCode = 404;
   constructor(id: number) {
@@ -119,6 +171,27 @@ export class DiferenciaEstadoInvalidoError extends CajaDomainError {
   constructor(estado: string) {
     super(`La diferencia ya fue procesada con estado: ${estado}`);
     this.name = 'DiferenciaEstadoInvalidoError';
+  }
+}
+
+// BR-CAJ-011: la suma de bases abiertas en el punto no puede superar la base general configurada
+export class BasePuntoInsuficienteError extends CajaDomainError {
+  readonly statusCode = 422;
+  constructor(totalAsignado: string, baseGeneral: string) {
+    super(
+      `Las bases ya abiertas ($${totalAsignado}) superan la base asignada al punto ($${baseGeneral}). ` +
+      `Cierre una caja auxiliar antes de abrir esta.`,
+    );
+    this.name = 'BasePuntoInsuficienteError';
+  }
+}
+
+// Configuración: no se guarda un punto que el motor de apertura va a rechazar después
+export class ConfiguracionPuntoInvalidaError extends CajaDomainError {
+  readonly statusCode = 422;
+  constructor(detalle: string) {
+    super(detalle);
+    this.name = 'ConfiguracionPuntoInvalidaError';
   }
 }
 

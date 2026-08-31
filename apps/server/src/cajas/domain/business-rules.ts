@@ -2,7 +2,8 @@ import {
   CajaYaAbiertaError,
   SesionYaCerradaError,
   SaldoInsuficienteError,
-  BaseMinimaVioladaError,
+  AperturaExcedeAsignacionPuntoError,
+  BaseExcedeLimiteCajaError,
   ConsignacionEstadoInvalidoError,
   MontoInvalidoError,
   CajeroYaAsignadoError,
@@ -25,6 +26,28 @@ export const TIPOS_MOVIMIENTO_SALIDA = new Set([
   'traslado_caja_fuerte',
 ]);
 
+// El saldo de una sesión es el efectivo del cajón, no la facturación. Un pago con
+// tarjeta/transferencia/preporteado se registra como venta pero nunca entra al cajón:
+// contarlo hacía que el arqueo siempre diera faltante y que el cierre arrastrara ese
+// exceso a la caja principal vía cambio_custodia.
+export const MEDIOS_SIN_EFECTIVO = new Set([
+  'tarjeta_debito', 'tarjeta_credito', 'transferencia',
+  'consignacion', 'cheque', 'preporteado', 'mixto_preporteado', 'estampilla',
+]);
+
+// Sin medio de pago = movimiento interno de caja (apertura, custodia, reposición,
+// traslado, diferencia): siempre es efectivo físico.
+export function afectaEfectivo(medioPago?: string | null): boolean {
+  return !medioPago || !MEDIOS_SIN_EFECTIVO.has(medioPago);
+}
+
+export function deltaEfectivo(tipo: string, monto: number, medioPago?: string | null): number {
+  if (!afectaEfectivo(medioPago)) return 0;
+  if (TIPOS_MOVIMIENTO_ENTRADA.has(tipo)) return monto;
+  if (TIPOS_MOVIMIENTO_SALIDA.has(tipo)) return -monto;
+  return 0;
+}
+
 // BR-CAJ-001
 export function validarUnicidadSesion(cajaId: number, sesionAbierta: boolean): void {
   if (sesionAbierta) throw new CajaYaAbiertaError(cajaId);
@@ -40,15 +63,31 @@ export function validarSaldoSuficiente(saldo: string, monto: string): void {
   if (Number(saldo) < Number(monto)) throw new SaldoInsuficienteError(saldo, monto);
 }
 
-// BR-CAJ-004: Caja General del punto no puede caer por debajo del mínimo
-export function validarCajaGeneralMinimo(
-  cajaGeneral: string,
-  baseMinima: string,
-  montoSalida: string,
+// BR-CAJ-010: la Caja Fuerte del punto no puede abrir con más efectivo del que la
+// Caja General le asignó (cajas_padres.base_general). Sin este tope el punto abría
+// con el global de la Caja General y lo mostraba como saldo propio.
+// No es un piso: el efectivo que baja a las auxiliares sigue dentro del punto, así
+// que la bóveda sí puede quedar por debajo de la base durante el turno.
+export function validarAperturaPunto(
+  montoApertura: string,
+  baseGeneral: string,
+  nombrePunto: string,
 ): void {
-  const resultante = Number(cajaGeneral) - Number(montoSalida);
-  if (resultante < Number(baseMinima)) {
-    throw new BaseMinimaVioladaError(resultante.toFixed(2), baseMinima);
+  if (Number(montoApertura) > Number(baseGeneral)) {
+    throw new AperturaExcedeAsignacionPuntoError(montoApertura, baseGeneral, nombrePunto);
+  }
+}
+
+// BR-CAJ-009: la base que recibe una caja auxiliar no puede exceder su fondo
+// configurado. La Caja Fuerte es la reserva del punto, no un saldo disponible para
+// una sola caja: sin este tope se podía asignar la bóveda entera a un POS.
+export function validarBaseAsignadaMaxima(
+  baseAsignada: string,
+  baseDia: string,
+  codigoCaja: string,
+): void {
+  if (Number(baseAsignada) > Number(baseDia)) {
+    throw new BaseExcedeLimiteCajaError(baseAsignada, baseDia, codigoCaja);
   }
 }
 

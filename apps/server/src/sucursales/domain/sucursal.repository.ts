@@ -17,7 +17,7 @@ export interface ISucursalesRepository {
   ciudadDepartamentoId(ciudadId: number): Promise<number | null>;
   countActiveUsers(sucursalId: number): Promise<number>;
   update(id: number, data: {
-    nombre?: string; tipo?: string; direccion?: string | null;
+    regionalId?: number; nombre?: string; tipo?: string; direccion?: string | null;
     telefono?: string | null; email?: string | null;
     horarioApertura?: Date | null; horarioCierre?: Date | null;
     paisId?: number | null; departamentoId?: number | null; ciudadId?: number | null;

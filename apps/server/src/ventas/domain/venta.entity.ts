@@ -163,6 +163,7 @@ export class EnvioEntity {
   id:                    number;
   ventaId:               number | null;
   numeroGuia:            string;
+  codigoTracking:        string | null;
   tipo:                  string;
   sucursalId:            number;
   sesionCajaId:          number | null;
@@ -199,6 +200,8 @@ export class EnvioEntity {
   valorCertificacion:    number;
   valorTotal:            number;
   medioPago:             MedioPagoVenta | null;
+  contenido:             string | null;
+  observaciones:         string | null;
   estado:                string;
   createdAt:             Date;
 }

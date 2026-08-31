@@ -218,6 +218,7 @@ function toEnvioEntity(row: any): EnvioEntity {
     id:                    row.idenvios,
     ventaId:               row.ventas_idventas ?? null,
     numeroGuia:            row.numero_guiaenvios,
+    codigoTracking:        row.numero_guia_fisicaenvios ?? null,
     tipo:                  row.tipoenvios,
     sucursalId:            row.sucursales_idsucursales,
     sesionCajaId:          row.sesiones_caja_idsesiones_caja ?? null,
@@ -254,6 +255,8 @@ function toEnvioEntity(row: any): EnvioEntity {
     valorCertificacion:    Number(row.valor_certificacionenvios ?? 0),
     valorTotal:            Number(row.valor_totalenvios),
     medioPago:             row.medio_pagoenvios ?? null,
+    contenido:             row.contenidoenvios ?? null,
+    observaciones:         row.observacionesenvios ?? null,
     estado:                row.estadoenvios,
     createdAt:             row.created_atenvios,
   };
@@ -468,8 +471,9 @@ export class PrismaVentasRepository implements IVentasRepository {
     const fin    = new Date(); fin.setHours(23, 59, 59, 999);
     const rows = await this.prisma.venta.findMany({
       where: {
-        sesionCaja:       { sucursales_idsucursales: sucursalId } as any,
-        estadoventas:     'confirmada' as any,
+        // La sucursal cuelga de la caja, no de la sesión
+        sesionCaja:       { caja: { sucursales_idsucursales: sucursalId } },
+        estadoventas:     'confirmada',
         created_atventas: { gte: inicio, lte: fin },
       },
       select:  { ...SELECT_VENTA, detalle: { select: SELECT_DETALLE } },
@@ -832,6 +836,7 @@ export class PrismaVentasRepository implements IVentasRepository {
     const row = await this.prisma.envio.create({
       data: {
         numero_guiaenvios:               data.numeroGuia,
+        numero_guia_fisicaenvios:        data.codigoTracking ?? null,
         tipoenvios:                      data.tipo as any,
         sucursales_idsucursales:         data.sucursalId,
         sesiones_caja_idsesiones_caja:   data.sesionCajaId,
@@ -868,6 +873,7 @@ export class PrismaVentasRepository implements IVentasRepository {
         valor_certificacionenvios:       data.valorCertificacion,
         valor_totalenvios:               data.valorTotal,
         medio_pagoenvios:                data.medioPago as any,
+        contenidoenvios:                 data.contenido ?? null,
         observacionesenvios:             data.observaciones ?? null,
         es_correspondenciaenvios:        data.esCorrespondencia ?? false,
         estadoenvios:                    (data.estado ?? 'facturado') as any,

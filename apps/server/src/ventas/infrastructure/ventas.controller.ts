@@ -167,11 +167,11 @@ export class VentasController {
   async iniciarVenta(
     @Param('cajaId', ParseIntPipe) cajaId: number,
     @Body() body: unknown,
-    @CurrentUser() user: { id: number; rol: string },
+    @CurrentUser() user: { id: number },
   ) {
     const parsed = IniciarVentaSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
-    const { venta, cliente } = await this.service.iniciarVenta(cajaId, parsed.data, user.id, user.rol);
+    const { venta, cliente } = await this.service.iniciarVenta(cajaId, parsed.data, user.id);
     return { venta: VentasPresenter.toVenta(venta), cliente: VentasPresenter.toCliente(cliente) };
   }
 
@@ -195,10 +195,11 @@ export class VentasController {
     @Param('ventaId', ParseIntPipe) ventaId: number,
     @Query('cajaId', ParseIntPipe)  cajaId:  number,
     @Body() body: unknown,
+    @CurrentUser() user: { id: number },
   ) {
     const parsed = AgregarProductoSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
-    const result = await this.service.agregarProducto(ventaId, parsed.data, cajaId);
+    const result = await this.service.agregarProducto(ventaId, parsed.data, cajaId, user.id);
     return { detalle: VentasPresenter.toDetalle(result.detalle), nombreProducto: result.nombreProducto };
   }
 
@@ -232,7 +233,7 @@ export class VentasController {
     const result = await this.service.agregarEnvioAlCarrito(ventaId, cajaId, user.id, parsed.data);
     return {
       envio:                VentasPresenter.toEnvio(result.envio),
-      guia:                 VentasPresenter.toGuia(result.envio, result.cotizacion.servicio?.nombre, result.cotizacion.fechaEntregaEstimada?.toISOString() ?? null),
+      guia:                 VentasPresenter.toGuia(result.envio, await this.service.getContextoGuia(result.envio)),
       cotizacion:           { pesoTarificadoKg: result.cotizacion.pesoTarificadoKg, valorServicio: result.cotizacion.valorServicio },
       numeroGuia:           result.numeroGuia,
       estado:               'pendiente',
@@ -277,7 +278,9 @@ export class VentasController {
       saldoActual: result.saldoActual,
       alertas:     result.alertas,
       cambio:      result.cambio,
-      guias:       result.guias.map((e) => VentasPresenter.toGuia(e)),
+      guias:       await Promise.all(
+        result.guias.map(async (e) => VentasPresenter.toGuia(e, await this.service.getContextoGuia(e))),
+      ),
     };
   }
 
@@ -500,7 +503,7 @@ export class VentasController {
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
     const result = await this.service.crearEnvio(cajaId, user.id, parsed.data);
     return {
-      guia:                 VentasPresenter.toGuia(result.envio, result.cotizacion.servicio?.nombre, result.cotizacion.fechaEntregaEstimada?.toISOString() ?? null),
+      guia:                 VentasPresenter.toGuia(result.envio, await this.service.getContextoGuia(result.envio)),
       envio:                VentasPresenter.toEnvio(result.envio),
       cotizacion:           { pesoTarificadoKg: result.cotizacion.pesoTarificadoKg, valorServicio: result.cotizacion.valorServicio },
       movimiento:           result.movimiento,
@@ -518,6 +521,14 @@ export class VentasController {
   @ApiParam({ name: 'sucursalId', type: Number })
   async getVentasDia(@Param('sucursalId', ParseIntPipe) sucursalId: number) {
     return this.service.getVentasDia(sucursalId);
+  }
+
+  @Get('sucursal/:sucursalId/punto-admision')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Código y nombre del punto de admisión — encabezado de la guía postal' })
+  @ApiParam({ name: 'sucursalId', type: Number })
+  async getPuntoAdmision(@Param('sucursalId', ParseIntPipe) sucursalId: number) {
+    return this.service.getPuntoAdmision(sucursalId);
   }
 
   // ── Resumen del turno ─────────────────────────────────────────────────────────

@@ -16,6 +16,11 @@ import {
   ReposicionEstadoInvalidoError,
   DiscrepanciaTransitoError,
   AuxiliaresAbiertasError,
+  BasePuntoInsuficienteError,
+  ConfiguracionPuntoInvalidaError,
+  CajaNoAsignableError,
+  CajaSinCajeroError,
+  UsuarioNoAsignableError,
 } from '../domain/caja.errors.js';
 import type { CreateCajaDto } from '../dto/create-caja.dto.js';
 import type { UpdateCajaDto } from '../dto/update-caja.dto.js';
@@ -27,6 +32,8 @@ import {
   validarSesionAbierta,
   validarSaldoSuficiente,
   validarConsignacionPendiente,
+  validarAperturaPunto,
+  validarBaseAsignadaMaxima,
   evaluarAlertas,
   TIPOS_MOVIMIENTO_ENTRADA,
   TIPOS_MOVIMIENTO_SALIDA,
@@ -36,6 +43,16 @@ import { compararArqueoConSaldo } from '../domain/calculos/arqueo-denominaciones
 import { calcularMonedaCirculante } from '../domain/calculos/moneda-circulante.js';
 import { consolidarComercio } from '../domain/calculos/consolidado-comercio.js';
 import { calcularCapacidadPunto } from '../domain/calculos/capacidad-punto.js';
+import {
+  esCajaOperativa, puedeSupervisarPunto, puedeSerCajeroDeCaja,
+  resolverCajeroDeApertura, requiereCajero, puedeOperarSesion,
+} from '../domain/calculos/asignacion-caja.js';
+import {
+  diagnosticarPunto,
+  regresionesConfiguracion,
+  type CajaConfigurada,
+  type DiagnosticoPunto,
+} from '../domain/calculos/coherencia-punto.js';
 import { buildBaseAperturaPrincipal, calcularBaseAsignadaAuxiliar } from '../domain/calculos/base-apertura.js';
 import { buildDebitoPrincipalPorApertura, buildCreditoAuxiliarPorApertura, calcularCambioCustodiaEnSesion } from '../domain/calculos/cambio-custodia.js';
 import { buildPagoAdministrativo } from '../domain/calculos/pago-administrativo-calc.js';
@@ -53,6 +70,7 @@ import {
 import { calcularDevolucionAPrincipal } from '../domain/calculos/devolucion-principal.js';
 import { calcularCajasHabilitadas } from '../domain/calculos/cajas-habilitadas.js';
 import { calcularSaldoCaja } from '../domain/calculos/saldo-caja.js';
+import { repartirPagoPorMedio } from '../domain/calculos/reparto-medio-pago.js';
 import { calcularSaldoCajaFuerte } from '../domain/calculos/saldo-caja-fuerte.js';
 import { calcularReposicionCaja } from '../domain/calculos/reposicion-caja.js';
 import type { AperturaAuxiliarDto } from '../dto/apertura-auxiliar.dto.js';
@@ -63,7 +81,7 @@ import type { DiferenciaCajaDto } from '../dto/diferencia-caja.dto.js';
 import type { CambioCustodiaDto } from '../dto/cambio-custodia.dto.js';
 import type { PagoAdministrativoDto } from '../dto/pago-administrativo.dto.js';
 import type { AperturaDirectaDto } from '../dto/apertura-directa.dto.js';
-import type { TipoMovimientoCaja, MedioPago } from '../domain/caja.entity.js';
+import type { TipoMovimientoCaja, MedioPago, TipoCaja, PerfilUsuario } from '../domain/caja.entity.js';
 import { RealtimeService } from '../../realtime/realtime.service.js';
 import { PrismaService }  from '../../prisma/prisma.service.js';
 import { AuditService } from '../../audit/audit.service.js';
@@ -110,6 +128,11 @@ export class CajasService {
   }
 
   async createCaja(dto: CreateCajaDto) {
+    if (dto.cajaPadreId) {
+      await this.assertConfiguracionPuntoValida(dto.cajaPadreId, [{
+        codigo: dto.codigo, tipo: dto.tipo, baseDia: dto.baseDia ?? '0', activo: true,
+      }]);
+    }
     return this.cajasRepo.createCaja({
       sucursalId:   dto.sucursalId,
       cajaPadreId:  dto.cajaPadreId,
@@ -124,6 +147,14 @@ export class CajasService {
   async updateCaja(id: number, dto: UpdateCajaDto) {
     const caja = await this.cajasRepo.findById(id);
     if (!caja) throw new CajaNoEncontradaError(id);
+    if (caja.cajaPadreId) {
+      await this.assertConfiguracionPuntoValida(caja.cajaPadreId, [{
+        codigo:  caja.codigo,
+        tipo:    caja.tipo,
+        baseDia: dto.baseDia ?? caja.baseDia,
+        activo:  dto.activo ?? caja.activo,
+      }], caja.id);
+    }
     return this.cajasRepo.updateCaja(id, dto);
   }
 
@@ -145,6 +176,10 @@ export class CajasService {
     return padre;
   }
 
+  async getCajaPadreBySucursal(sucursalId: number) {
+    return this.cajasRepo.findPadreBySucursal(sucursalId);
+  }
+
   async createCajaPadre(dto: CreateCajaPadreDto) {
     return this.cajasRepo.createPadre({
       sucursalId:  dto.sucursalId,
@@ -157,7 +192,58 @@ export class CajasService {
   async updateCajaPadre(id: number, dto: UpdateCajaPadreDto) {
     const padre = await this.cajasRepo.findPadreById(id);
     if (!padre) throw new CajaPadreNoEncontradaError(id);
+    // Bajar la base del punto puede dejar por debajo a cajas ya configuradas
+    if (dto.baseGeneral !== undefined) {
+      await this.assertConfiguracionPuntoValida(id, [], undefined, dto.baseGeneral);
+    }
     return this.cajasRepo.updatePadre(id, dto);
+  }
+
+  // ── Coherencia de configuración del punto ───────────────────────────────────
+
+  async diagnosticarPunto(cajaPadreId: number): Promise<DiagnosticoPunto> {
+    const padre = await this.cajasRepo.findPadreById(cajaPadreId);
+    if (!padre) throw new CajaPadreNoEncontradaError(cajaPadreId);
+    const cajas = await this.cajasRepo.findByPadre(cajaPadreId);
+    return diagnosticarPunto(padre.baseGeneral, padre.supervisorId ?? null, cajas);
+  }
+
+  // Rechaza guardar una configuración que el motor de apertura va a rechazar después
+  // (BR-CAJ-010 y BR-CAJ-011). `pendientes` son las cajas tal como quedarían tras el
+  // guardado; `excluirId` saca de la foto la versión anterior de la caja editada.
+  private async assertConfiguracionPuntoValida(
+    cajaPadreId: number,
+    pendientes: CajaConfigurada[],
+    excluirId?: number,
+    baseGeneralNueva?: string,
+  ): Promise<void> {
+    const padre = await this.cajasRepo.findPadreById(cajaPadreId);
+    if (!padre) throw new CajaPadreNoEncontradaError(cajaPadreId);
+
+    const todas      = await this.cajasRepo.findByPadre(cajaPadreId);
+    const existentes = todas.filter(c => c.id !== excluirId);
+
+    const antes = diagnosticarPunto(padre.baseGeneral, padre.supervisorId ?? null, todas);
+    const despues = diagnosticarPunto(
+      baseGeneralNueva ?? padre.baseGeneral,
+      padre.supervisorId ?? null,
+      [...existentes, ...pendientes],
+    );
+    const regresiones = regresionesConfiguracion(antes, despues);
+
+    if (regresiones.includes('base_fuerte_excede_punto')) {
+      throw new ConfiguracionPuntoInvalidaError(
+        `El fondo de la Caja Fuerte ($${despues.baseFuerte}) supera la base asignada al punto ` +
+        `${padre.nombre} ($${despues.baseGeneral}). El excedente pertenece a la Caja General.`,
+      );
+    }
+    if (regresiones.includes('reparto_excede_fuerte')) {
+      throw new ConfiguracionPuntoInvalidaError(
+        `Las cajas del punto ${padre.nombre} tienen asignados $${despues.sumaRepartida} y la ` +
+        `Caja Fuerte solo custodia $${despues.baseFuerte}. Reduzca alguna base o suba el fondo ` +
+        `de la Caja Fuerte antes de guardar.`,
+      );
+    }
   }
 
   async deleteCajaPadre(id: number) {
@@ -178,7 +264,7 @@ export class CajasService {
       return {
         sucursalId,
         cajaPadreId: 0,
-        panel: { baseGeneral: '0', cajaGeneral: '0', cajaFuerteGeneral: '0', basePagos: '0', cajaPagos: '0', cajaFuertePagos: '0', acumuladoMonedaCirculante: '0', tTransito: '0', debeReset: false, horaReset: null },
+        panel: { baseGeneral: '0', cajaGeneral: '0', cajaFuerteGeneral: '0', basePagos: '0', cajaPagos: '0', cajaFuertePagos: '0', acumuladoMonedaCirculante: '0', tTransito: '0', baseDisponible: '0', debeReset: false, horaReset: null },
         cajas: [],
       };
     }
@@ -231,6 +317,10 @@ export class CajasService {
 
     const sesionExistente = await this.sesionesRepo.findAbiertaByCaja(cajaFuerte.id);
     validarUnicidadSesion(cajaFuerte.id, !!sesionExistente);
+
+    // BR-CAJ-010: el punto solo custodia lo que la Caja General le asignó
+    validarAperturaPunto(dto.montoApertura, padre.baseGeneral, padre.nombre);
+
     const baseApertura = buildBaseAperturaPrincipal(dto.montoApertura);
 
     const sesion = await this.sesionesRepo.crearSesion({
@@ -269,10 +359,19 @@ export class CajasService {
     const sesionExistente = await this.sesionesRepo.findAbiertaByCaja(cajaId);
     validarUnicidadSesion(cajaId, !!sesionExistente);
 
-    if (dto.cajeroAsignadoId) {
-      const sesionCajero = await this.sesionesRepo.findAbiertaByCajero(dto.cajeroAsignadoId);
-      validarUnicidadCustodio(dto.cajeroAsignadoId, !!sesionCajero);
-    }
+    if (dto.cajeroAsignadoId) this.assertCajaAsignable(caja);
+
+    // La caja se abre a nombre de su cajero fijo si la apertura no manda otro
+    const cajeroApertura = resolverCajeroDeApertura(caja.tipo, dto.cajeroAsignadoId, caja.cajeroFijoId);
+    if (requiereCajero(caja.tipo, cajeroApertura)) throw new CajaSinCajeroError(caja.codigo);
+
+    // Valida que el cajero (explícito o el propio usuario que llama) no tenga ya una sesión abierta
+    const cajeroAValidar = cajeroApertura ?? usuarioId;
+    const sesionCajero = await this.sesionesRepo.findAbiertaByCajero(cajeroAValidar);
+    validarUnicidadCustodio(cajeroAValidar, !!sesionCajero);
+
+    // BR-CAJ-009: aplica venga la base de la bóveda o de un fondo externo
+    validarBaseAsignadaMaxima(dto.baseAsignada, caja.baseDia, caja.codigo);
 
     // Check if a general session is open — if so, debit from it (same as abrirAuxiliar)
     let sesionGeneral: Awaited<ReturnType<typeof this.sesionesRepo.findById>> = null;
@@ -292,7 +391,7 @@ export class CajasService {
       const sesion = await this.sesionesRepo.crearSesion({
         cajaId,
         usuarioAperturaId: usuarioId,
-        cajeroAsignadoId:  dto.cajeroAsignadoId,
+        cajeroAsignadoId:  cajeroApertura,
         equipoMac:         dto.equipoMac,
         montoApertura:     '0',
       });
@@ -305,7 +404,7 @@ export class CajasService {
       this.auditCaja('CREATE', 'apertura_directa', sesion.id, usuarioId, {
         caja_id:    cajaId,
         caja_codigo: caja.codigo,
-        cajero_id:  dto.cajeroAsignadoId ?? null,
+        cajero_id:  cajeroApertura,
         equipo_mac: dto.equipoMac ?? null,
         con_principal: true,
       });
@@ -313,10 +412,26 @@ export class CajasService {
     }
 
     // No general session — truly standalone opening (external base)
+    // BR-CAJ-011: la suma de bases standalone en el punto no puede superar la base general
+    if (caja.cajaPadreId) {
+      const padre = await this.cajasRepo.findPadreById(caja.cajaPadreId);
+      const baseGeneral = Number(padre?.baseGeneral ?? '0');
+      if (baseGeneral > 0) {
+        const sesionesAbiertas = await this.sesionesRepo.findAbiertasByPunto(caja.cajaPadreId);
+        const sumBase = sesionesAbiertas.reduce((acc, s) => acc + Number(s.montoApertura), 0);
+        if (sumBase + Number(dto.baseAsignada) > baseGeneral) {
+          throw new BasePuntoInsuficienteError(
+            (sumBase + Number(dto.baseAsignada)).toFixed(2),
+            padre!.baseGeneral,
+          );
+        }
+      }
+    }
+
     const sesion = await this.sesionesRepo.crearSesion({
       cajaId,
       usuarioAperturaId: usuarioId,
-      cajeroAsignadoId:  dto.cajeroAsignadoId,
+      cajeroAsignadoId:  cajeroApertura,
       equipoMac:         dto.equipoMac,
       montoApertura:     dto.baseAsignada,
     });
@@ -332,7 +447,7 @@ export class CajasService {
     this.auditCaja('CREATE', 'apertura_directa', sesion.id, usuarioId, {
       caja_id:    cajaId,
       caja_codigo: caja.codigo,
-      cajero_id:  dto.cajeroAsignadoId ?? null,
+      cajero_id:  cajeroApertura,
       equipo_mac: dto.equipoMac ?? null,
       con_principal: false,
     });
@@ -352,10 +467,17 @@ export class CajasService {
     const sesionExistente = await this.sesionesRepo.findAbiertaByCaja(dto.cajaAuxiliarId);
     validarUnicidadSesion(dto.cajaAuxiliarId, !!sesionExistente);
 
-    if (dto.cajeroAsignadoId) {
-      const sesionCajero = await this.sesionesRepo.findAbiertaByCajero(dto.cajeroAsignadoId);
-      validarUnicidadCustodio(dto.cajeroAsignadoId, !!sesionCajero);
+    if (dto.cajeroAsignadoId) this.assertCajaAsignable(caja);
+
+    const cajeroApertura = resolverCajeroDeApertura(caja.tipo, dto.cajeroAsignadoId, caja.cajeroFijoId);
+    if (requiereCajero(caja.tipo, cajeroApertura)) throw new CajaSinCajeroError(caja.codigo);
+
+    if (cajeroApertura) {
+      const sesionCajero = await this.sesionesRepo.findAbiertaByCajero(cajeroApertura);
+      validarUnicidadCustodio(cajeroApertura, !!sesionCajero);
     }
+
+    validarBaseAsignadaMaxima(dto.baseAsignada, caja.baseDia, caja.codigo);
 
     const saldoPrincipal = await this.sesionesRepo.calcularSaldo(sesionPrincipalId);
     const baseResult   = calcularBaseAsignadaAuxiliar(saldoPrincipal, dto.baseAsignada, false);
@@ -367,7 +489,7 @@ export class CajasService {
     const nuevaSesion = await this.sesionesRepo.crearSesion({
       cajaId:            dto.cajaAuxiliarId,
       usuarioAperturaId: usuarioId,
-      cajeroAsignadoId:  dto.cajeroAsignadoId,
+      cajeroAsignadoId:  cajeroApertura,
       equipoMac:         dto.equipoMac,
       montoApertura:     '0',
     });
@@ -400,7 +522,7 @@ export class CajasService {
     this.auditCaja('CREATE', 'apertura_auxiliar', nuevaSesion.id, usuarioId, {
       caja_id:           dto.cajaAuxiliarId,
       caja_codigo:       caja.codigo,
-      cajero_id:         dto.cajeroAsignadoId ?? null,
+      cajero_id:         cajeroApertura,
       sesion_principal_id: sesionPrincipalId,
       equipo_mac:        dto.equipoMac ?? null,
     });
@@ -851,6 +973,8 @@ export class CajasService {
     tipo:            TipoMovimientoCaja;
     monto:           string;
     medioPago?:      MedioPago;
+    /** Porción del monto realmente recibida en efectivo (pagos mixtos con estampillas/preporteado) */
+    montoEfectivo?:  string | number;
     referenciaId?:   number;
     referenciaTipo?: string;
     descripcion?:    string;
@@ -859,15 +983,18 @@ export class CajasService {
     if (!sesion) throw new SesionNoEncontradaError(params.sesionCajaId);
     validarSesionAbierta(params.sesionCajaId, sesion.estado);
 
-    const movimiento = await this.sesionesRepo.registrarMovimiento({
-      sesionCajaId:   params.sesionCajaId,
-      tipo:           params.tipo,
-      monto:          params.monto,
-      medioPago:      params.medioPago,
-      referenciaId:   params.referenciaId,
-      referenciaTipo: params.referenciaTipo,
-      descripcion:    params.descripcion,
-    });
+    const partes = repartirPagoPorMedio(params.monto, params.medioPago, params.montoEfectivo);
+    const [movimiento] = await this.sesionesRepo.registrarMovimientosAtomicos(
+      partes.map(parte => ({
+        sesionCajaId:   params.sesionCajaId,
+        tipo:           params.tipo,
+        monto:          parte.monto,
+        medioPago:      parte.medioPago,
+        referenciaId:   params.referenciaId,
+        referenciaTipo: params.referenciaTipo,
+        descripcion:    params.descripcion,
+      })),
+    );
 
     const caja    = await this.cajasRepo.findById(sesion.cajaId);
     const saldo   = await this.sesionesRepo.calcularSaldo(params.sesionCajaId);
@@ -1003,8 +1130,7 @@ export class CajasService {
   async esPropietarioDeSesion(sesionId: number, userId: number): Promise<boolean> {
     const sesion = await this.sesionesRepo.findById(sesionId);
     if (!sesion) throw new SesionNoEncontradaError(sesionId);
-    return sesion.cajeroAsignadoId === userId
-      || (sesion.cajeroAsignadoId === null && sesion.usuarioAperturaId === userId);
+    return puedeOperarSesion(sesion, userId);
   }
 
   // RF-1.01: retorna la sucursalId de la caja asociada a una sesión (para scope de acceso)
@@ -1031,12 +1157,64 @@ export class CajasService {
     return this.cajasRepo.getAsignacionSucursal(sucursalId);
   }
 
+  async setCajeroFijoCaja(cajaId: number, cajeroId: number | null) {
+    const caja = await this.cajasRepo.findById(cajaId);
+    if (!caja) throw new CajaNoEncontradaError(cajaId);
+    // Retirar (null) siempre se permite: es la única salida si ya quedó mal asignada
+    if (cajeroId !== null) {
+      this.assertCajaAsignable(caja);
+      const perfil = await this.perfilAsignable(cajeroId);
+      if (!puedeSerCajeroDeCaja(perfil, caja.sucursalId)) {
+        throw new UsuarioNoAsignableError(
+          `${perfil.nombre} (${perfil.rol}) no puede ser cajero de ${caja.codigo}: ` +
+          `la caja requiere un usuario con rol CAJERO destacado en esa sucursal.`,
+        );
+      }
+    }
+    await this.cajasRepo.setCajeroFijoCaja(cajaId, cajeroId);
+  }
+
+  async setSupervisorPunto(cajaPadreId: number, supervisorId: number | null) {
+    const padre = await this.cajasRepo.findPadreById(cajaPadreId);
+    if (!padre) throw new CajaPadreNoEncontradaError(cajaPadreId);
+    if (supervisorId !== null) {
+      const perfil = await this.perfilAsignable(supervisorId);
+      if (!puedeSupervisarPunto(perfil, padre.sucursalId)) {
+        throw new UsuarioNoAsignableError(
+          `${perfil.nombre} (${perfil.rol}) no puede supervisar ${padre.nombre}: ` +
+          `el punto requiere un SUPERVISOR_REGIONAL destacado en esa sucursal.`,
+        );
+      }
+    }
+    await this.cajasRepo.setSupervisorPunto(cajaPadreId, supervisorId);
+  }
+
+  private async perfilAsignable(usuarioId: number): Promise<PerfilUsuario> {
+    const perfil = await this.cajasRepo.findPerfilUsuario(usuarioId);
+    if (!perfil) {
+      throw new UsuarioNoAsignableError(`El usuario ${usuarioId} no existe o está inactivo.`);
+    }
+    return perfil;
+  }
+
   async setCajeroAsignado(sesionId: number, cajeroId: number | null) {
     const sesion = await this.sesionesRepo.findById(sesionId);
     if (!sesion) throw new SesionNoEncontradaError(sesionId);
     validarSesionAbierta(sesionId, sesion.estado);
 
     if (cajeroId !== null) {
+      const caja = await this.cajasRepo.findById(sesion.cajaId);
+      if (!caja) throw new CajaNoEncontradaError(sesion.cajaId);
+      this.assertCajaAsignable(caja);
+
+      const perfil = await this.perfilAsignable(cajeroId);
+      if (!puedeSerCajeroDeCaja(perfil, caja.sucursalId)) {
+        throw new UsuarioNoAsignableError(
+          `${perfil.nombre} (${perfil.rol}) no puede ser cajero de ${caja.codigo}: ` +
+          `la caja requiere un usuario con rol CAJERO destacado en esa sucursal.`,
+        );
+      }
+
       const sesionCajero = await this.sesionesRepo.findAbiertaByCajero(cajeroId);
       if (sesionCajero && sesionCajero.id !== sesionId) {
         validarUnicidadCustodio(cajeroId, true);
@@ -1044,6 +1222,14 @@ export class CajasService {
     }
 
     return this.sesionesRepo.updateCajeroAsignado(sesionId, cajeroId);
+  }
+
+  // La Caja Fuerte y la Caja Menor son bolsillos de la caja principal: el responsable
+  // es el supervisor del punto, así que darles un cajero propio parte la custodia.
+  private assertCajaAsignable(caja: { codigo: string; tipo: TipoCaja }): void {
+    if (!esCajaOperativa(caja.tipo)) {
+      throw new CajaNoAsignableError(caja.codigo, caja.tipo);
+    }
   }
 
   // ── Reset automático del punto (hora_reset diario — RF-3 / RNF-5.02) ────────

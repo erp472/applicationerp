@@ -1,4 +1,4 @@
-import type { CajaEntity, CajaPadreEntity, SucursalPanelItem, AsignacionSucursal } from './caja.entity.js';
+import type { CajaEntity, CajaPadreEntity, SucursalPanelItem, AsignacionSucursal, PerfilUsuario } from './caja.entity.js';
 
 export const CAJAS_REPOSITORY = Symbol('CAJAS_REPOSITORY');
 
@@ -39,6 +39,7 @@ export interface ICajasRepository {
   // Caja (auxiliar)
   findById(id: number): Promise<CajaEntity | null>;
   findCajaGeneralByPadre(cajaPadreId: number): Promise<CajaEntity | null>;
+  findByPadre(cajaPadreId: number): Promise<CajaEntity[]>;
   findBySucursal(sucursalId: number): Promise<CajaEntity[]>;
   createCaja(data: CreateCajaData): Promise<CajaEntity>;
   updateCaja(id: number, data: UpdateCajaData): Promise<CajaEntity>;
@@ -61,6 +62,9 @@ export interface ICajasRepository {
   findAllPadresByRegional(regionalId: number): Promise<CajaPadreEntity[]>;
   findAllPadresBySucursal(sucursalId: number): Promise<CajaPadreEntity[]>;
 
-  // Asignación de cajeros
+  // Asignación de cajeros y supervisor
   getAsignacionSucursal(sucursalId: number): Promise<AsignacionSucursal>;
+  findPerfilUsuario(usuarioId: number): Promise<PerfilUsuario | null>;
+  setCajeroFijoCaja(cajaId: number, cajeroId: number | null): Promise<void>;
+  setSupervisorPunto(cajaPadreId: number, supervisorId: number | null): Promise<void>;
 }

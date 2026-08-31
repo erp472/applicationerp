@@ -40,7 +40,7 @@ export interface DiferenciaRegistroItem {
 export interface CrearSesionData {
   cajaId: number;
   usuarioAperturaId: number;
-  cajeroAsignadoId?: number;
+  cajeroAsignadoId?: number | null;
   equipoMac?: string;
   montoApertura: string;
 }
@@ -119,6 +119,7 @@ export interface ISesionesCajaRepository {
   cerrarSesion(sesionId: number, data: CerrarSesionData): Promise<SesionCajaEntity>;
 
   registrarMovimiento(data: RegistrarMovimientoData): Promise<MovimientoCajaEntity>;
+  registrarMovimientosAtomicos(movimientos: RegistrarMovimientoData[]): Promise<MovimientoCajaEntity[]>;
   registrarTransferenciaAtomica(
     salida: RegistrarMovimientoData,
     entrada: RegistrarMovimientoData,

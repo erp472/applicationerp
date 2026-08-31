@@ -57,13 +57,15 @@ export class CajasController {
   async listCajasPadres(@CurrentUser() user: AuthUser) {
     let padres;
     if (user.rol === 'SUPERVISOR_REGIONAL') {
-      if (user.regional_id != null) {
-        padres = await this.service.listCajasPadresByRegional(user.regional_id);
-      } else if (user.sucursal_id != null) {
+      if (user.sucursal_id != null) {
         padres = await this.service.listCajasPadresBySucursal(user.sucursal_id);
+      } else if (user.regional_id != null) {
+        padres = await this.service.listCajasPadresByRegional(user.regional_id);
       } else {
         padres = [];
       }
+      // Filtrar solo los puntos donde este supervisor está asignado
+      padres = padres.filter(p => p.supervisorId === null || p.supervisorId === user.id);
     } else {
       padres = await this.service.listCajaPadres();
     }
@@ -152,7 +154,7 @@ export class CajasController {
   // ── Asignación de cajeros (ADMIN_SISTEMA only) ────────────────────────────
 
   @Get('asignacion/sucursal/:sucursalId')
-  @Roles('ADMIN_SISTEMA')
+  @Roles(...ROLES_GESTOR)
   @ApiOperation({ summary: 'Estructura de cajas + sesiones activas + cajero asignado por sucursal' })
   @ApiParam({ name: 'sucursalId', type: Number })
   async getAsignacionSucursal(@Param('sucursalId', ParseIntPipe) sucursalId: number) {
@@ -170,6 +172,42 @@ export class CajasController {
     const parsed = z.object({ cajeroId: z.number().int().positive().nullable() }).safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
     return this.service.setCajeroAsignado(sesionId, parsed.data.cajeroId);
+  }
+
+  @Patch('auxiliares/:cajaId/cajero-fijo')
+  @Roles('ADMIN_SISTEMA')
+  @ApiOperation({ summary: 'Asignar o retirar el cajero fijo permanente de una caja POS' })
+  @ApiParam({ name: 'cajaId', type: Number })
+  async setCajeroFijoCaja(
+    @Param('cajaId', ParseIntPipe) cajaId: number,
+    @Body() body: unknown,
+  ) {
+    const parsed = z.object({ cajeroId: z.number().int().positive().nullable() }).safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    await this.service.setCajeroFijoCaja(cajaId, parsed.data.cajeroId);
+    return { cajaId, cajeroId: parsed.data.cajeroId };
+  }
+
+  @Patch('principales/:cajaPadreId/supervisor')
+  @Roles('ADMIN_SISTEMA', 'ADMIN_NACIONAL')
+  @ApiOperation({ summary: 'Asignar o retirar el supervisor de un punto (CajaPadre)' })
+  @ApiParam({ name: 'cajaPadreId', type: Number })
+  async setSupervisorPunto(
+    @Param('cajaPadreId', ParseIntPipe) cajaPadreId: number,
+    @Body() body: unknown,
+  ) {
+    const parsed = z.object({ supervisorId: z.number().int().positive().nullable() }).safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    await this.service.setSupervisorPunto(cajaPadreId, parsed.data.supervisorId);
+    return { cajaPadreId, supervisorId: parsed.data.supervisorId };
+  }
+
+  @Get('principales/:cajaPadreId/diagnostico')
+  @Roles(...ROLES_GESTOR)
+  @ApiOperation({ summary: 'Problemas de coherencia en la configuración del punto' })
+  @ApiParam({ name: 'cajaPadreId', type: Number })
+  async diagnosticarPunto(@Param('cajaPadreId', ParseIntPipe) cajaPadreId: number) {
+    return this.service.diagnosticarPunto(cajaPadreId);
   }
 
   // ── Superadmin CRUD /cajas/auxiliares ────────────────────────────────────
@@ -257,8 +295,8 @@ export class CajasController {
   }
 
   @Post('auxiliares/:cajaId/abrir')
-  @Roles(...ROLES_CAJERO)
-  @ApiOperation({ summary: 'Abrir sesión en una caja auxiliar directamente' })
+  @Roles(...ROLES_SUPERVISOR)
+  @ApiOperation({ summary: 'Abrir sesión en una caja auxiliar directamente (solo supervisor)' })
   @ApiParam({ name: 'cajaId', type: Number })
   @ApiResponse({ status: 201, description: 'Sesión creada' })
   @ApiResponse({ status: 409, description: 'La caja ya tiene sesión abierta' })
@@ -299,10 +337,10 @@ export class CajasController {
     @CurrentUser() user: AuthUser,
   ) {
     await this.assertSucursalAccess(user, sucursalId);
+    const cajaPadre = await this.service.getCajaPadreBySucursal(sucursalId);
+    this.assertSupervisaPunto(user, cajaPadre?.supervisorId ?? null);
     const status = await this.service.getStatusPuntoBySucursal(sucursalId);
-    if (user.rol === 'CAJERO') {
-      return CajasPresenter.toStatus({ ...status, cajas: status.cajas.filter(c => c.cajeroId === user.id) });
-    }
+    if (user.rol === 'CAJERO') return CajasPresenter.toStatusCajero(status, user.id);
     return CajasPresenter.toStatus(status);
   }
 
@@ -319,10 +357,9 @@ export class CajasController {
   ) {
     const cajaPadre = await this.service.getCajaPadre(cajaPadreId);
     await this.assertSucursalAccess(user, cajaPadre.sucursalId);
+    this.assertSupervisaPunto(user, cajaPadre.supervisorId);
     const status = await this.service.getStatusPunto(cajaPadreId);
-    if (user.rol === 'CAJERO') {
-      return CajasPresenter.toStatus({ ...status, cajas: status.cajas.filter(c => c.cajeroId === user.id) });
-    }
+    if (user.rol === 'CAJERO') return CajasPresenter.toStatusCajero(status, user.id);
     return CajasPresenter.toStatus(status);
   }
 
@@ -817,6 +854,15 @@ export class CajasController {
     if (user.rol === 'CAJERO') {
       const esPropietario = await this.service.esPropietarioDeSesion(sesionId, user.id);
       if (!esPropietario) throw new ForbiddenException('Solo puedes operar tu propia sesión de caja.');
+    }
+  }
+
+  // Un SUPERVISOR_REGIONAL solo ve el punto donde está asignado como supervisor.
+  // Compartir sucursal no basta: dos supervisores de la misma sucursal veían la
+  // misma bóveda por el endpoint de sucursal, que no aplicaba esta restricción.
+  private assertSupervisaPunto(user: AuthUser, supervisorId: number | null): void {
+    if (user.rol === 'SUPERVISOR_REGIONAL' && supervisorId !== null && supervisorId !== user.id) {
+      throw new ForbiddenException('Este punto no está asignado a tu supervisión.');
     }
   }
 }
