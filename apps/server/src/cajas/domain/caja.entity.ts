@@ -72,6 +72,8 @@ export class MovimientoCajaEntity {
   referenciaId: number | null;
   referenciaTipo: string | null;
   descripcion: string | null;
+  franquiciaId: number | null;
+  codigoVoucher: string | null;
   createdAt: Date;
 }
 

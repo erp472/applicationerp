@@ -71,7 +71,9 @@ const makeItem = (overrides = {}) => ({
 // Mock setup
 // ────────────────────────────────────────────────────────────────────────────────
 
-const mockPrisma = {
+const mockPrisma: any = {
+  $transaction: vi.fn(),
+  $queryRaw:    vi.fn(),
   envioMasivo: {
     create:     vi.fn(),
     findUnique: vi.fn(),
@@ -81,6 +83,7 @@ const mockPrisma = {
   },
   envioMasivoItem: {
     create:      vi.fn(),
+    createMany:  vi.fn(),
     findUnique:  vi.fn(),
     findMany:    vi.fn(),
     findFirst:   vi.fn(),
@@ -99,7 +102,9 @@ const mockPrisma = {
 };
 
 const mockVentas = {
-  cotizarEnvio: vi.fn(),
+  cotizarEnvio:             vi.fn(),
+  getCarrito:               vi.fn(),
+  recalcularTotalesCarrito: vi.fn(),
 };
 
 const mockCajas = {
@@ -119,7 +124,13 @@ beforeEach(() => {
   );
 
   // Defaults razonables para evitar repetición
+  mockPrisma.$transaction.mockImplementation((fn: any) => fn(mockPrisma));
+  mockPrisma.$queryRaw.mockImplementation((_sql: any, cantidad: number) =>
+    Promise.resolve(Array.from({ length: cantidad }, (_, i) => ({ consecutivo: BigInt(i + 1) }))),
+  );
   mockCajas.getSesionActivaByCaja.mockResolvedValue({ id: 5 });
+  mockVentas.getCarrito.mockResolvedValue({ id: 42, sesionCajaId: 5, total: 0 });
+  mockVentas.recalcularTotalesCarrito.mockResolvedValue({ id: 42, total: 8500 });
   mockPrisma.servicio.findUnique.mockResolvedValue({ activoservicios: true, deleted_atservicios: null });
   mockPrisma.envioMasivoItem.findFirst.mockResolvedValue(null);
   mockPrisma.envioMasivoItem.aggregate.mockResolvedValue({
@@ -373,6 +384,73 @@ describe('agregarItem', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────────
+// agregarItems — guardado masivo transaccional
+// ────────────────────────────────────────────────────────────────────────────────
+
+describe('agregarItems', () => {
+  const dto = {
+    destinatarioNombre: 'Juan Perez',
+    destinatarioPais:   'CO',
+    pesoFisicoKg:       1.5,
+  };
+
+  beforeEach(() => {
+    mockPrisma.envioMasivo.findUnique.mockResolvedValue(makeLote());
+    mockPrisma.envioMasivoItem.createMany.mockResolvedValue({ count: 3 });
+    mockPrisma.envioMasivo.update.mockResolvedValue({});
+  });
+
+  it('inserta todas las filas en un solo createMany con un único recálculo', async () => {
+    const result = await service.agregarItems(1, [dto, dto, dto]);
+
+    expect(result).toEqual({ agregados: 3, errores: [] });
+    expect(mockPrisma.envioMasivoItem.createMany).toHaveBeenCalledOnce();
+    expect(mockPrisma.envioMasivoItem.createMany.mock.calls[0][0].data).toHaveLength(3);
+    expect(mockPrisma.envioMasivo.update).toHaveBeenCalledOnce();
+  });
+
+  it('numera las filas consecutivamente desde la siguiente libre', async () => {
+    mockPrisma.envioMasivoItem.findFirst.mockResolvedValue({ numero_filaenvios_masivos_items: 4 });
+
+    await service.agregarItems(1, [dto, dto]);
+
+    const filas = mockPrisma.envioMasivoItem.createMany.mock.calls[0][0].data
+      .map((d: any) => d.numero_filaenvios_masivos_items);
+    expect(filas).toEqual([5, 6]);
+  });
+
+  it('reporta las filas inválidas sin abortar las válidas', async () => {
+    mockVentas.cotizarEnvio
+      .mockResolvedValueOnce({ pesoTarificadoKg: 1.5, valorServicio: 8500, valorCertificacion: 0, servicio: { requiereEstampilla: false } })
+      .mockRejectedValueOnce(new Error('Sin tarifa para 99kg'))
+      .mockResolvedValueOnce({ pesoTarificadoKg: 1.5, valorServicio: 8500, valorCertificacion: 0, servicio: { requiereEstampilla: false } });
+
+    const result = await service.agregarItems(1, [dto, { ...dto, pesoFisicoKg: 99 }, dto]);
+
+    expect(result.agregados).toBe(2);
+    expect(result.errores).toEqual([{ fila: 2, error: 'Sin tarifa para 99kg' }]);
+    expect(mockPrisma.envioMasivoItem.createMany.mock.calls[0][0].data).toHaveLength(2);
+  });
+
+  it('no abre transacción ni recalcula si ninguna fila cotizó', async () => {
+    mockVentas.cotizarEnvio.mockRejectedValue(new Error('Servicio inactivo'));
+
+    const result = await service.agregarItems(1, [dto, dto]);
+
+    expect(result.agregados).toBe(0);
+    expect(result.errores).toHaveLength(2);
+    expect(mockPrisma.envioMasivoItem.createMany).not.toHaveBeenCalled();
+    expect(mockPrisma.envioMasivo.update).not.toHaveBeenCalled();
+  });
+
+  it('lanza LoteNoEnBorradorError si el lote ya está confirmado', async () => {
+    mockPrisma.envioMasivo.findUnique.mockResolvedValue(makeLote({ estadoenvios_masivos: 'confirmado' }));
+
+    await expect(service.agregarItems(1, [dto])).rejects.toThrow(LoteNoEnBorradorError);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────────
 // confirmarLote — flujo de creación masiva de envíos
 // ────────────────────────────────────────────────────────────────────────────────
 
@@ -380,6 +458,7 @@ describe('confirmarLote', () => {
   const LOTE_ID   = 1;
   const CAJA_ID   = 1;
   const USUARIO_ID = 7;
+  const VENTA_ID  = 42;
 
   beforeEach(() => {
     mockPrisma.envioMasivo.findUnique.mockResolvedValue(makeLote());
@@ -401,7 +480,7 @@ describe('confirmarLote', () => {
       makeItem({ idenvios_masivos_items: 101, numero_filaenvios_masivos_items: 2, destinatario_nombreenvios_masivos_items: 'Ana Torres' }),
     ]);
 
-    const result = await service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID);
+    const result = await service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID, VENTA_ID);
 
     expect(mockPrisma.envio.create).toHaveBeenCalledTimes(2);
     expect(result.enviosCreados).toBe(2);
@@ -412,7 +491,7 @@ describe('confirmarLote', () => {
       makeItem({ remitente_nombreenvios_masivos_items: null }),
     ]);
 
-    await service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID);
+    await service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID, VENTA_ID);
 
     const createCall = mockPrisma.envio.create.mock.calls[0][0];
     expect(createCall.data.remitente_nombreenvios).toBe('Empresa SA');
@@ -423,7 +502,7 @@ describe('confirmarLote', () => {
       makeItem({ remitente_nombreenvios_masivos_items: 'Remitente Propio' }),
     ]);
 
-    await service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID);
+    await service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID, VENTA_ID);
 
     const createCall = mockPrisma.envio.create.mock.calls[0][0];
     expect(createCall.data.remitente_nombreenvios).toBe('Remitente Propio');
@@ -438,7 +517,7 @@ describe('confirmarLote', () => {
     ]);
 
     await expect(
-      service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID),
+      service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID, VENTA_ID),
     ).rejects.toThrow(BadRequestException);
   });
 
@@ -452,7 +531,7 @@ describe('confirmarLote', () => {
     ]);
 
     await expect(
-      service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID),
+      service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID, VENTA_ID),
     ).rejects.toThrow(BadRequestException);
 
     // Ningún Envío fue creado porque la validación falló antes del loop de creación
@@ -463,7 +542,7 @@ describe('confirmarLote', () => {
     mockPrisma.envioMasivoItem.findMany.mockResolvedValue([]);
 
     await expect(
-      service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID),
+      service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID, VENTA_ID),
     ).rejects.toThrow(LoteSinItemsError);
   });
 
@@ -472,7 +551,7 @@ describe('confirmarLote', () => {
     mockCajas.getSesionActivaByCaja.mockResolvedValue(null);
 
     await expect(
-      service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID),
+      service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID, VENTA_ID),
     ).rejects.toThrow(BadRequestException);
   });
 
@@ -481,7 +560,7 @@ describe('confirmarLote', () => {
       makeItem({ valor_certificacionenvios_masivos_items: 1200, valor_totalenvios_masivos_items: 9700 }),
     ]);
 
-    await service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID);
+    await service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID, VENTA_ID);
 
     const createCall = mockPrisma.envio.create.mock.calls[0][0];
     expect(createCall.data.valor_certificacionenvios).toBe(1200);
@@ -493,32 +572,46 @@ describe('confirmarLote', () => {
       makeItem({ valor_certificacionenvios_masivos_items: 0 }),
     ]);
 
-    await service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID);
+    await service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID, VENTA_ID);
 
     const createCall = mockPrisma.envio.create.mock.calls[0][0];
     expect(createCall.data.valor_certificacionenvios).toBe(0);
   });
 
-  it('registra movimiento de caja con el total del lote', async () => {
+  it('enlaza los envíos a la venta del carrito en estado pendiente', async () => {
     mockPrisma.envioMasivoItem.findMany.mockResolvedValue([makeItem()]);
-    mockPrisma.envioMasivo.findUnique.mockResolvedValue(
-      makeLote({ valor_totalenvios_masivos: 25000 }),
-    );
 
-    await service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID);
+    await service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID, VENTA_ID);
 
-    expect(mockCajas.registrarMovimientoVenta).toHaveBeenCalledWith(
-      expect.objectContaining({
-        monto:     '25000',
-        medioPago: 'preporteado',
-      }),
-    );
+    const createCall = mockPrisma.envio.create.mock.calls[0][0];
+    expect(createCall.data.ventas_idventas).toBe(VENTA_ID);
+    expect(createCall.data.estadoenvios).toBe('pendiente');
+    expect(mockCajas.registrarMovimientoVenta).not.toHaveBeenCalled();
+  });
+
+  it('recalcula el total del carrito y lo devuelve', async () => {
+    mockPrisma.envioMasivoItem.findMany.mockResolvedValue([makeItem()]);
+
+    const result = await service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID, VENTA_ID);
+
+    expect(mockVentas.recalcularTotalesCarrito).toHaveBeenCalledWith(VENTA_ID);
+    expect(result.totalCarrito).toBe(8500);
+  });
+
+  it('rechaza una venta que pertenece a otra sesión de caja', async () => {
+    mockPrisma.envioMasivoItem.findMany.mockResolvedValue([makeItem()]);
+    mockVentas.getCarrito.mockResolvedValue({ id: VENTA_ID, sesionCajaId: 99, total: 0 });
+
+    await expect(
+      service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID, VENTA_ID),
+    ).rejects.toThrow(BadRequestException);
+    expect(mockPrisma.envio.create).not.toHaveBeenCalled();
   });
 
   it('marca el lote como confirmado después de crear los envíos', async () => {
     mockPrisma.envioMasivoItem.findMany.mockResolvedValue([makeItem()]);
 
-    await service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID);
+    await service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID, VENTA_ID);
 
     expect(mockPrisma.envioMasivo.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -540,7 +633,7 @@ describe('confirmarLote', () => {
       makeItem({ idenvios_masivos_items: 101, numero_filaenvios_masivos_items: 2 }),
     ]);
 
-    await service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID);
+    await service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID, VENTA_ID);
 
     const guia1 = mockPrisma.envio.create.mock.calls[0][0].data.numero_guiaenvios;
     const guia2 = mockPrisma.envio.create.mock.calls[1][0].data.numero_guiaenvios;
@@ -558,7 +651,7 @@ describe('confirmarLote', () => {
       .mockResolvedValueOnce({ idenvios: 101 })
       .mockResolvedValueOnce({ idenvios: 102 });
 
-    const result = await service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID);
+    const result = await service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID, VENTA_ID);
 
     expect(result.loteId).toBe(LOTE_ID);
     expect(result.enviosCreados).toBe(3);
@@ -575,7 +668,7 @@ describe('confirmarLote', () => {
     mockPrisma.envio.findFirst.mockResolvedValue({ idenvios: 54 });
     mockPrisma.envio.create.mockResolvedValue({ idenvios: 55 });
 
-    const result = await service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID);
+    const result = await service.confirmarLote(LOTE_ID, CAJA_ID, USUARIO_ID, VENTA_ID);
 
     expect(result.guias).toHaveLength(1);
     expect(result.guias[0].fila).toBe(1);

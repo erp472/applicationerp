@@ -3,6 +3,7 @@ import {
   Body, Param, Query, UseGuards, UseFilters,
   ParseIntPipe, BadRequestException, ForbiddenException, HttpCode, HttpStatus,
 } from '@nestjs/common';
+import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 import { z } from 'zod';
 import {
   ApiTags, ApiBearerAuth, ApiOperation, ApiResponse, ApiParam, ApiQuery,
@@ -51,6 +52,7 @@ export class CajasController {
 
   // ── Superadmin CRUD /cajas ────────────────────────────────────────────────
 
+  @AuditKey('ADM-04')
   @Get()
   @Roles(...ROLES_GESTOR)
   @ApiOperation({ summary: 'Listar todas las cajas principales (cajaPadre)' })
@@ -72,6 +74,7 @@ export class CajasController {
     return padres.map(CajasPresenter.toCajaPadre);
   }
 
+  @AuditKey('OPE-01')
   @Post()
   @Roles(...ROLES_ADMIN)
   @ApiOperation({ summary: 'Crear caja principal (cajaPadre)' })
@@ -82,6 +85,7 @@ export class CajasController {
     return CajasPresenter.toCajaPadre(await this.service.createCajaPadre(parsed.data));
   }
 
+  @AuditKey('ADM-04')
   @Get(':id')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Obtener caja principal por id' })
@@ -95,6 +99,7 @@ export class CajasController {
     return CajasPresenter.toCajaPadre(cajaPadre);
   }
 
+  @AuditKey('OPE-04')
   @Patch(':id')
   @Roles(...ROLES_GESTOR)
   @ApiOperation({ summary: 'Actualizar caja principal (base mínima, hora reset, nombre)' })
@@ -108,6 +113,7 @@ export class CajasController {
     return CajasPresenter.toCajaPadre(await this.service.updateCajaPadre(id, parsed.data));
   }
 
+  @AuditKey('ADM-04')
   @Delete(':id')
   @Roles(...ROLES_ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -119,6 +125,7 @@ export class CajasController {
 
   // ── Panel Admin (sucursales + POS + servicios) ───────────────────────────
 
+  @AuditKey('ADM-04')
   @Get('panel-admin')
   @Roles(...ROLES_GESTOR)
   @ApiOperation({ summary: 'Panel admin: todas las sucursales con caja POS y servicios' })
@@ -127,6 +134,7 @@ export class CajasController {
     return this.service.getPanelAdmin(regionalId);
   }
 
+  @AuditKey('ADM-06')
   @Get('consolidado-comercio')
   @Feature('modulo:tesoreria')
   @Roles(...ROLES_TESORERIA)
@@ -136,6 +144,7 @@ export class CajasController {
     return this.service.getConsolidadoComercio(Number(comercioId ?? 1));
   }
 
+  @AuditKey('OPE-04')
   @Patch('panel-admin/:sucursalId/servicios/:servicioId')
   @Roles(...ROLES_GESTOR)
   @ApiOperation({ summary: 'Activar o desactivar un servicio en una sucursal' })
@@ -153,6 +162,7 @@ export class CajasController {
 
   // ── Asignación de cajeros (ADMIN_SISTEMA only) ────────────────────────────
 
+  @AuditKey('ADM-04')
   @Get('asignacion/sucursal/:sucursalId')
   @Roles(...ROLES_GESTOR)
   @ApiOperation({ summary: 'Estructura de cajas + sesiones activas + cajero asignado por sucursal' })
@@ -161,6 +171,7 @@ export class CajasController {
     return this.service.getAsignacionSucursal(sucursalId);
   }
 
+  @AuditKey('OPE-04')
   @Patch('sesiones/:sesionId/cajero-asignado')
   @Roles('ADMIN_SISTEMA')
   @ApiOperation({ summary: 'Asignar o retirar cajero de una sesión activa' })
@@ -174,6 +185,7 @@ export class CajasController {
     return this.service.setCajeroAsignado(sesionId, parsed.data.cajeroId);
   }
 
+  @AuditKey('OPE-04')
   @Patch('auxiliares/:cajaId/cajero-fijo')
   @Roles('ADMIN_SISTEMA')
   @ApiOperation({ summary: 'Asignar o retirar el cajero fijo permanente de una caja POS' })
@@ -188,6 +200,7 @@ export class CajasController {
     return { cajaId, cajeroId: parsed.data.cajeroId };
   }
 
+  @AuditKey('OPE-04')
   @Patch('principales/:cajaPadreId/supervisor')
   @Roles('ADMIN_SISTEMA', 'ADMIN_NACIONAL')
   @ApiOperation({ summary: 'Asignar o retirar el supervisor de un punto (CajaPadre)' })
@@ -202,6 +215,7 @@ export class CajasController {
     return { cajaPadreId, supervisorId: parsed.data.supervisorId };
   }
 
+  @AuditKey('ADM-04')
   @Get('principales/:cajaPadreId/diagnostico')
   @Roles(...ROLES_GESTOR)
   @ApiOperation({ summary: 'Problemas de coherencia en la configuración del punto' })
@@ -212,6 +226,7 @@ export class CajasController {
 
   // ── Superadmin CRUD /cajas/auxiliares ────────────────────────────────────
 
+  @AuditKey('ADM-04')
   @Get('auxiliares')
   @Roles(...ROLES_GESTOR)
   @ApiOperation({ summary: 'Listar cajas auxiliares (pos, menor, pagos) por sucursal' })
@@ -224,6 +239,7 @@ export class CajasController {
     return cajas.map(CajasPresenter.toCaja);
   }
 
+  @AuditKey('OPE-01')
   @Post('auxiliares')
   @Roles(...ROLES_ADMIN)
   @ApiOperation({ summary: 'Crear caja auxiliar' })
@@ -234,6 +250,7 @@ export class CajasController {
     return CajasPresenter.toCaja(await this.service.createCaja(parsed.data));
   }
 
+  @AuditKey('ADM-04')
   @Get('auxiliares/:id')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Obtener caja auxiliar por id' })
@@ -242,6 +259,7 @@ export class CajasController {
     return CajasPresenter.toCaja(await this.service.getCaja(id));
   }
 
+  @AuditKey('OPE-04')
   @Patch('auxiliares/:id')
   @Roles(...ROLES_GESTOR)
   @ApiOperation({ summary: 'Actualizar caja auxiliar (base, límite, tipo, nombre, etc.)' })
@@ -255,6 +273,7 @@ export class CajasController {
     return CajasPresenter.toCaja(await this.service.updateCaja(id, parsed.data));
   }
 
+  @AuditKey('ADM-04')
   @Delete('auxiliares/:id')
   @Roles(...ROLES_ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -264,6 +283,7 @@ export class CajasController {
     await this.service.deleteCaja(id);
   }
 
+  @AuditKey('ADM-04')
   @Get('auxiliares/:cajaId/sesion-activa')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Sesión activa de una caja auxiliar (null si no tiene sesión abierta)' })
@@ -273,6 +293,7 @@ export class CajasController {
     return sesion ? CajasPresenter.toSesion(sesion) : null;
   }
 
+  @AuditKey('ADM-04')
   @Get('auxiliares/:cajaId/historial')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Historial de sesiones de una caja auxiliar (últimas 20)' })
@@ -282,6 +303,7 @@ export class CajasController {
     return sesiones.map(CajasPresenter.toSesion);
   }
 
+  @AuditKey('ADM-04')
   @Get('auxiliares/:cajaId/alertas')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Historial completo de alertas (diferencias de cierre) por caja auxiliar (últimas 30 sesiones)' })
@@ -294,6 +316,7 @@ export class CajasController {
     }));
   }
 
+  @AuditKey('OPE-01')
   @Post('auxiliares/:cajaId/abrir')
   @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Abrir sesión en una caja auxiliar directamente (solo supervisor)' })
@@ -314,6 +337,7 @@ export class CajasController {
 
   // ── Cajas habilitadas por sucursal ────────────────────────────────────────
 
+  @AuditKey('ADM-04')
   @Get('sucursal/:sucursalId/habilitadas')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Cajas habilitadas de la sucursal agrupadas por tipo (general/pos/pagos/menor)' })
@@ -328,6 +352,7 @@ export class CajasController {
 
   // ── Acceso por sucursalId (para sesiones con solo sucursal_id) ───────────
 
+  @AuditKey('ADM-04')
   @Get('sucursal/:sucursalId/status')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Estado del punto buscando por sucursalId' })
@@ -346,6 +371,7 @@ export class CajasController {
 
   // ── Caja Principal /cajas/principales/:cajaPadreId ────────────────────────
 
+  @AuditKey('ADM-04')
   @Get('principales/:cajaPadreId/status')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Estado en tiempo real de todas las cajas del punto' })
@@ -363,6 +389,7 @@ export class CajasController {
     return CajasPresenter.toStatus(status);
   }
 
+  @AuditKey('OPE-01')
   @Post('principales/:cajaPadreId/sesion/abrir')
   @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Abrir sesión principal (Caja Fuerte)' })
@@ -381,6 +408,7 @@ export class CajasController {
     );
   }
 
+  @AuditKey('ADM-09')
   @Post('principales/:sesionId/sesion/cerrar')
   @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Cerrar sesión principal con arqueo — requiere todas las cajas auxiliares cerradas' })
@@ -398,6 +426,7 @@ export class CajasController {
     return { ...CajasPresenter.toSesion(result.sesion), diferenciaCierre: result.diferenciaCierre };
   }
 
+  @AuditKey('OPE-01')
   @Post('principales/:sesionId/auxiliar/abrir')
   @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Abrir caja auxiliar con base asignada' })
@@ -417,6 +446,7 @@ export class CajasController {
     );
   }
 
+  @AuditKey('FIN-02')
   @Post('principales/:sesionId/consignacion')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Registrar consignación (queda pendiente de aprobación)' })
@@ -434,6 +464,7 @@ export class CajasController {
     );
   }
 
+  @AuditKey('FIN-02')
   @Post('principales/:sesionId/moneda-circulante')
   @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Registrar ajuste de moneda circulante (redondeos CIPOS)' })
@@ -449,6 +480,7 @@ export class CajasController {
     return mov ? CajasPresenter.toMovimiento(mov) : { ajuste: null, mensaje: 'Sin ajuste (monto 0)' };
   }
 
+  @AuditKey('FIN-05')
   @Post('principales/:sesionId/diferencia')
   @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Registrar diferencia (sobrante o faltante) en caja principal — RF-1.03 SoD: solo supervisor' })
@@ -464,6 +496,7 @@ export class CajasController {
     );
   }
 
+  @AuditKey('FIN-02')
   @Post('principales/:sesionId/pago-administrativo')
   @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Registrar pago administrativo (RETEICA, etc.)' })
@@ -479,6 +512,7 @@ export class CajasController {
     );
   }
 
+  @AuditKey('ADM-04')
   @Get('principales/:sesionId/consignaciones')
   @Feature('modulo:tesoreria')
   @Roles(...ROLES_TESORERIA)
@@ -495,6 +529,7 @@ export class CajasController {
 
   // ── Consignación — aprobación compartida ─────────────────────────────────
 
+  @AuditKey('FIN-02')
   @Patch('consignacion/:id/estado')
   @Feature('modulo:tesoreria')
   @Roles(...ROLES_TESORERIA)
@@ -516,6 +551,7 @@ export class CajasController {
 
   // ── Caja Auxiliar /cajas/punto/:sesionId ─────────────────────────────────
 
+  @AuditKey('ADM-04')
   @Get('punto/:sesionId/saldo')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Saldo actual y alertas de la sesión auxiliar' })
@@ -528,6 +564,7 @@ export class CajasController {
     return CajasPresenter.toSesion(await this.service.getSaldoSesion(sesionId));
   }
 
+  @AuditKey('ADM-04')
   @Get('punto/:sesionId/movimientos')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Historial de movimientos de la sesión auxiliar' })
@@ -541,6 +578,7 @@ export class CajasController {
     return movs.map(CajasPresenter.toMovimiento);
   }
 
+  @AuditKey('ADM-04')
   @Get('punto/:sesionId/reposicion-sugerida')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Monto recomendado de reposición para la sesión auxiliar (base_dia − saldo_actual)' })
@@ -553,6 +591,7 @@ export class CajasController {
     return this.service.getReposicionSugerida(sesionId);
   }
 
+  @AuditKey('ADM-09')
   @Post('punto/:sesionId/cierre')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Cierre de caja auxiliar con arqueo — entrega total a principal' })
@@ -570,6 +609,7 @@ export class CajasController {
     return { ...CajasPresenter.toSesion(result.sesion), diferenciaCierre: result.diferenciaCierre };
   }
 
+  @AuditKey('OPE-04')
   @Post('punto/:sesionId/cambio-custodia')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Cambio de custodia entre sesiones' })
@@ -585,6 +625,7 @@ export class CajasController {
     return this.service.cambioCustodia(sesionId, parsed.data, user.id);
   }
 
+  @AuditKey('FIN-05')
   @Post('punto/:sesionId/diferencia')
   @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Registrar diferencia en caja auxiliar — RF-1.03 SoD: solo supervisor' })
@@ -602,6 +643,7 @@ export class CajasController {
     );
   }
 
+  @AuditKey('FIN-01')
   @Post('punto/:sesionId/medio-pago')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Registrar pago recibido por medio alterno (cheque/transferencia) en la sesión auxiliar' })
@@ -628,6 +670,7 @@ export class CajasController {
     };
   }
 
+  @AuditKey('FIN-02')
   @Post('punto/:sesionId/traslado-boveda')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Traslado de efectivo a bóveda física durante la sesión (RF-2.02 tope máximo)' })
@@ -648,6 +691,7 @@ export class CajasController {
     return { ...CajasPresenter.toMovimiento(result.movimiento), saldoAntes: result.saldoAntes, saldoDespues: result.saldoDespues, alertas: result.alertas };
   }
 
+  @AuditKey('ADM-09')
   @Post('principales/:cajaPadreId/reset-automatico')
   @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Reset automático del punto — cierra forzadamente todas las sesiones auxiliares abiertas' })
@@ -663,6 +707,7 @@ export class CajasController {
     return this.service.resetAutomaticoPunto(cajaPadreId, user.id);
   }
 
+  @AuditKey('ADM-04')
   @Get('principales/:cajaPadreId/saldo-fuerte')
   @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Saldo actual de la caja fuerte (sesión general del punto)' })
@@ -676,6 +721,7 @@ export class CajasController {
     return this.service.getSaldoCajaFuerte(cajaPadreId);
   }
 
+  @AuditKey('ADM-04')
   @Get('principales/:cajaPadreId/capacidad')
   @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Capacidad del punto: cuántas auxiliares más pueden abrir según la base disponible' })
@@ -692,6 +738,7 @@ export class CajasController {
 
   // ── RF-4.01 Fase 2: confirmar recepción de remesa ────────────────────────────
 
+  @AuditKey('OPE-04')
   @Post('reposiciones/:codigo/confirmar')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'RF-4.01 Fase 2: confirmar recepción física de la remesa e ingresar al saldo destino' })
@@ -711,6 +758,7 @@ export class CajasController {
 
   // ── RF-3.03: resolver diferencias pendientes ──────────────────────────────
 
+  @AuditKey('ADM-04')
   @Get('sucursal/:sucursalId/diferencias-pendientes')
   @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Diferencias de cierre pendientes de resolución en todas las cajas de una sucursal' })
@@ -723,6 +771,7 @@ export class CajasController {
     return this.service.getDiferenciasPendientesBySucursal(sucursalId);
   }
 
+  @AuditKey('ADM-04')
   @Get('sucursal/:sucursalId/diferencias')
   @Roles(...ROLES_GESTOR)
   @ApiOperation({ summary: 'Registro histórico de diferencias de cierre por sucursal (informativo)' })
@@ -750,6 +799,7 @@ export class CajasController {
     });
   }
 
+  @AuditKey('ADM-04')
   @Get('diferencias/:id')
   @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Obtener diferencia de caja por ID' })
@@ -763,6 +813,7 @@ export class CajasController {
     return diferencia;
   }
 
+  @AuditKey('ADM-09')
   @Patch('diferencias/:id/resolver')
   @Roles(...ROLES_SUPERVISOR)
   @HttpCode(HttpStatus.OK)
@@ -785,6 +836,7 @@ export class CajasController {
 
   // ── Reportes ──────────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-06')
   @Get('reportes/balance-pagos')
   @Feature('modulo:tesoreria')
   @Roles(...ROLES_TESORERIA)
@@ -803,6 +855,7 @@ export class CajasController {
     return this.service.getBalancePagos(inicio, fin);
   }
 
+  @AuditKey('ADM-04')
   @Get('alertas/cierre-automatico')
   @Roles('SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA')
   @ApiOperation({ summary: 'Sesiones abiertas que superaron la hora de reset configurada en su caja principal' })

@@ -1,13 +1,21 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional, Inject } from '@nestjs/common';
+import * as promClient from 'prom-client';
 import type { operacion_auditoria } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreateAuditLogDto } from './create-audit-log.dto.js';
+import { MongoAuditService } from './mongo/mongo-audit.service.js';
 
 const ACCION_TO_OPERACION: Record<string, operacion_auditoria> = {
   CREATE: 'INSERT', LOGIN: 'INSERT', LOGOUT: 'INSERT', PRINT: 'INSERT', EXPORT: 'INSERT', READ: 'INSERT', DENIED: 'INSERT',
   UPDATE: 'UPDATE',
   DELETE: 'DELETE',
 };
+
+const auditEventsTotal = new promClient.Counter({
+  name:       'pos472_audit_events_total',
+  help:       'Total audit events logged',
+  labelNames: ['audit_key', 'tipo', 'resultado'],
+});
 
 export interface AuditFindParams {
   tabla?:     string;
@@ -21,7 +29,11 @@ export interface AuditFindParams {
 
 @Injectable()
 export class AuditService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() @Inject(MongoAuditService)
+    private readonly mongoAudit: MongoAuditService | null,
+  ) {}
 
   async log(dto: CreateAuditLogDto): Promise<void> {
     const operacion = ACCION_TO_OPERACION[dto.accion] ?? 'INSERT';
@@ -47,6 +59,32 @@ export class AuditService {
         datos_despueseventos_auditoria: despues as object,
       },
     });
+
+    // Prometheus counter
+    if (dto.audit_key) {
+      auditEventsTotal.inc({
+        audit_key: dto.audit_key,
+        tipo:      dto.tipo ?? 'OPE',
+        resultado: dto.resultado ?? 'OK',
+      });
+    }
+
+    // Fire-and-forget dual-write to MongoDB
+    if (this.mongoAudit && dto.audit_key) {
+      this.mongoAudit.log({
+        audit_key:       dto.audit_key,
+        tipo:            dto.tipo ?? 'OPE',
+        accion:          dto.accion,
+        entidad:         dto.entidad,
+        entidad_id:      dto.entidad_id !== undefined ? String(dto.entidad_id) : undefined,
+        usuario_id:      dto.usuario_id,
+        ip:              dto.ip_origen,
+        payload_antes:   dto.datos_antes,
+        payload_despues: despues,
+        resultado:       dto.resultado,
+        error_msg:       dto.error_msg,
+      });
+    }
   }
 
   async findAll(params: AuditFindParams) {
@@ -81,16 +119,16 @@ export class AuditService {
 
     return {
       datos: datos.map((e) => ({
-        id:          e.ideventos_auditoria,
-        tabla:       e.tablaeventos_auditoria,
-        operacion:   e.operacioneventos_auditoria,
-        registroId:  e.registro_ideventos_auditoria,
-        datosAntes:  e.datos_anteseventos_auditoria,
+        id:           e.ideventos_auditoria,
+        tabla:        e.tablaeventos_auditoria,
+        operacion:    e.operacioneventos_auditoria,
+        registroId:   e.registro_ideventos_auditoria,
+        datosAntes:   e.datos_anteseventos_auditoria,
         datosDespues: e.datos_despueseventos_auditoria,
-        ipOrigen:    e.ip_origeneventos_auditoria,
-        macOrigen:   e.mac_origeneventos_auditoria,
-        createdAt:   e.created_ateventos_auditoria.toISOString(),
-        usuario:     e.usuario
+        ipOrigen:     e.ip_origeneventos_auditoria,
+        macOrigen:    e.mac_origeneventos_auditoria,
+        createdAt:    e.created_ateventos_auditoria.toISOString(),
+        usuario:      e.usuario
           ? { id: e.usuario.idusuarios, nombre: e.usuario.nombreusuarios, email: e.usuario.emailusuarios }
           : null,
       })),
@@ -130,9 +168,9 @@ export class AuditService {
 
     return {
       total,
-      inserciones:    counts['INSERT'] ?? 0,
+      inserciones:     counts['INSERT'] ?? 0,
       actualizaciones: counts['UPDATE'] ?? 0,
-      eliminaciones:  counts['DELETE'] ?? 0,
+      eliminaciones:   counts['DELETE'] ?? 0,
       errores,
     };
   }

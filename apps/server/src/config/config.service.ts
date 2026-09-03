@@ -43,4 +43,6 @@ export class ConfigService {
   }
 
   get otelEndpoint() { return this.env.OTEL_EXPORTER_OTLP_ENDPOINT; }
+
+  get mongoUri() { return this.env.MONGODB_URI; }
 }

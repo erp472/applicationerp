@@ -14,6 +14,7 @@ import { FeatureFlagGuard } from '../../common/guards/feature-flag.guard.js';
 import { RolesGuard } from '../../common/guards/roles.guard.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { Feature } from '../../common/decorators/feature.decorator.js';
+import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 
 const ROLES_ADMIN = ['ADMIN_SISTEMA', 'ADMIN_NACIONAL'] as const;
 
@@ -73,6 +74,7 @@ function presente(entity: ReturnType<ProductosEspecialesService['findOne']> exte
 export class ProductosEspecialesAdminController {
   constructor(private readonly service: ProductosEspecialesService) {}
 
+  @AuditKey('ADM-04')
   @Get()
   @ApiOperation({ summary: 'Listar productos especiales (admin)' })
   @ApiQuery({ name: 'activo', required: false, type: Boolean })
@@ -87,6 +89,7 @@ export class ProductosEspecialesAdminController {
     return { datos: datos.map(presente), meta };
   }
 
+  @AuditKey('ADM-04')
   @Get(':id')
   @ApiOperation({ summary: 'Obtener producto especial por ID (admin)' })
   @ApiParam({ name: 'id', type: Number })
@@ -96,6 +99,7 @@ export class ProductosEspecialesAdminController {
     return presente(await this.service.findOne(id));
   }
 
+  @AuditKey('ADM-07')
   @Post()
   @ApiOperation({ summary: 'Crear producto especial (admin)' })
   @ApiBody({
@@ -131,6 +135,7 @@ export class ProductosEspecialesAdminController {
     return presente(await this.service.create(parsed.data));
   }
 
+  @AuditKey('ADM-07')
   @Patch(':id')
   @ApiOperation({ summary: 'Actualizar producto especial (admin)' })
   @ApiParam({ name: 'id', type: Number })
@@ -154,6 +159,7 @@ export class ProductosEspecialesAdminController {
     return presente(await this.service.update(id, parsed.data));
   }
 
+  @AuditKey('ADM-07')
   @Put(':id/tarifas')
   @ApiOperation({ summary: 'Reemplazar tarifas por tramos (admin)' })
   @ApiParam({ name: 'id', type: Number })
@@ -180,6 +186,7 @@ export class ProductosEspecialesAdminController {
     return presente(await this.service.setTarifas(id, parsed.data));
   }
 
+  @AuditKey('ADM-07')
   @Delete(':id')
   @ApiOperation({ summary: 'Desactivar producto especial (admin)' })
   @ApiParam({ name: 'id', type: Number })

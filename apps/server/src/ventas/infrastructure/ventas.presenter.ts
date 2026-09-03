@@ -126,6 +126,7 @@ export class VentasPresenter {
       valorTotal:           entity.valorTotal,
       estado:               entity.estado,
       createdAt:            entity.createdAt.toISOString(),
+      loteMasivoId:         entity.loteMasivoId ?? null,
     };
   }
 

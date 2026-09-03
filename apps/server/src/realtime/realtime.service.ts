@@ -10,7 +10,9 @@ export type RealtimeEvent =
   | 'cajas.custodia'
   | 'ventas.venta_confirmada'
   | 'inventario.stock_bajo'
-  | 'heartbeat';
+  | 'heartbeat'
+  | 'security.alert'
+  | 'security.anomaly';
 
 export interface RealtimeMessage {
   event: RealtimeEvent;

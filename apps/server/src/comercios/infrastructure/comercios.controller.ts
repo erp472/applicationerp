@@ -18,6 +18,7 @@ import { Roles } from '../../common/decorators/roles.decorator.js';
 import { Feature } from '../../common/decorators/feature.decorator.js';
 import { ComerciosPresenter } from './comercios.presenter.js';
 import { ComerciosDomainFilter } from './comercios-domain.filter.js';
+import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 
 const ROLES_READ   = ['ADMIN_SISTEMA', 'ADMIN_NACIONAL'];
 const ROLES_WRITE  = ['ADMIN_SISTEMA'];
@@ -31,6 +32,7 @@ const ROLES_WRITE  = ['ADMIN_SISTEMA'];
 export class ComerciosController {
   constructor(private readonly service: ComerciosService) {}
 
+  @AuditKey('ADM-01')
   @Post()
   @Roles(...ROLES_WRITE)
   @ApiOperation({ summary: 'Crear comercio' })
@@ -54,6 +56,7 @@ export class ComerciosController {
     return ComerciosPresenter.toResponse(await this.service.create(parsed.data));
   }
 
+  @AuditKey('ADM-04')
   @Get()
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Listar comercios con paginación' })
@@ -69,6 +72,7 @@ export class ComerciosController {
     return { datos: ComerciosPresenter.toList(datos), meta };
   }
 
+  @AuditKey('ADM-04')
   @Get(':id')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Obtener comercio por ID' })
@@ -79,6 +83,7 @@ export class ComerciosController {
     return ComerciosPresenter.toResponse(await this.service.findOne(id));
   }
 
+  @AuditKey('ADM-02')
   @Patch(':id')
   @Roles(...ROLES_WRITE)
   @ApiOperation({ summary: 'Actualizar comercio' })
@@ -102,6 +107,7 @@ export class ComerciosController {
     return ComerciosPresenter.toResponse(await this.service.update(id, parsed.data));
   }
 
+  @AuditKey('ADM-02')
   @Delete(':id')
   @Roles(...ROLES_WRITE)
   @ApiOperation({ summary: 'Desactivar comercio (soft delete)' })

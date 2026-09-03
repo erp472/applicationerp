@@ -17,6 +17,7 @@ import { Roles } from '../../common/decorators/roles.decorator.js';
 import { Feature } from '../../common/decorators/feature.decorator.js';
 import { ProductosPresenter } from './productos.presenter.js';
 import { ProductosDomainFilter } from './productos-domain.filter.js';
+import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 
 const ROLES_ADMIN = ['ADMIN_SISTEMA', 'ADMIN_NACIONAL'] as const;
 
@@ -51,6 +52,7 @@ const QueryEstampillaSchema = z.object({
 export class EstampillasAdminController {
   constructor(private readonly service: ProductosService) {}
 
+  @AuditKey('ADM-04')
   @Get()
   @ApiOperation({ summary: 'Listar estampillas (admin)' })
   @ApiQuery({ name: 'activo', required: false, type: Boolean })
@@ -65,6 +67,7 @@ export class EstampillasAdminController {
     return { datos: ProductosPresenter.toList(datos), meta };
   }
 
+  @AuditKey('ADM-04')
   @Get(':id')
   @ApiOperation({ summary: 'Obtener estampilla por ID (admin)' })
   @ApiParam({ name: 'id', type: Number })
@@ -76,6 +79,7 @@ export class EstampillasAdminController {
     return ProductosPresenter.toResponse(producto);
   }
 
+  @AuditKey('ADM-07')
   @Post()
   @ApiOperation({ summary: 'Crear estampilla (admin)' })
   @ApiBody({
@@ -104,6 +108,7 @@ export class EstampillasAdminController {
     return ProductosPresenter.toResponse(await this.service.create(dto));
   }
 
+  @AuditKey('ADM-07')
   @Patch(':id')
   @ApiOperation({ summary: 'Actualizar estampilla (admin)' })
   @ApiParam({ name: 'id', type: Number })
@@ -128,6 +133,7 @@ export class EstampillasAdminController {
     return ProductosPresenter.toResponse(await this.service.update(id, parsed.data));
   }
 
+  @AuditKey('ADM-07')
   @Delete(':id')
   @ApiOperation({ summary: 'Desactivar estampilla (admin)' })
   @ApiParam({ name: 'id', type: Number })

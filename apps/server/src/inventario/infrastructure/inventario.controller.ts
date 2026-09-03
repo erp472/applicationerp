@@ -4,6 +4,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { z } from 'zod';
+import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 import { InventarioService } from '../application/inventario.service.js';
 import { AjusteInventarioSchema } from '../dto/ajuste-inventario.dto.js';
 import { QueryInventarioSchema, QueryMovimientosSchema } from '../dto/query-inventario.dto.js';
@@ -31,6 +32,7 @@ const EntradaSchema = z.object({
 export class InventarioController {
   constructor(private readonly service: InventarioService) {}
 
+  @AuditKey('ADM-04')
   @Get('sucursales')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Lista de sucursales con alertas de stock' })
@@ -38,6 +40,7 @@ export class InventarioController {
     return this.service.getSucursales(user.rol, user.sucursal_id);
   }
 
+  @AuditKey('ADM-04')
   @Get('alertas')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Resumen de alertas de stock por sucursal' })
@@ -45,6 +48,7 @@ export class InventarioController {
     return this.service.getAlertasResumen(user.rol, user.sucursal_id);
   }
 
+  @AuditKey('ADM-04')
   @Get('sucursal/:sucursalId')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Stock de productos en una sucursal' })
@@ -58,6 +62,7 @@ export class InventarioController {
     return { datos: InventarioPresenter.toStockList(datos), total };
   }
 
+  @AuditKey('OPE-04')
   @Post('sucursal/:sucursalId/ajuste')
   @Roles(...ROLES_WRITE)
   @HttpCode(HttpStatus.OK)
@@ -72,6 +77,7 @@ export class InventarioController {
     return InventarioPresenter.toStock(item);
   }
 
+  @AuditKey('OPE-04')
   @Post('sucursal/:sucursalId/entrada')
   @Roles(...ROLES_WRITE)
   @HttpCode(HttpStatus.OK)
@@ -86,6 +92,7 @@ export class InventarioController {
     return InventarioPresenter.toStock(item);
   }
 
+  @AuditKey('ADM-04')
   @Get('sucursal/:sucursalId/movimientos')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Historial de movimientos de inventario' })
@@ -101,6 +108,7 @@ export class InventarioController {
 
   // ── Órdenes de inventario ────────────────────────────────────────────────
 
+  @AuditKey('ADM-04')
   @Get('ordenes')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Listar órdenes de inventario' })
@@ -115,6 +123,7 @@ export class InventarioController {
     return this.service.listOrdenes(sucursalId, estado);
   }
 
+  @AuditKey('ADM-04')
   @Get('ordenes/pendientes')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Órdenes pendientes de confirmación — alerta orden_inventario' })
@@ -128,6 +137,7 @@ export class InventarioController {
     return this.service.getOrdenesPendientes(sucursalId);
   }
 
+  @AuditKey('OPE-01')
   @Post('ordenes')
   @Roles(...ROLES_WRITE)
   @ApiOperation({ summary: 'Crear orden de reposición de inventario' })
@@ -147,6 +157,7 @@ export class InventarioController {
     return this.service.crearOrden(parsed.data.sucursalId, parsed.data.items, user.id);
   }
 
+  @AuditKey('OPE-04')
   @Patch('ordenes/:id/estado')
   @Roles(...ROLES_WRITE)
   @ApiOperation({ summary: 'Actualizar estado de una orden (confirmada / rechazada / parcial)' })

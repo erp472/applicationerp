@@ -18,6 +18,7 @@ import { Roles } from '../../common/decorators/roles.decorator.js';
 import { Feature } from '../../common/decorators/feature.decorator.js';
 import { ProductosPresenter } from './productos.presenter.js';
 import { ProductosDomainFilter } from './productos-domain.filter.js';
+import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 
 const ROLES_WRITE = ['ADMIN_SISTEMA', 'ADMIN_NACIONAL'];
 
@@ -30,6 +31,7 @@ const ROLES_WRITE = ['ADMIN_SISTEMA', 'ADMIN_NACIONAL'];
 export class ProductosController {
   constructor(private readonly service: ProductosService) {}
 
+  @AuditKey('ADM-07')
   @Post()
   @Roles(...ROLES_WRITE)
   @ApiOperation({ summary: 'Registrar producto en catálogo' })
@@ -59,6 +61,7 @@ export class ProductosController {
     return ProductosPresenter.toResponse(await this.service.create(parsed.data));
   }
 
+  @AuditKey('ADM-04')
   @Get()
   @Roles(...ROLES_WRITE, 'SUPERVISOR_REGIONAL', 'CAJERO', 'TESORERIA')
   @ApiOperation({ summary: 'Listar productos del catálogo' })
@@ -75,6 +78,7 @@ export class ProductosController {
     return { datos: ProductosPresenter.toList(datos), meta };
   }
 
+  @AuditKey('ADM-04')
   @Get(':id')
   @Roles(...ROLES_WRITE, 'SUPERVISOR_REGIONAL', 'CAJERO', 'TESORERIA')
   @ApiOperation({ summary: 'Obtener producto por ID' })
@@ -85,6 +89,7 @@ export class ProductosController {
     return ProductosPresenter.toResponse(await this.service.findOne(id));
   }
 
+  @AuditKey('ADM-07')
   @Patch(':id')
   @Roles(...ROLES_WRITE)
   @ApiOperation({ summary: 'Actualizar producto' })
@@ -97,6 +102,7 @@ export class ProductosController {
     return ProductosPresenter.toResponse(await this.service.update(id, parsed.data));
   }
 
+  @AuditKey('ADM-07')
   @Delete(':id')
   @Roles(...ROLES_WRITE)
   @ApiOperation({ summary: 'Eliminar producto del catálogo (soft delete)' })
@@ -107,6 +113,7 @@ export class ProductosController {
     return ProductosPresenter.toResponse(await this.service.remove(id));
   }
 
+  @AuditKey('ADM-07')
   @Post(':id/sucursales/:sucursalId')
   @Roles(...ROLES_WRITE)
   @ApiOperation({ summary: 'Asignar producto a una sucursal' })
@@ -121,6 +128,7 @@ export class ProductosController {
     return ProductosPresenter.toSucursalResponse(await this.service.assignSucursal(id, sucursalId));
   }
 
+  @AuditKey('ADM-07')
   @Delete(':id/sucursales/:sucursalId')
   @Roles(...ROLES_WRITE)
   @ApiOperation({ summary: 'Desasignar producto de una sucursal' })
@@ -136,6 +144,7 @@ export class ProductosController {
     return { message: 'Producto desasignado de la sucursal' };
   }
 
+  @AuditKey('ADM-04')
   @Get(':id/sucursales')
   @Roles(...ROLES_WRITE, 'SUPERVISOR_REGIONAL')
   @ApiOperation({ summary: 'Listar sucursales activas de un producto' })

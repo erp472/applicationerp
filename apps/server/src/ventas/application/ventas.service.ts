@@ -480,6 +480,10 @@ export class VentasService {
       guiasGeneradas.push(envioFacturado);
     }
 
+    // Los lotes masivos cobrados en este carrito quedan pagados: sus guías ya se
+    // facturaron arriba junto al resto de envíos de la venta.
+    const lotesMasivos = await this._marcarLotesMasivosPagados(ventaId, dto.medioPago);
+
     // Finalizar apartados reservados vinculados a esta venta (cambian de reservado → ocupado)
     const apartadosPendientes = await this.repo.findApartadosPendientesByVenta(ventaId);
     let lastApartadoResult: Awaited<ReturnType<typeof this.cajasService.registrarMovimientoVenta>> | null = null;
@@ -490,6 +494,8 @@ export class VentasService {
         tipo:           'apartado_postal',
         monto:          String(apartado.valor ?? 0),
         medioPago:      dto.medioPago as any,
+        franquiciaId:   dto.franquiciaId,
+        codigoVoucher:  dto.codigoVoucher,
         referenciaId:   apartado.id,
         referenciaTipo: 'ApartadoPostal',
       });
@@ -525,6 +531,8 @@ export class VentasService {
         monto:          String(montoMovVenta),
         medioPago:      dto.medioPago as any,
         montoEfectivo:  dto.montoEfectivo,
+        franquiciaId:   dto.franquiciaId,
+        codigoVoucher:  dto.codigoVoucher,
         referenciaId:   ventaId,
         referenciaTipo: 'Venta',
         descripcion:    descripcionMovimiento,
@@ -571,7 +579,48 @@ export class VentasService {
       })),
     });
 
-    return { venta: ventaActualizada, movimiento, saldoActual, alertas, cambio, guias: guiasGeneradas };
+    return { venta: ventaActualizada, movimiento, saldoActual, alertas, cambio, guias: guiasGeneradas, lotesMasivos };
+  }
+
+  // Marca como pagados los lotes masivos enviados a este carrito y propaga el medio
+  // de pago a sus envíos. Devuelve el resumen para que el POS ofrezca el PDF por lote.
+  private async _marcarLotesMasivosPagados(ventaId: number, medioPago: string) {
+    const lotes = await this.prisma.envioMasivo.findMany({
+      where:  { ventas_idventas: ventaId, cobrado_atenvios_masivos: null },
+      select: {
+        idenvios_masivos:          true,
+        total_itemsenvios_masivos: true,
+        valor_totalenvios_masivos: true,
+        items: { select: { envios_idenvios: true } },
+      },
+    });
+    if (lotes.length === 0) return [];
+
+    const envioIds = lotes
+      .flatMap(l => l.items.map(i => i.envios_idenvios))
+      .filter((id): id is number => id !== null);
+
+    if (envioIds.length > 0) {
+      await this.prisma.envio.updateMany({
+        where: { idenvios: { in: envioIds } },
+        data:  { medio_pagoenvios: medioPago as any },
+      });
+    }
+
+    await this.prisma.envioMasivo.updateMany({
+      where: { idenvios_masivos: { in: lotes.map(l => l.idenvios_masivos) } },
+      data:  {
+        cobrado_atenvios_masivos:       new Date(),
+        medio_pago_cobroenvios_masivos: medioPago,
+        updated_atenvios_masivos:       new Date(),
+      },
+    });
+
+    return lotes.map(l => ({
+      loteId:     l.idenvios_masivos,
+      totalItems: l.total_itemsenvios_masivos,
+      total:      Number(l.valor_totalenvios_masivos),
+    }));
   }
 
   async getVentasDia(sucursalId: number) {
@@ -601,6 +650,12 @@ export class VentasService {
     for (const envio of enviosPendientes) {
       await this.repo.anularEnvio(envio.id);
     }
+
+    // Los lotes masivos que iban en este carrito caen con la venta
+    await this.prisma.envioMasivo.updateMany({
+      where: { ventas_idventas: ventaId, cobrado_atenvios_masivos: null },
+      data:  { estadoenvios_masivos: 'anulado', updated_atenvios_masivos: new Date() },
+    });
 
     // Liberar apartados reservados vinculados (vuelven a 'disponible')
     const apartadosReservados = await this.repo.findApartadosPendientesByVenta(ventaId);
@@ -777,6 +832,9 @@ export class VentasService {
       tipo:           'apartado_postal',
       monto:          ivaResult.precioTotal,
       medioPago:      dto.medioPago as MedioPago,
+      montoEfectivo:  dto.montoEfectivo,
+      franquiciaId:   dto.franquiciaId,
+      codigoVoucher:  dto.codigoVoucher,
       referenciaId:   apartadoContratado.id,
       referenciaTipo: 'ApartadoPostal',
     });
@@ -1089,6 +1147,9 @@ export class VentasService {
       tipo:           'venta_servicio',
       monto:          String(valorTotal),
       medioPago:      dto.medioPago as any,
+      montoEfectivo:  dto.montoEfectivo,
+      franquiciaId:   dto.franquiciaId,
+      codigoVoucher:  dto.codigoVoucher,
       referenciaId:   envio.id,
       referenciaTipo: 'Envio',
     });
@@ -1208,6 +1269,12 @@ export class VentasService {
   }
 
   // ── Helpers privados ──────────────────────────────────────────────────────────
+
+  // Usado por EnviosMasivosService al mandar un lote al carrito.
+  async recalcularTotalesCarrito(ventaId: number) {
+    await this._recalcularTotales(ventaId);
+    return this.repo.findVentaById(ventaId);
+  }
 
   private async _recalcularTotales(ventaId: number) {
     const ventaFull = await this.repo.findVentaConDetalle(ventaId);

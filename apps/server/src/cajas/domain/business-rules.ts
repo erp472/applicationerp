@@ -35,6 +35,12 @@ export const MEDIOS_SIN_EFECTIVO = new Set([
   'consignacion', 'cheque', 'preporteado', 'mixto_preporteado', 'estampilla',
 ]);
 
+export const MEDIOS_TARJETA = new Set(['tarjeta_debito', 'tarjeta_credito']);
+
+export function esTarjeta(medioPago?: string | null): boolean {
+  return !!medioPago && MEDIOS_TARJETA.has(medioPago);
+}
+
 // Sin medio de pago = movimiento interno de caja (apertura, custodia, reposición,
 // traslado, diferencia): siempre es efectivo físico.
 export function afectaEfectivo(medioPago?: string | null): boolean {

@@ -22,5 +22,10 @@ export const ActualizarItemMasivoSchema = AgregarItemMasivoSchema.partial().exte
   pesoFisicoKg:       z.number().positive().optional(),
 });
 
+export const AgregarItemsMasivosSchema = z.object({
+  items: z.array(AgregarItemMasivoSchema).min(1).max(1000),
+});
+
 export type AgregarItemMasivoDto    = z.infer<typeof AgregarItemMasivoSchema>;
 export type ActualizarItemMasivoDto = z.infer<typeof ActualizarItemMasivoSchema>;
+export type AgregarItemsMasivosDto  = z.infer<typeof AgregarItemsMasivosSchema>;

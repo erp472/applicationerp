@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CAMPOS_TARJETA, conRefinesTarjeta } from './pago-tarjeta.dto.js';
 
 const MEDIOS_PAGO = [
   'efectivo', 'cheque', 'tarjeta_debito', 'tarjeta_credito',
@@ -11,15 +12,17 @@ const EstampillaItemSchema = z.object({
   valor:  z.number().positive(),
 });
 
-export const ConfirmarVentaSchema = z.object({
+export const ConfirmarVentaSchema = conRefinesTarjeta(z.object({
   medioPago:             z.enum(MEDIOS_PAGO),
   efectivoRecibido:      z.number().positive().optional(),
   emailFactura:          z.string().email().optional(),
   montoEstampillas:      z.number().positive().optional(),
+  // Porción en efectivo de un pago mixto (estampillas o tarjeta parcial)
   montoEfectivo:         z.number().positive().optional(),
   // estampilla: una entrada por cada estampilla física recibida (código + valor facial)
   estampillasUtilizadas: z.array(EstampillaItemSchema).optional(),
-}).refine(
+  ...CAMPOS_TARJETA,
+})).refine(
   (d) => d.medioPago !== 'efectivo' || d.efectivoRecibido !== undefined,
   { message: 'efectivoRecibido es requerido cuando medioPago es efectivo', path: ['efectivoRecibido'] },
 ).refine(

@@ -64,6 +64,8 @@ const SELECT_MOV = {
   referencia_idmovimientos_caja:   true,
   referencia_tipomovimientos_caja: true,
   descripcionmovimientos_caja:     true,
+  franquicias_idfranquicias:       true,
+  codigo_vouchermovimientos_caja:  true,
   created_atmovimientos_caja:      true,
 } satisfies Prisma.MovimientoCajaSelect;
 
@@ -79,7 +81,23 @@ function toMovEntity(row: MovRow): MovimientoCajaEntity {
     referenciaId:   row.referencia_idmovimientos_caja,
     referenciaTipo: row.referencia_tipomovimientos_caja,
     descripcion:    row.descripcionmovimientos_caja,
+    franquiciaId:   row.franquicias_idfranquicias,
+    codigoVoucher:  row.codigo_vouchermovimientos_caja,
     createdAt:      row.created_atmovimientos_caja,
+  };
+}
+
+function toMovData(d: RegistrarMovimientoData) {
+  return {
+    sesiones_caja_idsesiones_caja:   d.sesionCajaId,
+    tipomovimientos_caja:            d.tipo,
+    montomovimientos_caja:           d.monto,
+    medio_pagomovimientos_caja:      d.medioPago,
+    referencia_idmovimientos_caja:   d.referenciaId,
+    referencia_tipomovimientos_caja: d.referenciaTipo,
+    descripcionmovimientos_caja:     d.descripcion,
+    franquicias_idfranquicias:       d.franquiciaId,
+    codigo_vouchermovimientos_caja:  d.codigoVoucher,
   };
 }
 
@@ -303,15 +321,7 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
 
   async registrarMovimiento(data: RegistrarMovimientoData): Promise<MovimientoCajaEntity> {
     const row = await this.prisma.movimientoCaja.create({
-      data: {
-        sesiones_caja_idsesiones_caja:   data.sesionCajaId,
-        tipomovimientos_caja:            data.tipo,
-        montomovimientos_caja:           data.monto,
-        medio_pagomovimientos_caja:      data.medioPago,
-        referencia_idmovimientos_caja:   data.referenciaId,
-        referencia_tipomovimientos_caja: data.referenciaTipo,
-        descripcionmovimientos_caja:     data.descripcion,
-      },
+      data:   toMovData(data),
       select: SELECT_MOV,
     });
     return toMovEntity(row);
@@ -324,15 +334,7 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
   ): Promise<MovimientoCajaEntity[]> {
     const rows = await this.prisma.$transaction(
       movimientos.map(d => this.prisma.movimientoCaja.create({
-        data: {
-          sesiones_caja_idsesiones_caja:   d.sesionCajaId,
-          tipomovimientos_caja:            d.tipo,
-          montomovimientos_caja:           d.monto,
-          medio_pagomovimientos_caja:      d.medioPago,
-          referencia_idmovimientos_caja:   d.referenciaId,
-          referencia_tipomovimientos_caja: d.referenciaTipo,
-          descripcionmovimientos_caja:     d.descripcion,
-        },
+        data:   toMovData(d),
         select: SELECT_MOV,
       })),
     );
@@ -421,18 +423,8 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
     movimientoEntrada: RegistrarMovimientoData,
     receptorId: number,
   ): Promise<ReposicionCajaEntity> {
-    const buildData = (d: RegistrarMovimientoData) => ({
-      sesiones_caja_idsesiones_caja:   d.sesionCajaId,
-      tipomovimientos_caja:            d.tipo,
-      montomovimientos_caja:           d.monto,
-      medio_pagomovimientos_caja:      d.medioPago,
-      referencia_idmovimientos_caja:   d.referenciaId,
-      referencia_tipomovimientos_caja: d.referenciaTipo,
-      descripcionmovimientos_caja:     d.descripcion,
-    });
-
     const [, reposicion] = await this.prisma.$transaction([
-      this.prisma.movimientoCaja.create({ data: buildData(movimientoEntrada), select: { idmovimientos_caja: true } }),
+      this.prisma.movimientoCaja.create({ data: toMovData(movimientoEntrada), select: { idmovimientos_caja: true } }),
       this.prisma.reposicionCaja.update({
         where:  { idreposiciones_caja: reposicionId },
         data:   { estadoreposiciones_caja: 'confirmada', usuarios_idusuarios: receptorId },

@@ -13,6 +13,7 @@ import {
   EmitirGiroInternacionalSchema,
   PagarGiroInternacionalSchema,
 } from '../dto/giros.dto.js';
+import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 import { JwtAuthGuard }           from '../../common/guards/jwt-auth.guard.js';
 import { RolesGuard }             from '../../common/guards/roles.guard.js';
 import { Roles }                  from '../../common/decorators/roles.decorator.js';
@@ -32,6 +33,7 @@ export class GirosController {
 
   // ── Giros Nacionales ──────────────────────────────────────────────────────────
 
+  @AuditKey('FIN-01')
   @Post('punto/:cajaId/nacional/emitir')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Emitir giro nacional 4-72' })
@@ -46,6 +48,7 @@ export class GirosController {
     return this.service.emitirGiroNacional(cajaId, user.id, parsed.data);
   }
 
+  @AuditKey('FIN-01')
   @Post('punto/:cajaId/nacional/pagar')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Pagar giro nacional por PIN' })
@@ -62,6 +65,7 @@ export class GirosController {
 
   // ── Giros Internacionales ─────────────────────────────────────────────────────
 
+  @AuditKey('FIN-01')
   @Post('punto/:cajaId/internacional/emitir')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Emitir giro internacional (MoneyGram / Ria / IFS)' })
@@ -76,6 +80,7 @@ export class GirosController {
     return this.service.emitirGiroInternacional(cajaId, user.id, parsed.data);
   }
 
+  @AuditKey('FIN-01')
   @Post('punto/:cajaId/internacional/pagar')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Pagar giro internacional validando PIN y datos del beneficiario' })
@@ -92,6 +97,7 @@ export class GirosController {
 
   // ── Operaciones sobre giro individual ─────────────────────────────────────────
 
+  @AuditKey('FIN-03')
   @Post(':id/anular')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Anular giro por ID' })
@@ -100,6 +106,7 @@ export class GirosController {
     return this.service.anularGiro(id);
   }
 
+  @AuditKey('ADM-04')
   @Get(':id')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Consultar detalle de un giro' })
@@ -108,6 +115,7 @@ export class GirosController {
     return this.service.getGiro(id);
   }
 
+  @AuditKey('ADM-04')
   @Get('sesion/:sesionId')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Listar giros de una sesión de caja' })

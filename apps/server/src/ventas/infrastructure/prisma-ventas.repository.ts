@@ -259,6 +259,7 @@ function toEnvioEntity(row: any): EnvioEntity {
     observaciones:         row.observacionesenvios ?? null,
     estado:                row.estadoenvios,
     createdAt:             row.created_atenvios,
+    loteMasivoId:          row.itemMasivo?.envios_masivos_idenvios_masivos ?? null,
   };
 }
 
@@ -402,7 +403,10 @@ export class PrismaVentasRepository implements IVentasRepository {
       select: {
         ...SELECT_VENTA,
         detalle:             { select: SELECT_DETALLE },
-        envios:              { where: { estadoenvios: 'pendiente' as any } },
+        envios: {
+          where:   { estadoenvios: 'pendiente' as any },
+          include: { itemMasivo: { select: { envios_masivos_idenvios_masivos: true } } },
+        },
         apartadosPendientes: { where: { estadoapartados_postales: 'reservado' as any } },
       },
     });
@@ -978,12 +982,16 @@ export class PrismaVentasRepository implements IVentasRepository {
     return this.findTarifasEspecial(productoId);
   }
 
+  // El número de guía se calcula antes del INSERT y debe coincidir con el id que
+  // le tocará a la fila. Derivarlo de max(idenvios) los desincroniza en cuanto la
+  // secuencia se mueve por fuera (setval, restore, borrado de filas), y quedan
+  // guías cuyo consecutivo no corresponde a su envío.
   async nextConsecutivoGuia(): Promise<number> {
-    const last = await this.prisma.envio.findFirst({
-      orderBy: { idenvios: 'desc' },
-      select:  { idenvios: true },
-    });
-    return (last?.idenvios ?? 0) + 1;
+    const [row] = await this.prisma.$queryRaw<Array<{ next: bigint }>>`
+      SELECT CASE WHEN is_called THEN last_value + 1 ELSE last_value END AS next
+      FROM envios_idenvios_seq
+    `;
+    return Number(row?.next ?? 1);
   }
 
   // ── Direcciones frecuentes ────────────────────────────────────────────────────

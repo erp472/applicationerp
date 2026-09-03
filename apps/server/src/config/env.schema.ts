@@ -18,6 +18,8 @@ export const envSchema = z.object({
   REDIS_PASSWORD: z.string().optional(),
 
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional(),
+
+  MONGODB_URI: z.string().default('mongodb://pos472_mongo:pos472_mongo_pass@localhost:27017/pos472_audit?authSource=admin'),
 });
 
 export type Env = z.infer<typeof envSchema>;

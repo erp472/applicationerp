@@ -139,6 +139,8 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
 
   // ── 9. Movimientos de caja ─────────────────────────────────────────────────
   get movimientoCaja()  { return this.client.movimientoCaja; }
+  get franquicia()          { return this.client.franquicia; }
+  get franquiciaSucursal()  { return this.client.franquiciaSucursal; }
   get consignacion()    { return this.client.consignacion; }
   get reposicionCaja()  { return this.client.reposicionCaja; }
   get diferenciaCaja()  { return this.client.diferenciaCaja; }
@@ -200,6 +202,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   // ── Transacciones ──────────────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   get $transaction(): any { return this.client.$transaction.bind(this.client); }
+
+  // ── SQL crudo ──────────────────────────────────────────────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  get $queryRaw(): any { return this.client.$queryRaw.bind(this.client); }
 
   async onModuleInit() {
     await this.rawClient.$connect();

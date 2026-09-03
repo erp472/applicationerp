@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CAMPOS_TARJETA, conRefinesTarjeta } from './pago-tarjeta.dto.js';
 
 const PersonaEnvioSchema = z.object({
   nombre:         z.string().min(1).max(300),
@@ -14,7 +15,7 @@ const PersonaEnvioSchema = z.object({
   codigoPostal:   z.string().max(20).optional(),
 });
 
-export const CrearEnvioSchema = z.object({
+export const CrearEnvioSchema = conRefinesTarjeta(z.object({
   servicioId:       z.number().int().positive(),
   sucursalId:       z.number().int().positive(),
   remitente:        PersonaEnvioSchema,
@@ -32,7 +33,9 @@ export const CrearEnvioSchema = z.object({
   medioPago:        z.enum(['efectivo', 'tarjeta_debito', 'tarjeta_credito', 'transferencia', 'consignacion', 'preporteado', 'mixto_preporteado', 'estampilla']),
   // preporteado / mixto_preporteado breakdown (required when medioPago uses estampillas)
   montoEstampillas: z.number().positive().optional(),
+  // Porción en efectivo de un pago mixto (estampillas o tarjeta parcial)
   montoEfectivo:    z.number().positive().optional(),
+  ...CAMPOS_TARJETA,
   // international CP guide (format: LLddddddddLL)
   guiaCp:           z.string().regex(/^[A-Z]{2}\d{8}[A-Z]{2}$/, 'Formato esperado: LLddddddddLL').optional(),
   esCorrespondencia: z.boolean().optional(),
@@ -40,6 +43,6 @@ export const CrearEnvioSchema = z.object({
   tipoTrayecto: z.enum(['NACIONAL', 'URBANO', 'ESPECIAL']).optional(),
   // Cliente identificado de la venta (cuando se crea un envío fuera del carrito pero con cliente conocido)
   clienteId: z.number().int().positive().optional(),
-});
+}));
 
 export type CrearEnvioDto = z.infer<typeof CrearEnvioSchema>;

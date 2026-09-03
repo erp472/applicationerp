@@ -2,7 +2,10 @@ import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
+import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule } from './config/config.module.js';
+import { ConfigService } from './config/config.service.js';
+import { SecurityModule } from './security/security.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { MetricsModule } from './metrics/metrics.module.js';
@@ -29,12 +32,21 @@ import { RealtimeModule } from './realtime/realtime.module.js';
 import { SigmaModule } from './sigma/sigma.module.js';
 import { SacasModule }         from './sacas/sacas.module.js';
 import { EnviosMasivosModule } from './envios-masivos/envios-masivos.module.js';
+import { FranquiciasModule }   from './franquicias/franquicias.module.js';
+import { AuditInterceptor } from './audit/audit.interceptor.js';
 import { AuditContextInterceptor } from './common/interceptors/audit-context.interceptor.js';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter.js';
 
 @Module({
   imports: [
     ConfigModule,
+    MongooseModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (cfg: ConfigService) => ({
+        uri: cfg.mongoUri,
+        serverSelectionTimeoutMS: 5000,
+      }),
+    }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 60 }]),
     ScheduleModule.forRoot(),
     PrismaModule, AuditModule, MetricsModule, HealthModule,
@@ -42,12 +54,13 @@ import { AllExceptionsFilter } from './common/filters/http-exception.filter.js';
     GeoModule, ComerciosModule, RegionalesModule, SucursalesModule, EquiposModule,
     ProductosModule, ServiciosModule, CajasModule, VentasModule, ClientesModule,
     InventarioModule, GirosModule, RecaudosModule, RealtimeModule, SigmaModule, SacasModule,
-    EnviosMasivosModule,
+    EnviosMasivosModule, FranquiciasModule, SecurityModule,
   ],
   providers: [
     { provide: APP_FILTER,      useClass: AllExceptionsFilter },
     { provide: APP_GUARD,       useClass: ThrottlerGuard },
     { provide: APP_INTERCEPTOR, useClass: AuditContextInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
   ],
 })
 export class AppModule {}

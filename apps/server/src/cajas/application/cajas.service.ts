@@ -37,6 +37,7 @@ import {
   evaluarAlertas,
   TIPOS_MOVIMIENTO_ENTRADA,
   TIPOS_MOVIMIENTO_SALIDA,
+  esTarjeta,
 } from '../domain/business-rules.js';
 import { calcularCierreSesion } from '../domain/calculos/cierre-sesion.js';
 import { compararArqueoConSaldo } from '../domain/calculos/arqueo-denominaciones.js';
@@ -968,20 +969,45 @@ export class CajasService {
 
   // ── Registrar movimiento de venta (usado por VentasModule) ──────────────────
 
+  // Tesorería activa las franquicias por sucursal: una franquicia global pero apagada
+  // en el punto no puede cobrarse allí.
+  private async validarFranquiciaHabilitada(cajaId: number, franquiciaId: number) {
+    if (!this.prisma) return;
+    const caja = await this.cajasRepo.findById(cajaId);
+    if (!caja) throw new CajaNoEncontradaError(cajaId);
+    const habilitada = await this.prisma.franquiciaSucursal.findFirst({
+      where: {
+        sucursales_idsucursales:    caja.sucursalId,
+        franquicias_idfranquicias:  franquiciaId,
+        activofranquicias_sucursal: true,
+        franquicia: { activofranquicias: true, deleted_atfranquicias: null },
+      },
+      select: { franquicias_idfranquicias: true },
+    });
+    if (!habilitada) {
+      throw new BadRequestException(`La franquicia ${franquiciaId} no está habilitada en esta sucursal`);
+    }
+  }
+
   async registrarMovimientoVenta(params: {
     sesionCajaId:    number;
     tipo:            TipoMovimientoCaja;
     monto:           string;
     medioPago?:      MedioPago;
-    /** Porción del monto realmente recibida en efectivo (pagos mixtos con estampillas/preporteado) */
+    /** Porción del monto realmente recibida en efectivo (pagos mixtos con estampillas/preporteado/tarjeta) */
     montoEfectivo?:  string | number;
     referenciaId?:   number;
     referenciaTipo?: string;
     descripcion?:    string;
+    /** Solo aplica a tarjeta_credito: franquicia del catálogo de Tesorería */
+    franquiciaId?:   number;
+    /** Baucher del datáfono — obligatorio para débito y crédito */
+    codigoVoucher?:  string;
   }) {
     const sesion = await this.sesionesRepo.findById(params.sesionCajaId);
     if (!sesion) throw new SesionNoEncontradaError(params.sesionCajaId);
     validarSesionAbierta(params.sesionCajaId, sesion.estado);
+    if (params.franquiciaId) await this.validarFranquiciaHabilitada(sesion.cajaId, params.franquiciaId);
 
     const partes = repartirPagoPorMedio(params.monto, params.medioPago, params.montoEfectivo);
     const [movimiento] = await this.sesionesRepo.registrarMovimientosAtomicos(
@@ -993,6 +1019,10 @@ export class CajasService {
         referenciaId:   params.referenciaId,
         referenciaTipo: params.referenciaTipo,
         descripcion:    params.descripcion,
+        // El baucher identifica la porción cobrada por datáfono; la parte en efectivo
+        // del pago mixto no lleva franquicia ni código.
+        franquiciaId:   esTarjeta(parte.medioPago) ? params.franquiciaId  : undefined,
+        codigoVoucher:  esTarjeta(parte.medioPago) ? params.codigoVoucher : undefined,
       })),
     );
 

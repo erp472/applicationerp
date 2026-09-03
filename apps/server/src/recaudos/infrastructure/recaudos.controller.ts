@@ -3,6 +3,7 @@ import {
   ParseIntPipe, BadRequestException, HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 import { RecaudosService } from '../application/recaudos.service.js';
 import { RegistrarRecaudoSchema } from '../dto/recaudos.dto.js';
 import { JwtAuthGuard }    from '../../common/guards/jwt-auth.guard.js';
@@ -22,6 +23,7 @@ const ROLES_READ   = ['CAJERO', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA', 'ADMIN_N
 export class RecaudosController {
   constructor(private readonly service: RecaudosService) {}
 
+  @AuditKey('OPE-02')
   @Get('convenios')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Convenios de recaudo activos para una sucursal' })
@@ -30,6 +32,7 @@ export class RecaudosController {
     return this.service.getConveniosBySucursal(sucursalId);
   }
 
+  @AuditKey('FIN-01')
   @Post('punto/:cajaId/registrar')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Registrar pago de recaudo — genera movimiento de caja tipo recaudo' })
@@ -44,6 +47,7 @@ export class RecaudosController {
     return this.service.registrarRecaudo(cajaId, user.id, parsed.data);
   }
 
+  @AuditKey('FIN-03')
   @Post(':id/anular')
   @Roles(...ROLES_CAJERO)
   @HttpCode(HttpStatus.OK)
@@ -53,6 +57,7 @@ export class RecaudosController {
     return this.service.anularRecaudo(id);
   }
 
+  @AuditKey('ADM-04')
   @Get(':id')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Detalle de un recaudo' })
@@ -61,6 +66,7 @@ export class RecaudosController {
     return this.service.getRecaudo(id);
   }
 
+  @AuditKey('ADM-04')
   @Get('sesion/:sesionId')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Recaudos de una sesión de caja' })

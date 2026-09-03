@@ -1,3 +1,5 @@
+import type { TipoTransaccion } from './decorators/audit-key.decorator.js';
+
 export type AuditAction  = 'CREATE' | 'READ' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'LOGOUT' | 'PRINT' | 'EXPORT' | 'DENIED';
 export type AuditResult  = 'OK' | 'ERROR';
 
@@ -11,4 +13,6 @@ export class CreateAuditLogDto {
   ip_origen?:     string;
   resultado?:     AuditResult;
   error_msg?:     string;
+  audit_key?:     string;
+  tipo?:          TipoTransaccion;
 }

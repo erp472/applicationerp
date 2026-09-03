@@ -13,12 +13,14 @@ import { AuthService } from '../application/auth.service.js';
 import { LoginSchema } from '../dto/login.dto.js';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
+import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @AuditKey('ADM-03')
   @Post('login')
   @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @ApiOperation({ summary: 'Iniciar sesión', description: 'Devuelve un JWT Bearer token' })
@@ -68,6 +70,7 @@ export class AuthController {
     }
   }
 
+  @AuditKey('ADM-04')
   @UseGuards(JwtAuthGuard)
   @Get('me')
   @ApiBearerAuth()

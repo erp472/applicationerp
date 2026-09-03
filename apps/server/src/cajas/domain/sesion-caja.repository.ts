@@ -61,6 +61,8 @@ export interface RegistrarMovimientoData {
   referenciaId?: number;
   referenciaTipo?: string;
   descripcion?: string;
+  franquiciaId?: number;
+  codigoVoucher?: string;
 }
 
 export interface CrearReposicionData {

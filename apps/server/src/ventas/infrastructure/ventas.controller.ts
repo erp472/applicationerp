@@ -7,6 +7,7 @@ import type { FastifyReply } from 'fastify';
 import {
   ApiTags, ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse,
 } from '@nestjs/swagger';
+import { AuditKey }               from '../../audit/decorators/audit-key.decorator.js';
 import { VentasService }          from '../application/ventas.service.js';
 import { IniciarVentaSchema }        from '../dto/iniciar-venta.dto.js';
 import { AgregarProductoSchema }     from '../dto/agregar-producto.dto.js';
@@ -48,6 +49,7 @@ export class VentasController {
 
   // ── Catálogo ─────────────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-04')
   @Get('punto/:cajaId/estampillas-disponibles')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Estampillas disponibles por denominación y serie (para preporteado)' })
@@ -57,6 +59,7 @@ export class VentasController {
     return this.service.getEstampillasDisponibles(cajaId);
   }
 
+  @AuditKey('ADM-04')
   @Get('catalogo/productos')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Catálogo de productos disponibles en la sucursal' })
@@ -70,6 +73,7 @@ export class VentasController {
     return productos.map(VentasPresenter.toProducto);
   }
 
+  @AuditKey('OPE-02')
   @Get('catalogo/especiales/:productoId/tarifas')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Tarifas por rango de cantidad para un servicio especial' })
@@ -78,6 +82,7 @@ export class VentasController {
     return this.service.getTarifasEspecial(productoId);
   }
 
+  @AuditKey('OPE-04')
   @Put('catalogo/especiales/:productoId/tarifas')
   @Roles('INVENTARIOS', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL')
   @ApiOperation({ summary: 'Reemplaza todas las tarifas por cantidad de un servicio especial (admin)' })
@@ -93,6 +98,7 @@ export class VentasController {
 
   // ── Clientes ──────────────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-04')
   @Get('clientes/buscar')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Buscar cliente por tipo y número de documento' })
@@ -106,6 +112,7 @@ export class VentasController {
     return cliente ? VentasPresenter.toCliente(cliente) : null;
   }
 
+  @AuditKey('ADM-04')
   @Get('clientes/:clienteId/saldo-a-favor')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Consultar saldo a favor acumulado del cliente (por compras filatelia)' })
@@ -114,6 +121,7 @@ export class VentasController {
     return this.service.getSaldoAFavor(clienteId);
   }
 
+  @AuditKey('ADM-04')
   @Get('clientes/:clienteId/direcciones')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Direcciones frecuentes del cliente en envíos anteriores' })
@@ -127,6 +135,7 @@ export class VentasController {
     return this.service.getDireccionesFrecuentes(clienteId, rolVal);
   }
 
+  @AuditKey('OPE-04')
   @Post('clientes/:clienteId/direcciones')
   @Roles(...ROLES_READ)
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -141,6 +150,7 @@ export class VentasController {
     await this.service.guardarDireccionManual(clienteId, parsed.data);
   }
 
+  @AuditKey('ADM-04')
   @Get('direcciones')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Direcciones frecuentes por número de documento del destinatario/remitente' })
@@ -157,6 +167,7 @@ export class VentasController {
 
   // ── Iniciar venta ─────────────────────────────────────────────────────────────
 
+  @AuditKey('OPE-01')
   @Post('punto/:cajaId/iniciar')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Iniciar venta en caja auxiliar — busca/vincula cliente y crea el carrito' })
@@ -177,6 +188,7 @@ export class VentasController {
 
   // ── Carrito ───────────────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-04')
   @Get(':ventaId/carrito')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Ver carrito actual con todos los ítems y totales' })
@@ -185,6 +197,7 @@ export class VentasController {
     return VentasPresenter.toVenta(await this.service.getCarrito(ventaId));
   }
 
+  @AuditKey('OPE-01')
   @Post(':ventaId/carrito/producto')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Agregar producto al carrito' })
@@ -203,6 +216,7 @@ export class VentasController {
     return { detalle: VentasPresenter.toDetalle(result.detalle), nombreProducto: result.nombreProducto };
   }
 
+  @AuditKey('OPE-04')
   @Delete(':ventaId/carrito/:detalleId')
   @Roles(...ROLES_CAJERO)
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -216,6 +230,7 @@ export class VentasController {
     await this.service.eliminarProducto(ventaId, detalleId);
   }
 
+  @AuditKey('OPE-03')
   @Post(':ventaId/carrito/envio')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Agregar servicio postal al carrito — crea guía en estado pendiente, se factura al confirmar la venta' })
@@ -241,6 +256,7 @@ export class VentasController {
     };
   }
 
+  @AuditKey('OPE-04')
   @Delete(':ventaId/carrito/envio/:envioId')
   @Roles(...ROLES_CAJERO)
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -256,6 +272,7 @@ export class VentasController {
 
   // ── Confirmar pago ────────────────────────────────────────────────────────────
 
+  @AuditKey('FIN-01')
   @Post(':ventaId/confirmar')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Confirmar pago — registra MovimientoCaja, factura envíos pendientes y genera guías' })
@@ -286,6 +303,7 @@ export class VentasController {
 
   // ── Anular factura ────────────────────────────────────────────────────────────
 
+  @AuditKey('FIN-03')
   @Post(':ventaId/anular')
   @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Anular venta — reversa el movimiento de caja y libera recursos' })
@@ -312,6 +330,7 @@ export class VentasController {
 
   // ── Apartado Postal en carrito ────────────────────────────────────────────────
 
+  @AuditKey('OPE-01')
   @Post(':ventaId/carrito/apartado')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Agregar apartado postal al carrito — reserva y suma al total de la venta' })
@@ -332,6 +351,7 @@ export class VentasController {
     return { apartado: VentasPresenter.toApartado(result.apartado), cotizacion: result.cotizacion };
   }
 
+  @AuditKey('OPE-04')
   @Delete(':ventaId/carrito/apartado/:apartadoId')
   @Roles(...ROLES_CAJERO)
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -347,6 +367,7 @@ export class VentasController {
 
   // ── Apartado Postal ───────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-04')
   @Get('apartados/disponibles')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Apartados postales disponibles en una sucursal' })
@@ -359,6 +380,7 @@ export class VentasController {
     return this.service.getApartadosDisponibles(sucursalId, tamano);
   }
 
+  @AuditKey('ADM-04')
   @Get('apartados/todos')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Todos los apartados postales de una sucursal (cualquier estado)' })
@@ -371,6 +393,7 @@ export class VentasController {
     return this.service.getApartadosPorSucursal(sucursalId, tamano);
   }
 
+  @AuditKey('FIN-01')
   @Post('punto/:cajaId/apartado')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Contratar apartado postal — registra MovimientoCaja tipo apartado_postal' })
@@ -394,6 +417,7 @@ export class VentasController {
     };
   }
 
+  @AuditKey('FIN-01')
   @Post('punto/:cajaId/apartado/:id/renovar')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Renovar apartado postal — extiende fechaFin y registra cobro en caja' })
@@ -421,6 +445,7 @@ export class VentasController {
 
   // ── Servicios Postales ────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-04')
   @Get('servicios-postales')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Catálogo de servicios postales disponibles en la sucursal' })
@@ -429,6 +454,7 @@ export class VentasController {
     return this.service.getServiciosPostales(sucursalId);
   }
 
+  @AuditKey('ADM-04')
   @Get('servicios-postales/:servicioId/paises-destino')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Lista de países de destino con tarifas configuradas para el servicio' })
@@ -437,6 +463,7 @@ export class VentasController {
     return this.service.getPaisesDestinoByServicio(servicioId);
   }
 
+  @AuditKey('ADM-04')
   @Get('conversion-moneda')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Convertir COP a USD usando TRM del día' })
@@ -449,6 +476,7 @@ export class VentasController {
     return this.service.conversionMoneda(Number(valorCopS), Number(trmDiaS));
   }
 
+  @AuditKey('OPE-02')
   @Get('servicios-postales/cotizar')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Cotizar tarifa de envío según servicio, peso y dimensiones' })
@@ -488,6 +516,7 @@ export class VentasController {
     );
   }
 
+  @AuditKey('FIN-01')
   @Post('punto/:cajaId/envio')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Crear guía postal — registra MovimientoCaja tipo venta_servicio' })
@@ -515,6 +544,7 @@ export class VentasController {
 
   // ── Ventas del día por sucursal ───────────────────────────────────────────────
 
+  @AuditKey('ADM-06')
   @Get('sucursal/:sucursalId/dia')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Ventas confirmadas del día en una sucursal (con detalle de productos)' })
@@ -523,6 +553,7 @@ export class VentasController {
     return this.service.getVentasDia(sucursalId);
   }
 
+  @AuditKey('ADM-04')
   @Get('sucursal/:sucursalId/punto-admision')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Código y nombre del punto de admisión — encabezado de la guía postal' })
@@ -533,6 +564,7 @@ export class VentasController {
 
   // ── Resumen del turno ─────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-06')
   @Get('punto/:cajaId/resumen')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Resumen de ventas del turno activo por categoría (sellos, apartados, servicios, productos)' })
@@ -544,6 +576,7 @@ export class VentasController {
 
   // ── Listado del turno ─────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-06')
   @Get('punto/:cajaId/turno')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Movimientos globales del turno activo — incluye ventas, apartados, servicios y anulaciones' })
@@ -554,6 +587,7 @@ export class VentasController {
 
   // ── Admin CRUD Apartados ──────────────────────────────────────────────────────
 
+  @AuditKey('ADM-04')
   @Get('admin/apartados')
   @Roles('ADMIN_SISTEMA', 'ADMIN_NACIONAL')
   @ApiOperation({ summary: 'Listar todos los apartados postales (admin)' })
@@ -569,6 +603,7 @@ export class VentasController {
     return this.service.listApartadosAdmin({ sucursalId, estado, tamano });
   }
 
+  @AuditKey('ADM-01')
   @Post('admin/apartados')
   @Roles('ADMIN_SISTEMA', 'ADMIN_NACIONAL')
   @ApiOperation({ summary: 'Crear apartado postal' })
@@ -580,6 +615,7 @@ export class VentasController {
     return this.service.createApartadoAdmin(parsed.data);
   }
 
+  @AuditKey('OPE-04')
   @Patch('admin/apartados/:id')
   @Roles('ADMIN_SISTEMA', 'ADMIN_NACIONAL')
   @ApiOperation({ summary: 'Actualizar tamaño, estado o días de alerta de un apartado' })
@@ -593,6 +629,7 @@ export class VentasController {
     return this.service.updateApartadoAdmin(id, parsed.data);
   }
 
+  @AuditKey('OPE-04')
   @Delete('admin/apartados/:id')
   @Roles('ADMIN_SISTEMA', 'ADMIN_NACIONAL')
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -604,6 +641,7 @@ export class VentasController {
 
   // ── Alertas ───────────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-04')
   @Get('alertas/apartados')
   @Roles('SUPERVISOR_REGIONAL', 'ADMIN_NACIONAL', 'ADMIN_SISTEMA')
   @ApiOperation({ summary: 'Apartados próximos a vencer y vencidos — para Dashboard de alertas' })
@@ -620,6 +658,7 @@ export class VentasController {
     return this.service.getAlertasApartados(sucursalId);
   }
 
+  @AuditKey('ADM-04')
   @Get('alertas/anulaciones')
   @Roles('SUPERVISOR_REGIONAL', 'ADMIN_NACIONAL', 'ADMIN_SISTEMA')
   @ApiOperation({ summary: 'Anulaciones pendientes de aprobación — para Dashboard de alertas' })
@@ -638,6 +677,7 @@ export class VentasController {
 
   // ── Guía PDF de envío individual ──────────────────────────────────────────────
 
+  @AuditKey('ADM-06')
   @Get('envios/:envioId/guia-pdf')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Descargar guía postal individual en PDF' })
@@ -655,6 +695,7 @@ export class VentasController {
 
   // ── Recibo de venta en PDF ────────────────────────────────────────────────────
 
+  @AuditKey('ADM-06')
   @Get(':ventaId/recibo-pdf')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Generar recibo de venta en PDF' })

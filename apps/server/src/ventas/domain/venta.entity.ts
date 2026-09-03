@@ -204,4 +204,5 @@ export class EnvioEntity {
   observaciones:         string | null;
   estado:                string;
   createdAt:             Date;
+  loteMasivoId?:         number | null;
 }

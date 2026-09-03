@@ -19,6 +19,7 @@ import { Feature } from '../../common/decorators/feature.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { UsersPresenter } from './users.presenter.js';
 import { UsersDomainFilter } from './users-domain.filter.js';
+import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 
 const ROLES_ADMIN   = ['ADMIN_NACIONAL', 'ADMIN_SISTEMA'];
 const ROLES_MANAGE  = ['ADMIN_NACIONAL', 'ADMIN_SISTEMA', 'SUPERVISOR_REGIONAL'];
@@ -33,6 +34,7 @@ const ROL_ENUM      = ['CAJERO', 'ADMINISTRATIVO', 'TESORERIA', 'INVENTARIOS', '
 export class UsersController {
   constructor(private readonly service: UsersService) {}
 
+  @AuditKey('ADM-01')
   @Post()
   @Roles(...ROLES_ADMIN)
   @ApiOperation({ summary: 'Create user', description: 'Requires ADMIN_NACIONAL or ADMIN_SISTEMA role' })
@@ -62,6 +64,7 @@ export class UsersController {
     return UsersPresenter.toResponse(await this.service.create(parsed.data));
   }
 
+  @AuditKey('ADM-04')
   @Get()
   @Roles(...ROLES_MANAGE, 'ADMINISTRATIVO')
   @ApiOperation({ summary: 'List users with pagination and filters' })
@@ -79,6 +82,7 @@ export class UsersController {
     return { datos: UsersPresenter.toList(datos), meta };
   }
 
+  @AuditKey('ADM-04')
   @Get('me')
   @Feature('')
   @ApiOperation({ summary: 'Authenticated user profile' })
@@ -87,6 +91,7 @@ export class UsersController {
     return UsersPresenter.toResponse(await this.service.findOne(user.id));
   }
 
+  @AuditKey('ADM-02')
   @Patch('me')
   @Feature('')
   @ApiOperation({ summary: 'Update own profile (nombre, email, password, contact fields)' })
@@ -100,6 +105,7 @@ export class UsersController {
     return UsersPresenter.toResponse(await this.service.update(user.id, parsed.data));
   }
 
+  @AuditKey('ADM-04')
   @Get(':id')
   @Roles(...ROLES_MANAGE, 'ADMINISTRATIVO')
   @ApiOperation({ summary: 'Get user by ID' })
@@ -110,6 +116,7 @@ export class UsersController {
     return UsersPresenter.toResponse(await this.service.findOne(id));
   }
 
+  @AuditKey('ADM-02')
   @Patch(':id')
   @ApiOperation({
     summary: 'Update user',
@@ -159,6 +166,7 @@ export class UsersController {
     return UsersPresenter.toResponse(await this.service.update(id, parsed.data));
   }
 
+  @AuditKey('ADM-02')
   @Delete(':id')
   @Roles(...ROLES_ADMIN)
   @ApiOperation({ summary: 'Deactivate user (soft delete)' })

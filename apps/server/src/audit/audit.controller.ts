@@ -4,6 +4,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { AuditService } from './audit.service.js';
+import { AuditKey } from './decorators/audit-key.decorator.js';
 
 @ApiTags('audit')
 @Controller('audit')
@@ -13,6 +14,7 @@ import { AuditService } from './audit.service.js';
 export class AuditController {
   constructor(private readonly audit: AuditService) {}
 
+  @AuditKey('ADM-05')
   @Get()
   @ApiOperation({ summary: 'Listar eventos de auditoría con filtros' })
   @ApiQuery({ name: 'tabla',      required: false })
@@ -42,6 +44,7 @@ export class AuditController {
     });
   }
 
+  @AuditKey('ADM-06')
   @Get('stats')
   @ApiOperation({ summary: 'Estadísticas de auditoría del día actual' })
   stats() {

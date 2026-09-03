@@ -407,6 +407,7 @@ model Sucursal {
   usuarios              Usuario[]
   productosSucursal     ProductoSucursal[]
   serviciosSucursal     ServicioSucursal[]
+  franquiciasSucursal   FranquiciaSucursal[]
   cajasPadres           CajaPadre[]
   cajas                 Caja[]
   inventarioSucursal    InventarioSucursal[]
@@ -719,6 +720,33 @@ model ServicioSucursal {
   @@map("servicios_sucursal")
 }
 
+model Franquicia {
+  idfranquicias         Int       @id @default(autoincrement())
+  codigofranquicias     String    @unique @db.VarChar(20)
+  nombrefranquicias     String    @db.VarChar(100)
+  activofranquicias     Boolean   @default(true)
+  created_atfranquicias DateTime  @default(now()) @db.Timestamptz(6)
+  updated_atfranquicias DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_atfranquicias DateTime? @db.Timestamptz(6)
+
+  franquiciasSucursal FranquiciaSucursal[]
+  movimientosCaja     MovimientoCaja[]
+
+  @@map("franquicias")
+}
+
+model FranquiciaSucursal {
+  sucursales_idsucursales    Int
+  franquicias_idfranquicias  Int
+  activofranquicias_sucursal Boolean @default(true)
+
+  sucursal   Sucursal   @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  franquicia Franquicia @relation(fields: [franquicias_idfranquicias], references: [idfranquicias])
+
+  @@id([sucursales_idsucursales, franquicias_idfranquicias])
+  @@map("franquicias_sucursal")
+}
+
 model TarifaServicio {
   idtarifas_servicio                    Int       @id @default(autoincrement())
   servicios_idservicios                 Int
@@ -906,9 +934,12 @@ model MovimientoCaja {
   referencia_idmovimientos_caja   Int?
   referencia_tipomovimientos_caja String?              @db.VarChar(50)
   descripcionmovimientos_caja     String?
+  franquicias_idfranquicias       Int?
+  codigo_vouchermovimientos_caja  String?              @db.VarChar(30)
   created_atmovimientos_caja      DateTime             @default(now()) @db.Timestamptz(6)
 
-  sesionCaja SesionCaja @relation(fields: [sesiones_caja_idsesiones_caja], references: [idsesiones_caja])
+  sesionCaja SesionCaja  @relation(fields: [sesiones_caja_idsesiones_caja], references: [idsesiones_caja])
+  franquicia Franquicia? @relation(fields: [franquicias_idfranquicias], references: [idfranquicias])
 
   @@index([sesiones_caja_idsesiones_caja], map: "idx_mov_caja_sesion")
   @@map("movimientos_caja")
@@ -1003,6 +1034,7 @@ model Venta {
   detalle             VentaDetalle[]
   envios              Envio[]
   apartadosPendientes ApartadoPostal[]
+  lotesMasivos        EnvioMasivo[]
 
   @@index([sesiones_caja_idsesiones_caja], map: "idx_ventas_sesion")
   @@index([created_atventas], map: "idx_ventas_fecha")
@@ -1593,6 +1625,8 @@ model EnvioMasivo {
   usuarios_idusuarios                  Int
   clientes_idclientes                  Int?
   servicios_idservicios                Int
+  // Venta del carrito que cobra el lote (se enlaza al confirmarlo)
+  ventas_idventas                      Int?
   // Remitente compartido (null cuando cada item tiene su propio remitente)
   remitente_nombreenvios_masivos       String?            @db.VarChar(300)
   remitente_documentoenvios_masivos    String?            @db.VarChar(30)
@@ -1620,10 +1654,12 @@ model EnvioMasivo {
   usuario    Usuario     @relation(fields: [usuarios_idusuarios], references: [idusuarios])
   cliente    Cliente?    @relation(fields: [clientes_idclientes], references: [idclientes])
   servicio   Servicio    @relation(fields: [servicios_idservicios], references: [idservicios])
+  venta      Venta?      @relation(fields: [ventas_idventas], references: [idventas])
   items      EnvioMasivoItem[]
 
   @@index([sucursales_idsucursales, created_atenvios_masivos], map: "idx_envios_masivos_sucursal_fecha")
   @@index([estadoenvios_masivos], map: "idx_envios_masivos_estado")
+  @@index([ventas_idventas], map: "idx_envios_masivos_venta")
   @@map("envios_masivos")
 }
 

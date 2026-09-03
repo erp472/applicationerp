@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import * as fs from 'node:fs';
 import { PrismaService }   from '../../prisma/prisma.service.js';
 import { VentasService }   from '../../ventas/application/ventas.service.js';
 import { CajasService }    from '../../cajas/application/cajas.service.js';
@@ -113,62 +114,56 @@ export class EnviosMasivosService {
 
   async agregarItem(loteId: number, dto: AgregarItemMasivoDto) {
     const lote = await this._getLoteEnBorrador(loteId);
-
-    const cotizacion = await this.ventas.cotizarEnvio(
-      lote.servicios_idservicios,
-      dto.pesoFisicoKg,
-      undefined, undefined, undefined,
-      dto.destinatarioPais,
-      dto.destinatarioCiudad,
-    );
-
-    const esInternacional    = dto.destinatarioPais !== 'CO';
-    const valorServicio      = Number(cotizacion.valorServicio);
-    const valorEstampillas   = cotizacion.servicio.requiereEstampilla ? valorServicio : 0;
-    const valorCertificacion = esInternacional ? 0 : cotizacion.valorCertificacion;
-    const valorTotal = esInternacional
-      ? Number(calcularTotalEnvioInternacional(
-          String(valorServicio), '0', String(valorEstampillas),
-        ))
-      : Number(calcularTotalEnvioNacional(
-          String(valorServicio), String(valorEstampillas), '0', '0', String(valorCertificacion),
-        ));
-
-    const siguienteNumFila = await this._siguienteNumFila(loteId);
+    const { data, cotizacion } = await this._cotizarFila(lote.servicios_idservicios, dto);
 
     const item = await this.prisma.envioMasivoItem.create({
       data: {
-        envios_masivos_idenvios_masivos:            loteId,
-        numero_filaenvios_masivos_items:            siguienteNumFila,
-        // Remitente propio del item (puede ser null si el lote tiene remitente global)
-        remitente_nombreenvios_masivos_items:       dto.remitente?.nombre ?? null,
-        remitente_documentoenvios_masivos_items:    dto.remitente?.documento ?? null,
-        remitente_emailenvios_masivos_items:        dto.remitente?.email ?? null,
-        remitente_telefonoenvios_masivos_items:     dto.remitente?.telefono ?? null,
-        remitente_direccionenvios_masivos_items:    dto.remitente?.direccion ?? null,
-        remitente_ciudadenvios_masivos_items:       dto.remitente?.ciudad ?? null,
-        remitente_cpenvios_masivos_items:           dto.remitente?.codigoPostal ?? null,
-        destinatario_nombreenvios_masivos_items:    dto.destinatarioNombre,
-        destinatario_documentoenvios_masivos_items: dto.destinatarioDocumento ?? null,
-        destinatario_emailenvios_masivos_items:     dto.destinatarioEmail ?? null,
-        destinatario_telefonoenvios_masivos_items:  dto.destinatarioTelefono ?? null,
-        destinatario_direccionenvios_masivos_items: dto.destinatarioDireccion ?? null,
-        destinatario_ciudadenvios_masivos_items:    dto.destinatarioCiudad ?? null,
-        destinatario_paisenvios_masivos_items:      dto.destinatarioPais,
-        destinatario_cpenvios_masivos_items:        dto.destinatarioCp ?? null,
-        peso_fisico_kgenvios_masivos_items:         dto.pesoFisicoKg,
-        peso_tarificado_kgenvios_masivos_items:     cotizacion.pesoTarificadoKg,
-        valor_servicioenvios_masivos_items:         valorServicio,
-        valor_estampillasenvios_masivos_items:      valorEstampillas,
-        valor_certificacionenvios_masivos_items:    valorCertificacion,
-        valor_totalenvios_masivos_items:            valorTotal,
-        contenidoenvios_masivos_items:              dto.contenido ?? null,
-        observacionesenvios_masivos_items:          dto.observaciones ?? null,
+        envios_masivos_idenvios_masivos: loteId,
+        numero_filaenvios_masivos_items: await this._siguienteNumFila(loteId),
+        ...data,
       },
     });
 
     await this._recalcularTotalesLote(loteId);
-    return { item, cotizacion: { pesoTarificado: cotizacion.pesoTarificadoKg, valorServicio, valorCertificacion } };
+    return { item, cotizacion };
+  }
+
+  // ── Agregar items en bloque ───────────────────────────────────────────────────
+  // Cotiza todas las filas fuera de la transacción (solo lecturas) y luego inserta
+  // las válidas de una sola vez. Una fila inválida no aborta el resto.
+
+  async agregarItems(loteId: number, dtos: AgregarItemMasivoDto[]) {
+    const lote = await this._getLoteEnBorrador(loteId);
+
+    const cotizadas: Array<Record<string, unknown>> = [];
+    const errores: Array<{ fila: number; error: string }> = [];
+
+    for (let i = 0; i < dtos.length; i++) {
+      try {
+        const { data } = await this._cotizarFila(lote.servicios_idservicios, dtos[i]);
+        cotizadas.push(data);
+      } catch (err: any) {
+        errores.push({ fila: i + 1, error: err?.message ?? String(err) });
+      }
+    }
+
+    let agregados = 0;
+    if (cotizadas.length > 0) {
+      const primeraFila = await this._siguienteNumFila(loteId);
+      await this.prisma.$transaction(async (tx) => {
+        await tx.envioMasivoItem.createMany({
+          data: cotizadas.map((data, i) => ({
+            envios_masivos_idenvios_masivos: loteId,
+            numero_filaenvios_masivos_items: primeraFila + i,
+            ...data,
+          })) as any,
+        });
+      });
+      agregados = cotizadas.length;
+      await this._recalcularTotalesLote(loteId);
+    }
+
+    return { agregados, errores };
   }
 
   // ── Actualizar item ────────────────────────────────────────────────────────────
@@ -251,47 +246,46 @@ export class EnviosMasivosService {
   // ── Importar CSV ──────────────────────────────────────────────────────────────
 
   async importarCsv(loteId: number, csvTexto: string): Promise<{ importados: number; errores: CsvParseResult['errores'] }> {
-    await this._getLoteEnBorrador(loteId);
     const { filas, errores } = parsearCsv(csvTexto);
+    if (filas.length === 0) return { importados: 0, errores };
 
-    let importados = 0;
-    for (const fila of filas) {
-      try {
-        await this.agregarItem(loteId, {
-          remitente:             fila.remitente
-            ? {
-                nombre:       fila.remitente.nombre,
-                documento:    fila.remitente.documento,
-                email:        fila.remitente.email,
-                telefono:     fila.remitente.telefono,
-                direccion:    fila.remitente.direccion,
-                ciudad:       fila.remitente.ciudad,
-                codigoPostal: fila.remitente.cp,
-              }
-            : undefined,
-          destinatarioNombre:    fila.nombre,
-          destinatarioDocumento: fila.documento,
-          destinatarioEmail:     fila.email,
-          destinatarioTelefono:  fila.telefono,
-          destinatarioDireccion: fila.direccion,
-          destinatarioCiudad:    fila.ciudad,
-          destinatarioPais:      fila.pais || 'CO',
-          destinatarioCp:        fila.codigoPostal,
-          pesoFisicoKg:          fila.pesoKg,
-          contenido:             fila.contenido,
-        });
-        importados++;
-      } catch (err: any) {
-        errores.push({ fila: importados + errores.length + 2, error: err.message });
-      }
-    }
+    const { agregados, errores: erroresCotizacion } = await this.agregarItems(
+      loteId,
+      filas.map(fila => ({
+        remitente: fila.remitente
+          ? {
+              nombre:       fila.remitente.nombre,
+              documento:    fila.remitente.documento,
+              email:        fila.remitente.email,
+              telefono:     fila.remitente.telefono,
+              direccion:    fila.remitente.direccion,
+              ciudad:       fila.remitente.ciudad,
+              codigoPostal: fila.remitente.cp,
+            }
+          : undefined,
+        destinatarioNombre:    fila.nombre,
+        destinatarioDocumento: fila.documento,
+        destinatarioEmail:     fila.email,
+        destinatarioTelefono:  fila.telefono,
+        destinatarioDireccion: fila.direccion,
+        destinatarioCiudad:    fila.ciudad,
+        destinatarioPais:      fila.pais || 'CO',
+        destinatarioCp:        fila.codigoPostal,
+        pesoFisicoKg:          fila.pesoKg,
+        contenido:             fila.contenido,
+      })),
+    );
 
-    return { importados, errores };
+    // +1 por la cabecera del CSV: la fila N del parser es la línea N+1 del archivo
+    errores.push(...erroresCotizacion.map(e => ({ fila: e.fila + 1, error: e.error })));
+    return { importados: agregados, errores };
   }
 
-  // ── Confirmar lote → crea Envios reales (SIN registrar cobro) ────────────────
+  // ── Confirmar lote → crea los Envios y los manda al carrito de la venta ──────
+  // Los envíos quedan en estado 'pendiente' vinculados a la venta: se facturan y
+  // se cobran cuando el cajero confirma el pago del carrito.
 
-  async confirmarLote(loteId: number, cajaId: number, usuarioId: number) {
+  async confirmarLote(loteId: number, cajaId: number, usuarioId: number, ventaId: number) {
     const lote = await this._getLoteEnBorrador(loteId);
     const items = await this.prisma.envioMasivoItem.findMany({
       where: { envios_masivos_idenvios_masivos: loteId },
@@ -302,11 +296,16 @@ export class EnviosMasivosService {
     const sesion = await this.cajas.getSesionActivaByCaja(cajaId);
     if (!sesion) throw new BadRequestException(`No hay sesión activa en caja ${cajaId}`);
 
+    // getCarrito valida que la venta exista y esté activa
+    const venta = await this.ventas.getCarrito(ventaId);
+    if (venta.sesionCajaId !== sesion.id) {
+      throw new BadRequestException(`La venta ${ventaId} pertenece a otra sesión de caja`);
+    }
+
     const servicio = await this.prisma.servicio.findUnique({
       where: { idservicios: lote.servicios_idservicios },
       select: { tiposervicios: true, prefijo_guia_servicios: true },
     });
-    const prefijoGuia = servicio?.prefijo_guia_servicios ?? 'GU';
 
     // Pre-validar todos los remitentes antes de crear ningún Envío (evita estado parcial)
     for (const item of items) {
@@ -318,139 +317,101 @@ export class EnviosMasivosService {
       }
     }
 
-    // Generar todos los números de guía ANTES de cualquier inserción usando una
-    // secuencia atómica por advisory lock para evitar colisiones bajo concurrencia.
-    const prefijo    = prefijoGuia;
-    const guiasPlans = await this._reservarConsecutivosGuia(items.length, prefijo, servicio?.prefijo_guia_servicios ?? null);
+    const guiasPlans = await this._reservarConsecutivosGuia(
+      items.length,
+      servicio?.prefijo_guia_servicios ?? 'GU',
+      servicio?.prefijo_guia_servicios ?? null,
+    );
 
-    const guias: Array<{ fila: number; numeroGuia: string; envioId: number }> = [];
+    const guias = await this.prisma.$transaction(async (tx) => {
+      const creadas: Array<{ fila: number; numeroGuia: string; envioId: number }> = [];
 
-    for (let i = 0; i < items.length; i++) {
-      const item    = items[i];
-      const plan    = guiasPlans[i];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const plan = guiasPlans[i];
 
-      const remNombre    = (item.remitente_nombreenvios_masivos_items    ?? lote.remitente_nombreenvios_masivos)!;
-      const remDocumento = item.remitente_documentoenvios_masivos_items ?? lote.remitente_documentoenvios_masivos;
-      const remEmail     = item.remitente_emailenvios_masivos_items     ?? lote.remitente_emailenvios_masivos;
-      const remTelefono  = item.remitente_telefonoenvios_masivos_items  ?? lote.remitente_telefonoenvios_masivos;
-      const remDireccion = item.remitente_direccionenvios_masivos_items ?? lote.remitente_direccionenvios_masivos;
-      const remCiudad    = item.remitente_ciudadenvios_masivos_items    ?? lote.remitente_ciudadenvios_masivos;
-      const remCp        = item.remitente_cpenvios_masivos_items        ?? lote.remitente_cpenvios_masivos;
+        const remNombre    = (item.remitente_nombreenvios_masivos_items    ?? lote.remitente_nombreenvios_masivos)!;
+        const remDocumento = item.remitente_documentoenvios_masivos_items ?? lote.remitente_documentoenvios_masivos;
+        const remEmail     = item.remitente_emailenvios_masivos_items     ?? lote.remitente_emailenvios_masivos;
+        const remTelefono  = item.remitente_telefonoenvios_masivos_items  ?? lote.remitente_telefonoenvios_masivos;
+        const remDireccion = item.remitente_direccionenvios_masivos_items ?? lote.remitente_direccionenvios_masivos;
+        const remCiudad    = item.remitente_ciudadenvios_masivos_items    ?? lote.remitente_ciudadenvios_masivos;
+        const remCp        = item.remitente_cpenvios_masivos_items        ?? lote.remitente_cpenvios_masivos;
 
-      const envio = await this.prisma.envio.create({
-        data: {
-          numero_guiaenvios:               plan.numeroGuia,
-          numero_guia_fisicaenvios:        plan.codigoTracking,
-          tipoenvios:                      (servicio?.tiposervicios ?? 'nacional') as any,
-          es_correspondenciaenvios:        true,
-          sucursales_idsucursales:         lote.sucursales_idsucursales,
-          sesiones_caja_idsesiones_caja:   lote.sesiones_caja_idsesiones_caja,
-          usuarios_idusuarios:             usuarioId,
-          clientes_idclientes:             lote.clientes_idclientes,
-          servicios_idservicios:           lote.servicios_idservicios,
-          remitente_nombreenvios:          remNombre,
-          remitente_documentoenvios:       remDocumento,
-          remitente_emailenvios:           remEmail,
-          remitente_telefonoenvios:        remTelefono,
-          remitente_direccionenvios:       remDireccion,
-          remitente_ciudadenvios:          remCiudad,
-          remitente_codigo_postalenvios:   remCp,
-          destinatario_nombreenvios:       item.destinatario_nombreenvios_masivos_items,
-          destinatario_documentoenvios:    item.destinatario_documentoenvios_masivos_items,
-          destinatario_emailenvios:        item.destinatario_emailenvios_masivos_items,
-          destinatario_telefonoenvios:     item.destinatario_telefonoenvios_masivos_items,
-          destinatario_direccionenvios:    item.destinatario_direccionenvios_masivos_items,
-          destinatario_ciudadenvios:       item.destinatario_ciudadenvios_masivos_items,
-          destinatario_paisenvios:         item.destinatario_paisenvios_masivos_items,
-          destinatario_codigo_postalenvios: item.destinatario_cpenvios_masivos_items,
-          peso_fisico_kgenvios:            item.peso_fisico_kgenvios_masivos_items,
-          peso_tarificado_kgenvios:        item.peso_tarificado_kgenvios_masivos_items,
-          valor_servicioenvios:            item.valor_servicioenvios_masivos_items,
-          valor_estampillasenvios:         item.valor_estampillasenvios_masivos_items,
-          valor_seguroenvios:              0,
-          valor_certificacionenvios:       item.valor_certificacionenvios_masivos_items,
-          valor_totalenvios:               item.valor_totalenvios_masivos_items,
-          // El medio de pago y estado se actualizan al cobrar (paso 2)
-          medio_pagoenvios:                'preporteado' as any,
-          estadoenvios:                    'facturado' as any,
-          observacionesenvios:             item.observacionesenvios_masivos_items,
+        const envio = await tx.envio.create({
+          data: {
+            numero_guiaenvios:               plan.numeroGuia,
+            numero_guia_fisicaenvios:        plan.codigoTracking,
+            tipoenvios:                      (servicio?.tiposervicios ?? 'nacional') as any,
+            es_correspondenciaenvios:        true,
+            ventas_idventas:                 ventaId,
+            sucursales_idsucursales:         lote.sucursales_idsucursales,
+            sesiones_caja_idsesiones_caja:   sesion.id,
+            usuarios_idusuarios:             usuarioId,
+            clientes_idclientes:             lote.clientes_idclientes,
+            servicios_idservicios:           lote.servicios_idservicios,
+            remitente_nombreenvios:          remNombre,
+            remitente_documentoenvios:       remDocumento,
+            remitente_emailenvios:           remEmail,
+            remitente_telefonoenvios:        remTelefono,
+            remitente_direccionenvios:       remDireccion,
+            remitente_ciudadenvios:          remCiudad,
+            remitente_codigo_postalenvios:   remCp,
+            destinatario_nombreenvios:       item.destinatario_nombreenvios_masivos_items,
+            destinatario_documentoenvios:    item.destinatario_documentoenvios_masivos_items,
+            destinatario_emailenvios:        item.destinatario_emailenvios_masivos_items,
+            destinatario_telefonoenvios:     item.destinatario_telefonoenvios_masivos_items,
+            destinatario_direccionenvios:    item.destinatario_direccionenvios_masivos_items,
+            destinatario_ciudadenvios:       item.destinatario_ciudadenvios_masivos_items,
+            destinatario_paisenvios:         item.destinatario_paisenvios_masivos_items,
+            destinatario_codigo_postalenvios: item.destinatario_cpenvios_masivos_items,
+            peso_fisico_kgenvios:            item.peso_fisico_kgenvios_masivos_items,
+            peso_tarificado_kgenvios:        item.peso_tarificado_kgenvios_masivos_items,
+            valor_servicioenvios:            item.valor_servicioenvios_masivos_items,
+            valor_estampillasenvios:         item.valor_estampillasenvios_masivos_items,
+            valor_seguroenvios:              0,
+            valor_certificacionenvios:       item.valor_certificacionenvios_masivos_items,
+            valor_totalenvios:               item.valor_totalenvios_masivos_items,
+            // El medio de pago se fija al confirmar el pago de la venta
+            estadoenvios:                    'pendiente' as any,
+            contenidoenvios:                 item.contenidoenvios_masivos_items,
+            observacionesenvios:             item.observacionesenvios_masivos_items,
+          },
+        });
+
+        await tx.envioMasivoItem.update({
+          where: { idenvios_masivos_items: item.idenvios_masivos_items },
+          data:  { envios_idenvios: envio.idenvios },
+        });
+
+        creadas.push({
+          fila:       item.numero_filaenvios_masivos_items,
+          numeroGuia: plan.numeroGuia,
+          envioId:    envio.idenvios,
+        });
+      }
+
+      await tx.envioMasivo.update({
+        where: { idenvios_masivos: loteId },
+        data:  {
+          estadoenvios_masivos:     'confirmado',
+          ventas_idventas:          ventaId,
+          updated_atenvios_masivos: new Date(),
         },
       });
 
-      await this.prisma.envioMasivoItem.update({
-        where: { idenvios_masivos_items: item.idenvios_masivos_items },
-        data:  { envios_idenvios: envio.idenvios },
-      });
+      return creadas;
+    }, { timeout: 120_000, maxWait: 20_000 });
 
-      guias.push({ fila: item.numero_filaenvios_masivos_items, numeroGuia: plan.numeroGuia, envioId: envio.idenvios });
-    }
+    const carrito = await this.ventas.recalcularTotalesCarrito(ventaId);
 
-    await this.prisma.envioMasivo.update({
-      where: { idenvios_masivos: loteId },
-      data:  { estadoenvios_masivos: 'confirmado', updated_atenvios_masivos: new Date() },
-    });
-
-    return { loteId, enviosCreados: guias.length, guias };
-  }
-
-  // ── Cobrar lote confirmado → registra movimiento de caja ──────────────────────
-
-  async cobrarLote(loteId: number, cajaId: number, medioPago: string) {
-    const lote = await this.prisma.envioMasivo.findUnique({
-      where:  { idenvios_masivos: loteId },
-      select: {
-        idenvios_masivos:              true,
-        estadoenvios_masivos:          true,
-        cobrado_atenvios_masivos:      true,
-        valor_totalenvios_masivos:     true,
-        sesiones_caja_idsesiones_caja: true,
-        items: { select: { envios_idenvios: true } },
-      },
-    });
-    if (!lote) throw new LoteNoEncontradoError(loteId);
-    if (lote.estadoenvios_masivos !== 'confirmado') {
-      throw new BadRequestException('Solo se pueden cobrar lotes en estado confirmado');
-    }
-    if (lote.cobrado_atenvios_masivos) {
-      throw new BadRequestException('Este lote ya fue cobrado');
-    }
-
-    const sesion = await this.cajas.getSesionActivaByCaja(cajaId);
-    if (!sesion) throw new BadRequestException(`No hay sesión activa en caja ${cajaId}`);
-
-    const valorTotal = Number(lote.valor_totalenvios_masivos);
-
-    const { movimiento, saldoActual, alertas } = await this.cajas.registrarMovimientoVenta({
-      sesionCajaId:   sesion.id,
-      tipo:           'venta_servicio',
-      monto:          String(valorTotal),
-      medioPago:      medioPago as any,
-      referenciaId:   loteId,
-      referenciaTipo: 'EnvioMasivo',
-    });
-
-    // Actualizar medio_pago en los envíos (el estado logístico permanece 'facturado')
-    const envioIds = lote.items
-      .map(i => i.envios_idenvios)
-      .filter((id): id is number => id !== null);
-
-    if (envioIds.length > 0) {
-      await this.prisma.envio.updateMany({
-        where: { idenvios: { in: envioIds } },
-        data:  { medio_pagoenvios: medioPago as any },
-      });
-    }
-
-    await this.prisma.envioMasivo.update({
-      where: { idenvios_masivos: loteId },
-      data:  {
-        cobrado_atenvios_masivos:        new Date(),
-        medio_pago_cobroenvios_masivos:  medioPago,
-        updated_atenvios_masivos:        new Date(),
-      },
-    });
-
-    return { loteId, movimiento, saldoActual, alertas };
+    return {
+      loteId,
+      ventaId,
+      enviosCreados: guias.length,
+      guias,
+      totalCarrito:  carrito?.total ?? 0,
+    };
   }
 
   // ── Generar PDF de guías ──────────────────────────────────────────────────────
@@ -467,6 +428,9 @@ export class EnviosMasivosService {
     if (!lote) throw new NotFoundException(`Lote ${loteId} no encontrado`);
     if (lote.estadoenvios_masivos !== 'confirmado') {
       throw new BadRequestException('Solo se pueden generar guías para lotes confirmados');
+    }
+    if (!lote.cobrado_atenvios_masivos) {
+      throw new BadRequestException('El lote aún no ha sido pagado: confirma el pago del carrito antes de imprimir las guías');
     }
 
     const itemsConGuia = lote.items.filter(i => i.envios_idenvios !== null);
@@ -553,6 +517,18 @@ export class EnviosMasivosService {
     return row?.pdf_guias_pathenvios_masivos ?? null;
   }
 
+  // El PDF se genera la primera vez que alguien lo descarga tras el pago.
+  async getOGenerarPdfPath(loteId: number): Promise<string> {
+    const relPath = await this.getPdfPath(loteId);
+    if (relPath) {
+      try {
+        await fs.promises.access(this.storage.absolutePath(relPath));
+        return relPath;
+      } catch { /* el archivo se perdió del disco: se regenera */ }
+    }
+    return (await this.generarGuiasPdf(loteId)).relPath;
+  }
+
   getPdfAbsolutePath(relPath: string): string {
     return this.storage.absolutePath(relPath);
   }
@@ -581,6 +557,59 @@ export class EnviosMasivosService {
   }
 
   // ── Helpers privados ───────────────────────────────────────────────────────────
+
+  // Cotiza una fila y devuelve las columnas listas para insertar en envios_masivos_items.
+  private async _cotizarFila(servicioId: number, dto: AgregarItemMasivoDto) {
+    const cotizacion = await this.ventas.cotizarEnvio(
+      servicioId,
+      dto.pesoFisicoKg,
+      undefined, undefined, undefined,
+      dto.destinatarioPais,
+      dto.destinatarioCiudad,
+    );
+
+    const esInternacional    = dto.destinatarioPais !== 'CO';
+    const valorServicio      = Number(cotizacion.valorServicio);
+    const valorEstampillas   = cotizacion.servicio.requiereEstampilla ? valorServicio : 0;
+    const valorCertificacion = esInternacional ? 0 : cotizacion.valorCertificacion;
+    const valorTotal = esInternacional
+      ? Number(calcularTotalEnvioInternacional(
+          String(valorServicio), '0', String(valorEstampillas),
+        ))
+      : Number(calcularTotalEnvioNacional(
+          String(valorServicio), String(valorEstampillas), '0', '0', String(valorCertificacion),
+        ));
+
+    return {
+      cotizacion: { pesoTarificado: cotizacion.pesoTarificadoKg, valorServicio, valorCertificacion },
+      data: {
+        // Remitente propio del item (puede ser null si el lote tiene remitente global)
+        remitente_nombreenvios_masivos_items:       dto.remitente?.nombre ?? null,
+        remitente_documentoenvios_masivos_items:    dto.remitente?.documento ?? null,
+        remitente_emailenvios_masivos_items:        dto.remitente?.email ?? null,
+        remitente_telefonoenvios_masivos_items:     dto.remitente?.telefono ?? null,
+        remitente_direccionenvios_masivos_items:    dto.remitente?.direccion ?? null,
+        remitente_ciudadenvios_masivos_items:       dto.remitente?.ciudad ?? null,
+        remitente_cpenvios_masivos_items:           dto.remitente?.codigoPostal ?? null,
+        destinatario_nombreenvios_masivos_items:    dto.destinatarioNombre,
+        destinatario_documentoenvios_masivos_items: dto.destinatarioDocumento ?? null,
+        destinatario_emailenvios_masivos_items:     dto.destinatarioEmail ?? null,
+        destinatario_telefonoenvios_masivos_items:  dto.destinatarioTelefono ?? null,
+        destinatario_direccionenvios_masivos_items: dto.destinatarioDireccion ?? null,
+        destinatario_ciudadenvios_masivos_items:    dto.destinatarioCiudad ?? null,
+        destinatario_paisenvios_masivos_items:      dto.destinatarioPais,
+        destinatario_cpenvios_masivos_items:        dto.destinatarioCp ?? null,
+        peso_fisico_kgenvios_masivos_items:         dto.pesoFisicoKg,
+        peso_tarificado_kgenvios_masivos_items:     cotizacion.pesoTarificadoKg,
+        valor_servicioenvios_masivos_items:         valorServicio,
+        valor_estampillasenvios_masivos_items:      valorEstampillas,
+        valor_certificacionenvios_masivos_items:    valorCertificacion,
+        valor_totalenvios_masivos_items:            valorTotal,
+        contenidoenvios_masivos_items:              dto.contenido ?? null,
+        observacionesenvios_masivos_items:          dto.observaciones ?? null,
+      },
+    };
+  }
 
   private async _getLoteEnBorrador(loteId: number) {
     const lote = await this.prisma.envioMasivo.findUnique({
@@ -649,30 +678,24 @@ export class EnviosMasivosService {
     }
   }
 
-  // Reserva N consecutivos de forma atómica usando pg_advisory_xact_lock para
-  // serializar confirmaciones concurrentes. El UNIQUE en numero_guiaenvios actúa
-  // como red de seguridad si dos procesos generan el mismo consecutivo.
+  // Reserva N consecutivos de la secuencia dedicada envios_guia_seq. nextval es
+  // atómico y nunca devuelve el mismo valor dos veces, así que las confirmaciones
+  // concurrentes y las ventas individuales no pueden colisionar.
   private async _reservarConsecutivosGuia(
     cantidad:   number,
     prefijo:    string,
     prefijoS10: string | null,
   ): Promise<Array<{ numeroGuia: string; codigoTracking: string | null }>> {
-    return this.prisma.$transaction(async (tx) => {
-      // Advisory lock exclusivo para generación de guías (clave fija arbitraria)
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(472000001)`;
-      const [row] = await tx.$queryRaw<[{ max: bigint | null }]>`
-        SELECT MAX(idenvios) AS max FROM envios
-      `;
-      const base = Number(row.max ?? 0);
-      return Array.from({ length: cantidad }, (_, i) => {
-        const consecutivo = base + i + 1;
-        return {
-          numeroGuia:     generarNumeroGuiaSecuencia(prefijo, consecutivo),
-          codigoTracking: prefijoS10
-            ? generarCodigoTrackingS10(prefijoS10, consecutivo)
-            : null,
-        };
-      });
+    const rows = await this.prisma.$queryRaw<Array<{ consecutivo: bigint }>>`
+      SELECT nextval('envios_guia_seq') AS consecutivo
+      FROM generate_series(1, ${cantidad}::int)
+    `;
+    return rows.map(({ consecutivo }) => {
+      const n = Number(consecutivo);
+      return {
+        numeroGuia:     generarNumeroGuiaSecuencia(prefijo, n),
+        codigoTracking: prefijoS10 ? generarCodigoTrackingS10(prefijoS10, n) : null,
+      };
     });
   }
 }

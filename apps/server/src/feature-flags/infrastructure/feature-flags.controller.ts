@@ -17,6 +17,7 @@ import { Roles } from '../../common/decorators/roles.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { FeatureFlagsPresenter } from './feature-flags.presenter.js';
 import { FeatureFlagsDomainFilter } from './feature-flags-domain.filter.js';
+import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 
 interface AuthUser {
   id: number;
@@ -31,6 +32,7 @@ export class FeatureFlagsController {
 
   // ── Endpoint público (autenticado) para el frontend ──────────────────────────
   // Filtra por segmentación: solo devuelve flags que aplican al rol/usuario actual.
+  @AuditKey('ADM-07')
   @Get('activos')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -47,6 +49,7 @@ export class FeatureFlagsController {
   }
 
   // ── CRUD — solo ADMIN_SISTEMA ─────────────────────────────────────────────────
+  @AuditKey('ADM-07')
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN_SISTEMA')
@@ -57,6 +60,7 @@ export class FeatureFlagsController {
     return FeatureFlagsPresenter.toList(await this.service.findAll(entorno));
   }
 
+  @AuditKey('ADM-07')
   @Get(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN_SISTEMA')
@@ -66,6 +70,7 @@ export class FeatureFlagsController {
     return FeatureFlagsPresenter.toResponse(await this.service.findOne(id));
   }
 
+  @AuditKey('ADM-07')
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN_SISTEMA')
@@ -77,6 +82,7 @@ export class FeatureFlagsController {
     return FeatureFlagsPresenter.toResponse(await this.service.create(parsed.data));
   }
 
+  @AuditKey('ADM-07')
   @Patch(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN_SISTEMA')
@@ -88,6 +94,7 @@ export class FeatureFlagsController {
     return FeatureFlagsPresenter.toResponse(await this.service.update(id, parsed.data));
   }
 
+  @AuditKey('ADM-07')
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN_SISTEMA')
@@ -98,6 +105,7 @@ export class FeatureFlagsController {
   }
 
   // ── Segmentación por rol ──────────────────────────────────────────────────────
+  @AuditKey('ADM-07')
   @Post(':id/roles')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN_SISTEMA')
@@ -109,6 +117,7 @@ export class FeatureFlagsController {
     return FeatureFlagsPresenter.toResponse(await this.service.asignarRol(id, parsed.data.rolId));
   }
 
+  @AuditKey('ADM-07')
   @Delete(':id/roles/:rolId')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN_SISTEMA')
@@ -119,6 +128,7 @@ export class FeatureFlagsController {
   }
 
   // ── Segmentación por usuario ──────────────────────────────────────────────────
+  @AuditKey('ADM-07')
   @Post(':id/usuarios')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN_SISTEMA')
@@ -130,6 +140,7 @@ export class FeatureFlagsController {
     return FeatureFlagsPresenter.toResponse(await this.service.asignarUsuario(id, parsed.data.usuarioId));
   }
 
+  @AuditKey('ADM-07')
   @Delete(':id/usuarios/:usuarioId')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN_SISTEMA')

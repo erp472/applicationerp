@@ -17,6 +17,7 @@ import { Roles } from '../../common/decorators/roles.decorator.js';
 import { Feature } from '../../common/decorators/feature.decorator.js';
 import { ProductosPresenter } from './productos.presenter.js';
 import { ProductosDomainFilter } from './productos-domain.filter.js';
+import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 
 const ROLES_ADMIN = ['ADMIN_SISTEMA', 'ADMIN_NACIONAL'] as const;
 
@@ -47,6 +48,7 @@ const QueryFilateliaSchema = z.object({
 export class FilateliaAdminController {
   constructor(private readonly service: ProductosService) {}
 
+  @AuditKey('ADM-04')
   @Get()
   @ApiOperation({ summary: 'Listar ítems de filatelia (admin)' })
   @ApiQuery({ name: 'activo', required: false, type: Boolean })
@@ -62,6 +64,7 @@ export class FilateliaAdminController {
     return { datos: ProductosPresenter.toList(datos), meta };
   }
 
+  @AuditKey('ADM-04')
   @Get(':id')
   @ApiOperation({ summary: 'Obtener ítem de filatelia por ID (admin)' })
   @ApiParam({ name: 'id', type: Number })
@@ -73,6 +76,7 @@ export class FilateliaAdminController {
     return ProductosPresenter.toResponse(producto);
   }
 
+  @AuditKey('ADM-07')
   @Post()
   @ApiOperation({ summary: 'Registrar ítem de filatelia (admin)' })
   @ApiBody({
@@ -102,6 +106,7 @@ export class FilateliaAdminController {
     return ProductosPresenter.toResponse(await this.service.create(dto));
   }
 
+  @AuditKey('ADM-07')
   @Patch(':id')
   @ApiOperation({ summary: 'Actualizar ítem de filatelia (admin)' })
   @ApiParam({ name: 'id', type: Number })
@@ -127,6 +132,7 @@ export class FilateliaAdminController {
     return ProductosPresenter.toResponse(await this.service.update(id, parsed.data));
   }
 
+  @AuditKey('ADM-07')
   @Delete(':id')
   @ApiOperation({ summary: 'Desactivar ítem de filatelia (admin)' })
   @ApiParam({ name: 'id', type: Number })

@@ -1,7 +1,7 @@
 import {
   Controller, Get, Post, Put, Delete, Patch,
-  Body, Param, Query, Res, NotFoundException,
-  UseGuards, UseFilters, ParseIntPipe, BadRequestException, HttpCode, HttpStatus,
+  Body, Param, Query, Res,
+  UseGuards, UseFilters, ParseIntPipe, HttpCode, HttpStatus,
   Logger,
 } from '@nestjs/common';
 import {
@@ -11,8 +11,9 @@ import type { FastifyReply } from 'fastify';
 import * as fs from 'node:fs';
 import { EnviosMasivosService }      from '../application/envios-masivos.service.js';
 import { CrearLoteMasivoSchema }     from '../dto/crear-lote.dto.js';
-import { AgregarItemMasivoSchema, ActualizarItemMasivoSchema } from '../dto/agregar-item.dto.js';
+import { AgregarItemMasivoSchema, ActualizarItemMasivoSchema, AgregarItemsMasivosSchema } from '../dto/agregar-item.dto.js';
 import { ImportarCsvSchema }         from '../dto/importar-csv.dto.js';
+import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 import { JwtAuthGuard }              from '../../common/guards/jwt-auth.guard.js';
 import { FeatureFlagGuard }          from '../../common/guards/feature-flag.guard.js';
 import { RolesGuard }                from '../../common/guards/roles.guard.js';
@@ -37,6 +38,7 @@ export class EnviosMasivosController {
 
   // ── Lotes ─────────────────────────────────────────────────────────────────────
 
+  @AuditKey('OPE-01')
   @Post()
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Crear un nuevo lote de envíos masivos' })
@@ -46,6 +48,7 @@ export class EnviosMasivosController {
     return EnviosMasivosPresenter.toLote({ ...lote, items: [] });
   }
 
+  @AuditKey('ADM-04')
   @Get()
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Listar lotes de envíos masivos de una sucursal' })
@@ -59,6 +62,7 @@ export class EnviosMasivosController {
     return lotes.map(EnviosMasivosPresenter.toLoteResumen);
   }
 
+  @AuditKey('ADM-04')
   @Get(':id')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Consultar lote con todos sus items y totales' })
@@ -68,6 +72,7 @@ export class EnviosMasivosController {
     return EnviosMasivosPresenter.toLote(lote);
   }
 
+  @AuditKey('ADM-02')
   @Delete(':id')
   @Roles(...ROLES_CAJERO)
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -83,6 +88,7 @@ export class EnviosMasivosController {
 
   // ── Items ─────────────────────────────────────────────────────────────────────
 
+  @AuditKey('OPE-01')
   @Post(':id/items')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Agregar destinatario al lote — cotiza el envío en tiempo real' })
@@ -98,6 +104,19 @@ export class EnviosMasivosController {
     };
   }
 
+  @AuditKey('OPE-01')
+  @Post(':id/items/bulk')
+  @Roles(...ROLES_CAJERO)
+  @ApiOperation({ summary: 'Agregar varios destinatarios en una sola petición — las filas inválidas se reportan sin abortar el resto' })
+  async agregarItemsBulk(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: unknown,
+  ) {
+    const dto = AgregarItemsMasivosSchema.parse(body);
+    return this.service.agregarItems(id, dto.items);
+  }
+
+  @AuditKey('OPE-04')
   @Put(':id/items/:itemId')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Actualizar un item del lote — recalcula en tiempo real' })
@@ -114,6 +133,7 @@ export class EnviosMasivosController {
     };
   }
 
+  @AuditKey('ADM-02')
   @Delete(':id/items/:itemId')
   @Roles(...ROLES_CAJERO)
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -127,6 +147,7 @@ export class EnviosMasivosController {
 
   // ── CSV Import ────────────────────────────────────────────────────────────────
 
+  @AuditKey('OPE-01')
   @Post(':id/csv')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Importar destinatarios desde CSV — columnas: nombre,documento,email,telefono,direccion,ciudad,pais,codigoPostal,pesoKg,contenido' })
@@ -140,37 +161,24 @@ export class EnviosMasivosController {
 
   // ── Confirmar ─────────────────────────────────────────────────────────────────
 
+  @AuditKey('OPE-03')
   @Patch(':id/confirmar')
   @Roles(...ROLES_CAJERO)
-  @ApiOperation({ summary: 'Confirmar lote: crea todos los Envios reales (sin registrar cobro)' })
+  @ApiOperation({ summary: 'Confirmar lote: crea los Envios y los envía al carrito de la venta para su cobro' })
   @ApiQuery({ name: 'cajaId', type: Number, required: true })
+  @ApiQuery({ name: 'ventaId', type: Number, required: true })
   async confirmarLote(
     @Param('id', ParseIntPipe) id: number,
     @Query('cajaId', ParseIntPipe) cajaId: number,
+    @Query('ventaId', ParseIntPipe) ventaId: number,
     @CurrentUser() user: any,
   ) {
-    return this.service.confirmarLote(id, cajaId, user.id);
-  }
-
-  @Patch(':id/cobrar')
-  @Roles(...ROLES_CAJERO)
-  @ApiOperation({ summary: 'Cobrar lote confirmado: registra movimiento de caja y actualiza estado de envíos' })
-  @ApiQuery({ name: 'cajaId', type: Number, required: true })
-  @ApiQuery({ name: 'medioPago', required: true, enum: ['efectivo', 'tarjeta_debito', 'tarjeta_credito', 'transferencia', 'preporteado'] })
-  async cobrarLote(
-    @Param('id', ParseIntPipe) id: number,
-    @Query('cajaId', ParseIntPipe) cajaId: number,
-    @Query('medioPago') medioPago: string,
-  ) {
-    const mediosPagoValidos = ['efectivo', 'tarjeta_debito', 'tarjeta_credito', 'transferencia', 'preporteado'];
-    if (!medioPago || !mediosPagoValidos.includes(medioPago)) {
-      throw new BadRequestException(`medioPago requerido: ${mediosPagoValidos.join('|')}`);
-    }
-    return this.service.cobrarLote(id, cajaId, medioPago);
+    return this.service.confirmarLote(id, cajaId, user.id, ventaId);
   }
 
   // ── PDF de guías ──────────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-06')
   @Post(':id/guias-pdf')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Generar (o regenerar) PDF con todas las guías del lote confirmado' })
@@ -180,26 +188,18 @@ export class EnviosMasivosController {
     return { totalGuias: result.totalGuias, relPath: result.relPath };
   }
 
+  @AuditKey('ADM-06')
   @Get(':id/guias-pdf')
   @Roles(...ROLES_READ)
-  @ApiOperation({ summary: 'Descargar PDF con las guías del lote (debe estar generado previamente)' })
+  @ApiOperation({ summary: 'Descargar PDF con las guías del lote — se genera en la primera descarga tras el pago' })
   @ApiParam({ name: 'id', type: Number })
   async descargarGuiasPdf(
     @Param('id', ParseIntPipe) id: number,
     @Res() reply: FastifyReply,
   ) {
-    // Leer path directamente de BD (el presenter convierte a boolean, no expone el path)
-    const relPath = await this.service.getPdfPath(id);
-    if (!relPath) {
-      throw new NotFoundException('El PDF no ha sido generado aún. Usa POST /guias-pdf primero.');
-    }
+    const relPath = await this.service.getOGenerarPdfPath(id);
     const absPath = this.service.getPdfAbsolutePath(relPath);
-    try {
-      await fs.promises.access(absPath);
-    } catch {
-      throw new NotFoundException('El archivo PDF no existe en disco. Regenera con POST /guias-pdf.');
-    }
-    const stream = fs.createReadStream(absPath);
+    const stream  = fs.createReadStream(absPath);
     reply
       .header('Content-Type', 'application/pdf')
       .header('Content-Disposition', `attachment; filename="guias-lote-${id}.pdf"`)

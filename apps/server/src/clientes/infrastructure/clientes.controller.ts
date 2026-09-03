@@ -17,6 +17,7 @@ import { Roles } from '../../common/decorators/roles.decorator.js';
 import { Feature } from '../../common/decorators/feature.decorator.js';
 import { ClientesPresenter } from './clientes.presenter.js';
 import { ClientesDomainFilter } from './clientes-domain.filter.js';
+import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 
 const ROLES_ADMIN      = ['ADMIN_SISTEMA', 'ADMIN_NACIONAL'];
 const ROLES_SUPERVISOR = ['SUPERVISOR_REGIONAL', 'ADMIN_NACIONAL', 'ADMIN_SISTEMA'];
@@ -33,6 +34,7 @@ export class ClientesController {
 
   // ── Tipos de cliente ────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-04')
   @Get('tipos')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Listar tipos de cliente' })
@@ -41,6 +43,7 @@ export class ClientesController {
     return tipos.map(ClientesPresenter.toTipo);
   }
 
+  @AuditKey('ADM-01')
   @Post('tipos')
   @Roles(...ROLES_ADMIN)
   @ApiOperation({ summary: 'Crear tipo de cliente' })
@@ -50,6 +53,7 @@ export class ClientesController {
     return ClientesPresenter.toTipo(tipo);
   }
 
+  @AuditKey('ADM-02')
   @Patch('tipos/:id')
   @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Actualizar tipo de cliente' })
@@ -59,6 +63,7 @@ export class ClientesController {
     return ClientesPresenter.toTipo(tipo);
   }
 
+  @AuditKey('ADM-02')
   @Delete('tipos/:id')
   @Roles(...ROLES_ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -69,6 +74,7 @@ export class ClientesController {
 
   // ── Búsqueda rápida por documento ──────────────────────────────────────────
 
+  @AuditKey('ADM-04')
   @Get('buscar')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Buscar cliente por tipo y número de documento' })
@@ -82,6 +88,7 @@ export class ClientesController {
 
   // ── CRUD clientes ───────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-04')
   @Get()
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Buscar / listar clientes' })
@@ -96,6 +103,7 @@ export class ClientesController {
     };
   }
 
+  @AuditKey('ADM-04')
   @Get(':id')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Obtener cliente por ID' })
@@ -104,6 +112,7 @@ export class ClientesController {
     return ClientesPresenter.toCliente(c);
   }
 
+  @AuditKey('ADM-01')
   @Post()
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Crear cliente' })
@@ -113,6 +122,7 @@ export class ClientesController {
     return ClientesPresenter.toCliente(c);
   }
 
+  @AuditKey('ADM-02')
   @Patch(':id')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Actualizar datos del cliente' })

@@ -18,6 +18,7 @@ import { Roles } from '../../common/decorators/roles.decorator.js';
 import { Feature } from '../../common/decorators/feature.decorator.js';
 import { EquiposPresenter } from './equipos.presenter.js';
 import { EquiposDomainFilter } from './equipos-domain.filter.js';
+import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 
 const ROLES_READ  = ['ADMIN_SISTEMA', 'ADMIN_NACIONAL', 'SUPERVISOR_REGIONAL'];
 const ROLES_WRITE = ['ADMIN_SISTEMA', 'ADMIN_NACIONAL'];
@@ -31,6 +32,7 @@ const ROLES_WRITE = ['ADMIN_SISTEMA', 'ADMIN_NACIONAL'];
 export class EquiposController {
   constructor(private readonly service: EquiposService) {}
 
+  @AuditKey('ADM-01')
   @Post()
   @Roles(...ROLES_WRITE)
   @ApiOperation({ summary: 'Registrar equipo autorizado', description: 'MAC se normaliza a uppercase automáticamente. El MAC no puede reutilizarse aunque el equipo sea eliminado (#POC-AUTH-001).' })
@@ -55,6 +57,7 @@ export class EquiposController {
     return EquiposPresenter.toResponse(await this.service.create(parsed.data));
   }
 
+  @AuditKey('ADM-04')
   @Get()
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Listar equipos autorizados' })
@@ -72,6 +75,7 @@ export class EquiposController {
     return { datos: EquiposPresenter.toList(datos), meta };
   }
 
+  @AuditKey('ADM-04')
   @Get(':id')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Obtener equipo por ID' })
@@ -82,6 +86,7 @@ export class EquiposController {
     return EquiposPresenter.toResponse(await this.service.findOne(id));
   }
 
+  @AuditKey('ADM-02')
   @Patch(':id')
   @Roles(...ROLES_WRITE)
   @ApiOperation({ summary: 'Actualizar equipo (nombre, SO, activo)' })
@@ -104,6 +109,7 @@ export class EquiposController {
     return EquiposPresenter.toResponse(await this.service.update(id, parsed.data));
   }
 
+  @AuditKey('ADM-02')
   @Delete(':id')
   @Roles(...ROLES_WRITE)
   @ApiOperation({ summary: 'Desautorizar equipo (soft delete — desactiva el MAC guard inmediatamente)' })
