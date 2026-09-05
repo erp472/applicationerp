@@ -314,11 +314,11 @@ export class VentasController {
     @Param('ventaId', ParseIntPipe) ventaId: number,
     @Query('cajaId', ParseIntPipe)  cajaId:  number,
     @Body() body: unknown,
-    @CurrentUser() user: { id: number },
+    @CurrentUser() user: { id: number; rol: string; regional_id: number | null },
   ) {
     const parsed = AnularVentaSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
-    const result = await this.service.anularVenta(ventaId, parsed.data, cajaId, user.id);
+    const result = await this.service.anularVenta(ventaId, parsed.data, cajaId, user);
     return {
       venta:       VentasPresenter.toVenta(result.venta),
       movimiento:  result.movimiento,

@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "test:cov": "cd apps/server && npm run test:cov"
+  },
   "dependencies": {
     "pdf-lib": "^1.17.1"
   }

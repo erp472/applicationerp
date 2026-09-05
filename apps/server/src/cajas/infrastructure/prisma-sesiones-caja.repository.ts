@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import type { ISesionesCajaRepository, CrearSesionData, CerrarSesionData, RegistrarMovimientoData, CrearReposicionData, CrearConsignacionData, AprobarConsignacionData, CrearDiferenciaData, AprobarDiferenciaData, DiferenciasFiltros, DiferenciaRegistroItem } from '../domain/sesion-caja.repository.js';
+import type { ISesionesCajaRepository, CrearSesionData, CerrarSesionData, RegistrarMovimientoData, CrearReposicionData, CrearConsignacionData, AprobarConsignacionData, CrearDiferenciaData, AprobarDiferenciaData, DiferenciasFiltros, DiferenciaRegistroItem, HistoricoFiltros, HistoricoMovimientoItem } from '../domain/sesion-caja.repository.js';
 import type {
   SesionCajaEntity,
   MovimientoCajaEntity,
@@ -13,10 +13,11 @@ import type {
   TipoAlerta,
   BalancePagosRow,
 } from '../domain/caja.entity.js';
-import { evaluarAlertas, TIPOS_MOVIMIENTO_ENTRADA, TIPOS_MOVIMIENTO_SALIDA, deltaEfectivo } from '../domain/business-rules.js';
+import { evaluarAlertas, TIPOS_MOVIMIENTO_ENTRADA, TIPOS_MOVIMIENTO_SALIDA, TIPOS_RECAUDO, CATEGORIAS_HISTORICO, categoriaDeMovimiento, deltaEfectivo } from '../domain/business-rules.js';
 import { calcularSaldoPorMedioPago } from '../domain/calculos/saldo-por-medio-pago.js';
 import { componerPanelStatus, calcularBaseDisponible } from '../domain/calculos/panel-status-punto.js';
 import { evaluarHoraReset } from '../domain/calculos/hora-reset.js';
+import { construirServiciosCaja } from '../domain/servicios-caja.js';
 
 const SELECT_SESION = {
   idsesiones_caja:                            true,
@@ -621,6 +622,20 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
     return rows.map(toMovEntity);
   }
 
+  private async getOverridesServicios(cajaIds: number[]): Promise<Map<number, Map<string, boolean>>> {
+    const filas = await this.prisma.servicioCaja.findMany({
+      where:  { cajas_idcajas: { in: cajaIds } },
+      select: { cajas_idcajas: true, codigoservicios_caja: true, activoservicios_caja: true },
+    });
+
+    const porCaja = new Map<number, Map<string, boolean>>();
+    for (const f of filas) {
+      if (!porCaja.has(f.cajas_idcajas)) porCaja.set(f.cajas_idcajas, new Map());
+      porCaja.get(f.cajas_idcajas)!.set(f.codigoservicios_caja, f.activoservicios_caja);
+    }
+    return porCaja;
+  }
+
   async getStatusPunto(cajaPadreId: number): Promise<StatusPunto> {
     const cajaPadre = await this.prisma.cajaPadre.findFirst({
       where: { idcajas_padres: cajaPadreId, deleted_atcajas_padres: null },
@@ -640,6 +655,7 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
             limite_alertacajas:               true,
             t_targetcajas:                    true,
             usuarios_idusuarios_cajero_fijo:  true,
+            cajeroFijo: { select: { nombreusuarios: true, emailusuarios: true } },
             sesiones: {
               where: { estadosesiones_caja: 'abierta' },
               take: 1,
@@ -647,6 +663,8 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
                 idsesiones_caja:                         true,
                 usuarios_idusuarios_apertura:            true,
                 usuarios_idusuarios_cajero_asignado:     true,
+                cajeroAsignado:  { select: { nombreusuarios: true, emailusuarios: true } },
+                usuarioApertura: { select: { nombreusuarios: true, emailusuarios: true } },
                 monto_aperturasesiones_caja:             true,
                 movimientosCaja: {
                   select: { tipomovimientos_caja: true, montomovimientos_caja: true, medio_pagomovimientos_caja: true },
@@ -671,6 +689,8 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
       };
     }
 
+    const overridesServicios = await this.getOverridesServicios(cajaPadre.cajas.map(c => c.idcajas));
+
     let cajonGeneralTotal    = 0;  // total operativo del punto (general + pos + menor)
     let fuerteGeneralTotal   = 0;  // bóveda física: saldo sesión general + traslados mid-turn de aux
     let cajaFuertePagosTotal = 0;  // C6: traslados mid-turn a bóveda desde cajas de pagos
@@ -692,6 +712,8 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
           nombre:       caja.nombrecajas,
           tipo:         caja.tipocajas as import('../domain/caja.entity.js').TipoCaja,
           cajeroId:     null,
+          cajeroNombre: null,
+          cajeroEmail:  null,
           cajeroFijoId: caja.usuarios_idusuarios_cajero_fijo,
           estado:       'sin_sesion' as const,
           saldoActual:  null,
@@ -705,8 +727,13 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
           girosCount:    0,
           girosValor:    '0',
           alertas:       [],
+          servicios:     construirServiciosCaja(overridesServicios.get(caja.idcajas) ?? new Map()),
         };
       }
+
+      const operador = sesionActiva.cajeroAsignado
+                    ?? caja.cajeroFijo
+                    ?? sesionActiva.usuarioApertura;
 
       let saldo            = Number(sesionActiva.monto_aperturasesiones_caja);
       let ingresos         = 0;
@@ -785,6 +812,8 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
         cajeroId:      sesionActiva.usuarios_idusuarios_cajero_asignado
                         ?? caja.usuarios_idusuarios_cajero_fijo
                         ?? sesionActiva.usuarios_idusuarios_apertura,
+        cajeroNombre:  operador?.nombreusuarios ?? null,
+        cajeroEmail:   operador?.emailusuarios  ?? null,
         cajeroFijoId:  caja.usuarios_idusuarios_cajero_fijo,
         estado:        'abierta' as const,
         saldoActual:   saldo.toFixed(2),
@@ -798,6 +827,7 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
         girosCount,
         girosValor:    girosValor.toFixed(2),
         alertas,
+        servicios:     construirServiciosCaja(overridesServicios.get(caja.idcajas) ?? new Map()),
       };
     });
 
@@ -862,10 +892,13 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
     return toSesionEntity(row);
   }
 
-  async getConsolidadoPorRegional(): Promise<{ regionalId: number; porMedio: Record<string, string> }[]> {
+  async getConsolidadoPorRegional(regionalId?: number): Promise<{ regionalId: number; porMedio: Record<string, string> }[]> {
     // Traverse the working hierarchy: cajaPadre → cajas → sesiones(abierta) → movimientosCaja
     const padres = await this.prisma.cajaPadre.findMany({
-      where: { deleted_atcajas_padres: null },
+      where: {
+        deleted_atcajas_padres: null,
+        ...(regionalId ? { sucursal: { regionales_idregionales: regionalId } } : {}),
+      },
       select: {
         sucursales_idsucursales: true,
         cajas: {
@@ -875,7 +908,7 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
               where: { estadosesiones_caja: 'abierta' },
               select: {
                 movimientosCaja: {
-                  where: { tipomovimientos_caja: { in: [...TIPOS_MOVIMIENTO_ENTRADA] as any[] } },
+                  where: { tipomovimientos_caja: { in: [...TIPOS_RECAUDO] as any[] } },
                   select: {
                     montomovimientos_caja:      true,
                     medio_pagomovimientos_caja: true,
@@ -918,16 +951,20 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
     }));
   }
 
-  async getConsolidadoPorSesion(): Promise<{
+  async getConsolidadoPorSesion(regionalId?: number): Promise<{
     sesionId: number;
     cajaId: number;
     cajaNombre: string;
     sucursalNombre: string;
     cajeroNombre: string | null;
+    cajeroEmail: string | null;
     porMedio: Record<string, string>;
   }[]> {
     const padres = await this.prisma.cajaPadre.findMany({
-      where: { deleted_atcajas_padres: null },
+      where: {
+        deleted_atcajas_padres: null,
+        ...(regionalId ? { sucursal: { regionales_idregionales: regionalId } } : {}),
+      },
       select: {
         cajas: {
           where: { deleted_atcajas: null },
@@ -935,13 +972,15 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
             idcajas:    true,
             nombrecajas: true,
             sucursal:   { select: { nombresucursales: true } },
+            cajeroFijo: { select: { nombreusuarios: true, emailusuarios: true } },
             sesiones: {
               where: { estadosesiones_caja: 'abierta' },
               select: {
                 idsesiones_caja: true,
-                cajeroAsignado:  { select: { nombreusuarios: true } },
+                cajeroAsignado:  { select: { nombreusuarios: true, emailusuarios: true } },
+                usuarioApertura: { select: { nombreusuarios: true, emailusuarios: true } },
                 movimientosCaja: {
-                  where: { tipomovimientos_caja: { in: [...TIPOS_MOVIMIENTO_ENTRADA] as any[] } },
+                  where: { tipomovimientos_caja: { in: [...TIPOS_RECAUDO] as any[] } },
                   select: {
                     montomovimientos_caja:      true,
                     medio_pagomovimientos_caja: true,
@@ -960,6 +999,7 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
       cajaNombre: string;
       sucursalNombre: string;
       cajeroNombre: string | null;
+      cajeroEmail: string | null;
       porMedio: Record<string, string>;
     }[] = [];
 
@@ -971,12 +1011,16 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
             const medio = (m.medio_pagomovimientos_caja as string | null) ?? 'efectivo';
             totales[medio] = (totales[medio] ?? 0) + Number(m.montomovimientos_caja);
           }
+          // Misma cadena que getStatusPunto: la Caja Fuerte no tiene cajero asignado
+          // y sin el fallback la fila salía sin dueño visible.
+          const operador = sesion.cajeroAsignado ?? caja.cajeroFijo ?? sesion.usuarioApertura;
           result.push({
             sesionId:       sesion.idsesiones_caja,
             cajaId:         caja.idcajas,
             cajaNombre:     caja.nombrecajas,
             sucursalNombre: caja.sucursal.nombresucursales,
-            cajeroNombre:   sesion.cajeroAsignado?.nombreusuarios ?? null,
+            cajeroNombre:   operador?.nombreusuarios ?? null,
+            cajeroEmail:    operador?.emailusuarios  ?? null,
             porMedio:       Object.fromEntries(
               Object.entries(totales).map(([k, v]) => [k, v.toFixed(2)]),
             ),
@@ -1071,5 +1115,123 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
       if (a.regional !== b.regional) return a.regional.localeCompare(b.regional);
       return a.punto.localeCompare(b.punto);
     });
+  }
+
+  async getHistoricoMovimientos(
+    f: HistoricoFiltros,
+  ): Promise<{ items: HistoricoMovimientoItem[]; total: number }> {
+    const tipos = f.categoria
+      ? [...CATEGORIAS_HISTORICO[f.categoria]]
+      : Object.values(CATEGORIAS_HISTORICO).flat();
+
+    const where: Prisma.MovimientoCajaWhereInput = {
+      tipomovimientos_caja: { in: tipos as any[] },
+      ...(f.desde || f.hasta
+        ? {
+            created_atmovimientos_caja: {
+              ...(f.desde && { gte: f.desde }),
+              ...(f.hasta && { lt: f.hasta }),
+            },
+          }
+        : {}),
+      sesionCaja: {
+        caja: {
+          deleted_atcajas: null,
+          ...(f.cajaId && { idcajas: f.cajaId }),
+          sucursal: {
+            deleted_atsucursales: null,
+            ...(f.sucursalId && { idsucursales: f.sucursalId }),
+            ...(f.regionalId && { regionales_idregionales: f.regionalId }),
+          },
+        },
+      },
+    };
+
+    const [total, rows] = await Promise.all([
+      this.prisma.movimientoCaja.count({ where }),
+      this.prisma.movimientoCaja.findMany({
+        where,
+        orderBy: { created_atmovimientos_caja: 'desc' },
+        skip:    (f.pagina - 1) * f.limite,
+        take:    f.limite,
+        select: {
+          idmovimientos_caja:              true,
+          created_atmovimientos_caja:      true,
+          tipomovimientos_caja:            true,
+          montomovimientos_caja:           true,
+          medio_pagomovimientos_caja:      true,
+          descripcionmovimientos_caja:     true,
+          referencia_idmovimientos_caja:   true,
+          referencia_tipomovimientos_caja: true,
+          sesionCaja: {
+            select: {
+              idsesiones_caja:     true,
+              estadosesiones_caja: true,
+              cajeroAsignado:      { select: { nombreusuarios: true } },
+              usuarioApertura:     { select: { nombreusuarios: true } },
+              caja: {
+                select: {
+                  idcajas:    true,
+                  nombrecajas: true,
+                  sucursal: {
+                    select: {
+                      idsucursales:     true,
+                      nombresucursales: true,
+                      regional:         { select: { nombreregionales: true } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+    // El movimiento guarda la referencia a la venta pero no hay FK, así que el estado
+    // (para saber si todavía se puede anular) se resuelve en una segunda consulta.
+    const ventaIds = [
+      ...new Set(
+        rows
+          .filter(r => r.referencia_tipomovimientos_caja === 'Venta' && r.referencia_idmovimientos_caja !== null)
+          .map(r => r.referencia_idmovimientos_caja as number),
+      ),
+    ];
+    const ventas = ventaIds.length
+      ? await this.prisma.venta.findMany({
+          where:  { idventas: { in: ventaIds } },
+          select: { idventas: true, estadoventas: true },
+        })
+      : [];
+    const estadoPorVenta = new Map(ventas.map(v => [v.idventas, v.estadoventas as string]));
+
+    const items = rows.map(r => {
+      const sesion   = r.sesionCaja;
+      const sucursal = sesion.caja.sucursal;
+      const ventaId  =
+        r.referencia_tipomovimientos_caja === 'Venta' ? r.referencia_idmovimientos_caja : null;
+
+      return {
+        id:             r.idmovimientos_caja,
+        fecha:          r.created_atmovimientos_caja,
+        categoria:      categoriaDeMovimiento(r.tipomovimientos_caja)!,
+        tipo:           r.tipomovimientos_caja as string,
+        monto:          Number(r.montomovimientos_caja).toFixed(2),
+        medioPago:      (r.medio_pagomovimientos_caja as string | null) ?? null,
+        descripcion:    r.descripcionmovimientos_caja,
+        sesionId:       sesion.idsesiones_caja,
+        sesionAbierta:  sesion.estadosesiones_caja === 'abierta',
+        cajaId:         sesion.caja.idcajas,
+        cajaNombre:     sesion.caja.nombrecajas,
+        sucursalId:     sucursal.idsucursales,
+        sucursalNombre: sucursal.nombresucursales,
+        regionalNombre: sucursal.regional.nombreregionales,
+        cajero:         sesion.cajeroAsignado?.nombreusuarios ?? sesion.usuarioApertura.nombreusuarios,
+        ventaId,
+        ventaEstado:    ventaId !== null ? estadoPorVenta.get(ventaId) ?? null : null,
+      };
+    });
+
+    return { items, total };
   }
 }

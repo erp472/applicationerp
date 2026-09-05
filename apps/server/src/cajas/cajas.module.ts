@@ -15,6 +15,6 @@ import { SESIONES_CAJA_REPOSITORY } from './domain/sesion-caja.repository.js';
     { provide: CAJAS_REPOSITORY,        useClass: PrismaCajasRepository },
     { provide: SESIONES_CAJA_REPOSITORY, useClass: PrismaSesionesCajaRepository },
   ],
-  exports: [CajasService],
+  exports: [CajasService, SESIONES_CAJA_REPOSITORY],
 })
 export class CajasModule {}

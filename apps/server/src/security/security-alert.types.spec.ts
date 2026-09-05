@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { CBS_CATALOG } from './security-alert.types.js';
 import type { MitreTechnique, NistCsfControl, AlertSeverity, SecurityAlert } from './security-alert.types.js';
 
 // Validación del catálogo de tipos MITRE ATT&CK y NIST CSF v2
@@ -8,20 +9,39 @@ describe('SecurityAlert types — MITRE ATT&CK / NIST CSF v2 catalog', () => {
 
   it('SecurityAlert tiene todos los campos requeridos por NIST SP 800-53 Rev.5', () => {
     const alert: SecurityAlert = {
-      id:          'test-id-001',
-      mitre:       'T1110',
-      nist_csf:    'DE.CM-7',
-      severidad:   'CRITICAL',
-      descripcion: 'Brute force detectado',
-      ip:          '1.2.3.4',
-      usuario_id:  1,
-      audit_key:   'ADM-03',
-      timestamp:   new Date(),
-      metadata:    { intentos: 5 },
+      id:               'test-id-001',
+      audit_key:        'CBS-01',
+      mitre:            'T1110',
+      nist_csf:         'DE.CM-7',
+      severidad:        'CRITICAL',
+      descripcion:      'Brute force detectado',
+      ip:               '1.2.3.4',
+      usuario_id:       1,
+      origen_audit_key: 'ADM-03',
+      timestamp:        new Date(),
+      metadata:         { intentos: 5 },
     };
     expect(alert).toBeDefined();
     expect(alert.mitre).toBe('T1110');
     expect(alert.nist_csf).toBe('DE.CM-7');
+  });
+
+  describe('Catálogo CBS — cuarto tipo de transacción', () => {
+    it('define CBS-01..CBS-05', () => {
+      expect(Object.keys(CBS_CATALOG)).toEqual([
+        'CBS-01', 'CBS-02', 'CBS-03', 'CBS-04', 'CBS-05',
+      ]);
+    });
+
+    it('cada código fija su técnica MITRE, su control NIST CSF y su severidad', () => {
+      for (const [codigo, def] of Object.entries(CBS_CATALOG)) {
+        expect(codigo).toMatch(/^CBS-\d{2}$/);
+        expect(def.mitre).toMatch(/^T\d{4}(\.\d{3})?$/);
+        expect(def.nist_csf).toMatch(/^(DE|PR|RS)\./);
+        expect(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']).toContain(def.severidad);
+        expect(def.evento.length).toBeGreaterThan(0);
+      }
+    });
   });
 
   describe('Técnicas MITRE ATT&CK cubiertas', () => {

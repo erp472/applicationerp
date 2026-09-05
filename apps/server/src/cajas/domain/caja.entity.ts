@@ -1,3 +1,5 @@
+import type { ServicioCajaItem } from './servicios-caja.js';
+
 export type TipoCaja = 'menor' | 'general' | 'pos' | 'pagos';
 export type EstadoSesionCaja = 'abierta' | 'cerrada' | 'forzada';
 export type TipoMovimientoCaja =
@@ -148,6 +150,10 @@ export interface CardAuxiliar {
   nombre: string;
   tipo: TipoCaja;
   cajeroId: number | null;
+  /** Quién opera la caja ahora mismo. Resuelve la misma cadena que cajeroId:
+   *  cajero asignado a la sesión → cajero fijo de la caja → quien la abrió. */
+  cajeroNombre: string | null;
+  cajeroEmail: string | null;
   cajeroFijoId: number | null;
   estado: EstadoSesionCaja | 'sin_sesion';
   /** Balance de la caja fuerte del auxiliar (= saldo de la sesión activa) */
@@ -164,6 +170,8 @@ export interface CardAuxiliar {
   girosCount: number;
   girosValor: string;
   alertas: TipoAlerta[];
+  /** Operaciones habilitadas por el supervisor en esta caja */
+  servicios: ServicioCajaItem[];
 }
 
 export interface StatusPunto {

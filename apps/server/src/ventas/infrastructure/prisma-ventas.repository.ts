@@ -765,17 +765,22 @@ export class PrismaVentasRepository implements IVentasRepository {
       ],
     };
 
+    // Los tramos comparten extremo (…0.100] y [0.100…), así que un peso frontera
+    // empata en dos. El tarifario oficial define los rangos como "0 – 1.000" y
+    // "1.001 – 2.000": el límite superior pertenece al tramo BAJO, por eso 'asc'.
+    const orderBy = { peso_min_kgtarifas_servicio: 'asc' } as const;
+
     if (ciudadDestino) {
       const specific = await this.prisma.tarifaServicio.findFirst({
-        where:   { ...pesoWhere, ciudad_destinotarifas_servicio: ciudadDestino },
-        orderBy: { peso_min_kgtarifas_servicio: 'desc' },
+        where: { ...pesoWhere, ciudad_destinotarifas_servicio: ciudadDestino },
+        orderBy,
       });
       if (specific) return toTarifaEntity(specific);
     }
 
     const row = await this.prisma.tarifaServicio.findFirst({
-      where:   { ...pesoWhere, ciudad_destinotarifas_servicio: null },
-      orderBy: { peso_min_kgtarifas_servicio: 'desc' },
+      where: { ...pesoWhere, ciudad_destinotarifas_servicio: null },
+      orderBy,
     });
     return row ? toTarifaEntity(row) : null;
   }
@@ -1019,20 +1024,25 @@ export class PrismaVentasRepository implements IVentasRepository {
       },
     });
     if (existing) {
+      // Actualización parcial a propósito. Escribir `data.X ?? null` borraba los campos
+      // que la petición no trae, y crear un envío solo manda parte del contacto: cada
+      // envío degradaba un poco más la dirección guardada.
+      const cambios: Prisma.DireccionFrecuenteUpdateInput = {
+        paisdirfrecuentes:       data.pais,
+        usosdirfrecuentes:       { increment: 1 },
+        ultimo_usodirfrecuentes: new Date(),
+      };
+      if (data.empresa      !== undefined) cambios.empresadireccionesfrecuentes = data.empresa;
+      if (data.email        !== undefined) cambios.emaildirfrecuentes           = data.email;
+      if (data.direccion    !== undefined) cambios.direcciondirfrecuentes       = data.direccion;
+      if (data.ciudad       !== undefined) cambios.ciudaddirfrecuentes          = data.ciudad;
+      if (data.departamento !== undefined) cambios.departamentodirfrecuentes    = data.departamento;
+      if (data.codigoPostal !== undefined) cambios.codigo_postaldirfrecuentes   = data.codigoPostal;
+      if (data.documento    !== undefined) cambios.documentodirfrecuentes       = data.documento;
+
       await this.prisma.direccionFrecuente.update({
         where: { iddireccionesfrecuentes: existing.iddireccionesfrecuentes },
-        data:  {
-          empresadireccionesfrecuentes: data.empresa ?? null,
-          emaildirfrecuentes:           data.email ?? null,
-          direcciondirfrecuentes:       data.direccion ?? null,
-          ciudaddirfrecuentes:          data.ciudad ?? null,
-          departamentodirfrecuentes:    data.departamento ?? null,
-          paisdirfrecuentes:            data.pais,
-          codigo_postaldirfrecuentes:   data.codigoPostal ?? null,
-          documentodirfrecuentes:       data.documento ?? null,
-          usosdirfrecuentes:            { increment: 1 },
-          ultimo_usodirfrecuentes:      new Date(),
-        },
+        data:  cambios,
       });
     } else {
       await this.prisma.direccionFrecuente.create({

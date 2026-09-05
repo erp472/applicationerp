@@ -57,6 +57,10 @@ export interface ICajasRepository {
   findPanelAdmin(regionalId?: number): Promise<SucursalPanelItem[]>;
   toggleServicioSucursal(sucursalId: number, servicioId: number, activo: boolean): Promise<void>;
 
+  // Operaciones habilitadas por caja — sin fila el servicio se considera activo
+  getServiciosCaja(cajaIds: number[]): Promise<Map<number, Map<string, boolean>>>;
+  setServicioCaja(cajaId: number, codigo: string, activo: boolean): Promise<void>;
+
   // Scope helpers
   findSucursalRegionalId(sucursalId: number): Promise<number | null>;
   findAllPadresByRegional(regionalId: number): Promise<CajaPadreEntity[]>;

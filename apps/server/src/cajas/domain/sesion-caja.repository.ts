@@ -14,8 +14,41 @@ import type {
   ArqueoDenominacion,
   BalancePagosRow,
 } from './caja.entity.js';
+import type { CategoriaHistorico } from './business-rules.js';
 
 export const SESIONES_CAJA_REPOSITORY = Symbol('SESIONES_CAJA_REPOSITORY');
+
+export interface HistoricoFiltros {
+  /** Ausente = todo el comercio. Presente = solo esa regional (supervisor). */
+  regionalId?: number;
+  sucursalId?: number;
+  cajaId?:     number;
+  categoria?:  CategoriaHistorico;
+  desde?:      Date;
+  hasta?:      Date;
+  limite:      number;
+  pagina:      number;
+}
+
+export interface HistoricoMovimientoItem {
+  id:             number;
+  fecha:          Date;
+  categoria:      CategoriaHistorico;
+  tipo:           string;
+  monto:          string;
+  medioPago:      string | null;
+  descripcion:    string | null;
+  sesionId:       number;
+  sesionAbierta:  boolean;
+  cajaId:         number;
+  cajaNombre:     string;
+  sucursalId:     number;
+  sucursalNombre: string;
+  regionalNombre: string;
+  cajero:         string | null;
+  ventaId:        number | null;
+  ventaEstado:    string | null;
+}
 
 export interface DiferenciasFiltros {
   tipo?:     'faltante' | 'sobrante';
@@ -152,14 +185,17 @@ export interface ISesionesCajaRepository {
   getMovimientos(sesionId: number): Promise<MovimientoCajaEntity[]>;
   getStatusPunto(cajaPadreId: number): Promise<StatusPunto>;
   updateCajeroAsignado(sesionId: number, cajeroId: number | null): Promise<SesionCajaEntity>;
-  getConsolidadoPorRegional(): Promise<{ regionalId: number; porMedio: Record<string, string> }[]>;
-  getConsolidadoPorSesion(): Promise<{
+  /** Sin regionalId = todo el comercio. Con regionalId = solo esa regional (supervisor). */
+  getConsolidadoPorRegional(regionalId?: number): Promise<{ regionalId: number; porMedio: Record<string, string> }[]>;
+  getConsolidadoPorSesion(regionalId?: number): Promise<{
     sesionId: number;
     cajaId: number;
     cajaNombre: string;
     sucursalNombre: string;
     cajeroNombre: string | null;
+    cajeroEmail: string | null;
     porMedio: Record<string, string>;
   }[]>;
   getBalancePagos(fechaInicio: Date, fechaFin: Date): Promise<BalancePagosRow[]>;
+  getHistoricoMovimientos(filtros: HistoricoFiltros): Promise<{ items: HistoricoMovimientoItem[]; total: number }>;
 }

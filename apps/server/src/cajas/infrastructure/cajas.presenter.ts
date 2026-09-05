@@ -89,6 +89,8 @@ export class CajasPresenter {
       nombre:        card.nombre,
       tipo:          card.tipo,
       cajeroId:      card.cajeroId,
+      cajeroNombre:  card.cajeroNombre,
+      cajeroEmail:   card.cajeroEmail,
       cajeroFijoId:  card.cajeroFijoId,
       estado:        card.estado,
       saldoActual:   card.saldoActual,
@@ -104,6 +106,7 @@ export class CajasPresenter {
       girosCount:    card.girosCount,
       girosValor:    card.girosValor,
       alertas:       card.alertas,
+      servicios:     card.servicios,
     };
   }
 

@@ -60,6 +60,7 @@ export class SucursalesService {
 
     const { userId, ip } = auditStore.getStore() ?? {};
     void this.audit.log({
+      audit_key:     'ADM-07',
       usuario_id:    userId,
       accion:        'CREATE',
       entidad:       'sucursales',
@@ -121,6 +122,7 @@ export class SucursalesService {
 
     const { userId, ip } = auditStore.getStore() ?? {};
     void this.audit.log({
+      audit_key:     'ADM-07',
       usuario_id:    userId,
       accion:        'UPDATE',
       entidad:       'sucursales',
@@ -142,6 +144,7 @@ export class SucursalesService {
 
     const { userId, ip } = auditStore.getStore() ?? {};
     void this.audit.log({
+      audit_key:  'ADM-07',
       usuario_id: userId,
       accion:     'DELETE',
       entidad:    'sucursales',

@@ -20,6 +20,7 @@ export class RecaudosService {
   }
 
   async registrarRecaudo(cajaId: number, usuarioId: number, dto: RegistrarRecaudoDto) {
+    await this.cajasService.assertServicioActivoEnCaja(cajaId, 'recaudo_facturas');
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
     if (!sesion) throw new BadRequestException(`No hay sesión activa para caja ${cajaId}`);
 

@@ -119,7 +119,7 @@ export class RegionalesController {
     return RegionalesPresenter.toResponse(await this.service.remove(id));
   }
 
-  @AuditKey('ADM-04')
+  @AuditKey('ADM-06')
   @Get(':id/consolidado')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Consolidado financiero de la regional agrupado por medio de pago' })

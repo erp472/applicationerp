@@ -159,4 +159,134 @@ describe('FeatureFlagsService', () => {
       expect(repo.remove).toHaveBeenCalledWith(3);
     });
   });
+
+  describe('findAll() — listado', () => {
+    it('delega al repo sin filtro de entorno', async () => {
+      const repo = makeRepo();
+      repo.findAll.mockResolvedValue([makeFlag()]);
+      const svc = new (FeatureFlagsService as never)(repo) as FeatureFlagsService;
+      const result = await svc.findAll();
+      expect(repo.findAll).toHaveBeenCalledWith(undefined);
+      expect(result).toHaveLength(1);
+    });
+
+    it('delega al repo con filtro de entorno', async () => {
+      const repo = makeRepo();
+      repo.findAll.mockResolvedValue([makeFlag({ entorno: 'prod' })]);
+      const svc = new (FeatureFlagsService as never)(repo) as FeatureFlagsService;
+      await svc.findAll('prod');
+      expect(repo.findAll).toHaveBeenCalledWith('prod');
+    });
+  });
+
+  describe('getActivos() — flags activos filtrados por contexto', () => {
+    it('retorna flags que aplican al entorno y contexto dado', async () => {
+      const repo = makeRepo();
+      repo.findActivos.mockResolvedValue([makeFlag({ activo: true, roles: [], usuarios: [] })]);
+      const svc = new (FeatureFlagsService as never)(repo) as FeatureFlagsService;
+      const result = await svc.getActivos('prod');
+      expect(result).toHaveLength(1);
+    });
+
+    it('filtra por plataforma usando ctx.plataforma', async () => {
+      const repo = makeRepo();
+      repo.findActivos.mockResolvedValue([]);
+      const svc = new (FeatureFlagsService as never)(repo) as FeatureFlagsService;
+      await svc.getActivos('prod', { plataforma: 'web' });
+      expect(repo.findActivos).toHaveBeenCalledWith('prod', 'web');
+    });
+
+    it('usa "all" como plataforma cuando no se provee ctx', async () => {
+      const repo = makeRepo();
+      repo.findActivos.mockResolvedValue([]);
+      const svc = new (FeatureFlagsService as never)(repo) as FeatureFlagsService;
+      await svc.getActivos('dev');
+      expect(repo.findActivos).toHaveBeenCalledWith('dev', 'all');
+    });
+  });
+
+  describe('update() — actualización', () => {
+    it('lanza error si el flag no existe', async () => {
+      const repo = makeRepo();
+      repo.findById.mockResolvedValue(null);
+      const svc = new (FeatureFlagsService as never)(repo) as FeatureFlagsService;
+      await expect(svc.update(99, { activo: false })).rejects.toThrow(FeatureFlagNotFoundError);
+    });
+
+    it('actualiza el flag cuando existe', async () => {
+      const repo = makeRepo();
+      repo.findById.mockResolvedValue(makeFlag({ id: 2 }));
+      const updated = makeFlag({ id: 2, activo: false });
+      repo.update.mockResolvedValue(updated);
+      const svc = new (FeatureFlagsService as never)(repo) as FeatureFlagsService;
+      const result = await svc.update(2, { activo: false });
+      expect(repo.update).toHaveBeenCalledWith(2, { activo: false });
+      expect(result.activo).toBe(false);
+    });
+  });
+
+  describe('asignarRol / revocarRol', () => {
+    it('asignarRol delega al repo y retorna el flag actualizado', async () => {
+      const repo = makeRepo();
+      const flag = makeFlag({ id: 1 });
+      repo.findById.mockResolvedValue(flag);
+      const svc = new (FeatureFlagsService as never)(repo) as FeatureFlagsService;
+      await svc.asignarRol(1, 10);
+      expect(repo.asignarRol).toHaveBeenCalledWith(1, 10);
+    });
+
+    it('asignarRol lanza error si el flag no existe', async () => {
+      const repo = makeRepo();
+      repo.findById.mockResolvedValue(null);
+      const svc = new (FeatureFlagsService as never)(repo) as FeatureFlagsService;
+      await expect(svc.asignarRol(99, 1)).rejects.toThrow(FeatureFlagNotFoundError);
+    });
+
+    it('revocarRol delega al repo', async () => {
+      const repo = makeRepo();
+      repo.findById.mockResolvedValue(makeFlag({ id: 1 }));
+      const svc = new (FeatureFlagsService as never)(repo) as FeatureFlagsService;
+      await svc.revocarRol(1, 10);
+      expect(repo.revocarRol).toHaveBeenCalledWith(1, 10);
+    });
+
+    it('revocarRol lanza error si el flag no existe', async () => {
+      const repo = makeRepo();
+      repo.findById.mockResolvedValue(null);
+      const svc = new (FeatureFlagsService as never)(repo) as FeatureFlagsService;
+      await expect(svc.revocarRol(99, 1)).rejects.toThrow(FeatureFlagNotFoundError);
+    });
+  });
+
+  describe('asignarUsuario / revocarUsuario', () => {
+    it('asignarUsuario delega al repo', async () => {
+      const repo = makeRepo();
+      repo.findById.mockResolvedValue(makeFlag({ id: 1 }));
+      const svc = new (FeatureFlagsService as never)(repo) as FeatureFlagsService;
+      await svc.asignarUsuario(1, 42);
+      expect(repo.asignarUsuario).toHaveBeenCalledWith(1, 42);
+    });
+
+    it('asignarUsuario lanza error si el flag no existe', async () => {
+      const repo = makeRepo();
+      repo.findById.mockResolvedValue(null);
+      const svc = new (FeatureFlagsService as never)(repo) as FeatureFlagsService;
+      await expect(svc.asignarUsuario(99, 42)).rejects.toThrow(FeatureFlagNotFoundError);
+    });
+
+    it('revocarUsuario delega al repo', async () => {
+      const repo = makeRepo();
+      repo.findById.mockResolvedValue(makeFlag({ id: 1 }));
+      const svc = new (FeatureFlagsService as never)(repo) as FeatureFlagsService;
+      await svc.revocarUsuario(1, 42);
+      expect(repo.revocarUsuario).toHaveBeenCalledWith(1, 42);
+    });
+
+    it('revocarUsuario lanza error si el flag no existe', async () => {
+      const repo = makeRepo();
+      repo.findById.mockResolvedValue(null);
+      const svc = new (FeatureFlagsService as never)(repo) as FeatureFlagsService;
+      await expect(svc.revocarUsuario(99, 42)).rejects.toThrow(FeatureFlagNotFoundError);
+    });
+  });
 });

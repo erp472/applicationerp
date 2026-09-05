@@ -16,7 +16,8 @@ import { Roles } from '../../common/decorators/roles.decorator.js';
 import { Feature } from '../../common/decorators/feature.decorator.js';
 import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 
-const ROLES_ADMIN = ['ADMIN_SISTEMA', 'ADMIN_NACIONAL'] as const;
+const ROLES_ADMIN = ['INVENTARIOS', 'ADMIN_NACIONAL', 'ADMIN_SISTEMA'] as const;
+const ROLES_READ  = ['CAJERO', 'ADMINISTRATIVO', 'TESORERIA', 'INVENTARIOS', 'SUPERVISOR_REGIONAL', 'ADMIN_NACIONAL', 'ADMIN_SISTEMA'] as const;
 
 const TarifaSchema = z.object({
   minCantidad: z.number().int().min(0),
@@ -76,6 +77,7 @@ export class ProductosEspecialesAdminController {
 
   @AuditKey('ADM-04')
   @Get()
+  @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Listar productos especiales (admin)' })
   @ApiQuery({ name: 'activo', required: false, type: Boolean })
   @ApiQuery({ name: 'buscar', required: false, type: String })
@@ -91,6 +93,7 @@ export class ProductosEspecialesAdminController {
 
   @AuditKey('ADM-04')
   @Get(':id')
+  @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Obtener producto especial por ID (admin)' })
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'Producto especial con sus tarifas' })

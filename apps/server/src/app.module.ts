@@ -33,6 +33,7 @@ import { SigmaModule } from './sigma/sigma.module.js';
 import { SacasModule }         from './sacas/sacas.module.js';
 import { EnviosMasivosModule } from './envios-masivos/envios-masivos.module.js';
 import { FranquiciasModule }   from './franquicias/franquicias.module.js';
+import { TesoreriaModule }     from './tesoreria/tesoreria.module.js';
 import { AuditInterceptor } from './audit/audit.interceptor.js';
 import { AuditContextInterceptor } from './common/interceptors/audit-context.interceptor.js';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter.js';
@@ -54,7 +55,7 @@ import { AllExceptionsFilter } from './common/filters/http-exception.filter.js';
     GeoModule, ComerciosModule, RegionalesModule, SucursalesModule, EquiposModule,
     ProductosModule, ServiciosModule, CajasModule, VentasModule, ClientesModule,
     InventarioModule, GirosModule, RecaudosModule, RealtimeModule, SigmaModule, SacasModule,
-    EnviosMasivosModule, FranquiciasModule, SecurityModule,
+    EnviosMasivosModule, FranquiciasModule, TesoreriaModule, SecurityModule,
   ],
   providers: [
     { provide: APP_FILTER,      useClass: AllExceptionsFilter },

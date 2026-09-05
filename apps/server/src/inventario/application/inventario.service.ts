@@ -14,34 +14,34 @@ export class InventarioService {
 
   // ── Stock ──────────────────────────────────────────────────────────────────
 
-  async listStock(sucursalId: number, query: QueryStockParams, userRol: string, userSucursalId: number | null) {
-    this.assertAcceso(sucursalId, userRol, userSucursalId);
+  async listStock(sucursalId: number, query: QueryStockParams, userRol: string, userSucursalId: number | null, userRegionalId: number | null) {
+    await this.assertAcceso(sucursalId, userRol, userSucursalId, userRegionalId);
     const { datos, total } = await this.repo.listStock(sucursalId, query);
     return { datos, total };
   }
 
   async ajustar(
     sucursalId: number, productoId: number, cantidadNueva: number,
-    observacion: string | undefined, usuarioId: number, userRol: string, userSucursalId: number | null,
+    observacion: string | undefined, usuarioId: number, userRol: string, userSucursalId: number | null, userRegionalId: number | null,
   ) {
-    this.assertAcceso(sucursalId, userRol, userSucursalId);
+    await this.assertAcceso(sucursalId, userRol, userSucursalId, userRegionalId);
     return this.repo.ajustar({ sucursalId, productoId, cantidadNueva, observacion, usuarioId });
   }
 
   async registrarEntrada(
     sucursalId: number, productoId: number, cantidad: number,
-    observacion: string | undefined, usuarioId: number, userRol: string, userSucursalId: number | null,
+    observacion: string | undefined, usuarioId: number, userRol: string, userSucursalId: number | null, userRegionalId: number | null,
   ) {
-    this.assertAcceso(sucursalId, userRol, userSucursalId);
+    await this.assertAcceso(sucursalId, userRol, userSucursalId, userRegionalId);
     return this.repo.registrarEntrada({ sucursalId, productoId, cantidad, observacion, usuarioId });
   }
 
   async listMovimientos(
     sucursalId: number,
     query: { productoId?: number; tipo?: string; pagina: number; limite: number },
-    userRol: string, userSucursalId: number | null,
+    userRol: string, userSucursalId: number | null, userRegionalId: number | null,
   ) {
-    this.assertAcceso(sucursalId, userRol, userSucursalId);
+    await this.assertAcceso(sucursalId, userRol, userSucursalId, userRegionalId);
     return this.repo.listMovimientos(sucursalId, query);
   }
 
@@ -67,10 +67,9 @@ export class InventarioService {
 
   // ── Resúmenes para UI ──────────────────────────────────────────────────────
 
-  async getSucursales(userRol: string, userSucursalId: number | null) {
-    const esAdmin = this.esAdmin(userRol);
-    const where   = esAdmin ? {} : { idsucursales: userSucursalId ?? -1 };
-    const rows    = await this.prisma.sucursal.findMany({
+  async getSucursales(userRol: string, userSucursalId: number | null, userRegionalId: number | null) {
+    const where = this.buildSucursalWhere(userRol, userSucursalId, userRegionalId);
+    const rows  = await this.prisma.sucursal.findMany({
       where,
       select: {
         idsucursales: true, codigosucursales: true, nombresucursales: true,
@@ -91,9 +90,8 @@ export class InventarioService {
     }));
   }
 
-  async getAlertasResumen(userRol: string, userSucursalId: number | null) {
-    const esAdmin = this.esAdmin(userRol);
-    const where   = esAdmin ? {} : { idsucursales: userSucursalId ?? -1 };
+  async getAlertasResumen(userRol: string, userSucursalId: number | null, userRegionalId: number | null) {
+    const where      = this.buildSucursalWhere(userRol, userSucursalId, userRegionalId);
     const sucursales = await this.prisma.sucursal.findMany({
       where,
       select: {
@@ -135,12 +133,17 @@ export class InventarioService {
     }).then(r => this._mapOrden(r));
   }
 
-  async listOrdenes(sucursalId?: number, estado?: string) {
+  async listOrdenes(sucursalId?: number, estado?: string, userRol?: string, userRegionalId?: number | null) {
+    const where: Record<string, unknown> = {};
+    if (sucursalId) {
+      where['sucursales_idsucursales'] = sucursalId;
+    } else if (userRol === 'SUPERVISOR_REGIONAL' && userRegionalId) {
+      where['sucursal'] = { regionales_idregionales: userRegionalId };
+    }
+    if (estado) where['estadoordenes_inventario'] = estado as any;
+
     const rows = await this.prisma.ordenInventario.findMany({
-      where: {
-        ...(sucursalId && { sucursales_idsucursales: sucursalId }),
-        ...(estado     && { estadoordenes_inventario: estado as any }),
-      },
+      where,
       include: {
         items:    { include: { producto: { select: { codigoproductos: true, nombreproductos: true } } } },
         sucursal: { select: { nombresucursales: true } },
@@ -150,8 +153,8 @@ export class InventarioService {
     return rows.map(r => this._mapOrden(r));
   }
 
-  async getOrdenesPendientes(sucursalId?: number) {
-    return this.listOrdenes(sucursalId, 'pendiente');
+  async getOrdenesPendientes(sucursalId?: number, userRol?: string, userRegionalId?: number | null) {
+    return this.listOrdenes(sucursalId, 'pendiente', userRol, userRegionalId);
   }
 
   async actualizarEstadoOrden(ordenId: number, estado: string, usuarioId: number) {
@@ -190,12 +193,41 @@ export class InventarioService {
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  private esAdmin(rol: string) {
-    return rol === 'ADMIN_SISTEMA' || rol === 'ADMIN_NACIONAL';
+  private esGestorTotal(rol: string) {
+    return rol === 'ADMIN_SISTEMA' || rol === 'ADMIN_NACIONAL' || rol === 'INVENTARIOS';
   }
 
-  private assertAcceso(sucursalId: number, rol: string, userSucursalId: number | null) {
-    if (!this.esAdmin(rol) && userSucursalId !== sucursalId) {
+  private buildSucursalWhere(
+    rol: string,
+    userSucursalId: number | null,
+    userRegionalId: number | null,
+  ): Record<string, unknown> {
+    if (this.esGestorTotal(rol))         return {};
+    if (rol === 'SUPERVISOR_REGIONAL')   return { regionales_idregionales: userRegionalId ?? -1 };
+    return { idsucursales: userSucursalId ?? -1 };
+  }
+
+  private async assertAcceso(
+    sucursalId: number,
+    rol: string,
+    userSucursalId: number | null,
+    userRegionalId: number | null,
+  ): Promise<void> {
+    if (this.esGestorTotal(rol)) return;
+
+    if (rol === 'SUPERVISOR_REGIONAL') {
+      if (!userRegionalId) throw new ForbiddenException('Sin regional asignada.');
+      const sucursal = await this.prisma.sucursal.findUnique({
+        where:  { idsucursales: sucursalId },
+        select: { regionales_idregionales: true },
+      });
+      if (!sucursal || sucursal.regionales_idregionales !== userRegionalId) {
+        throw new ForbiddenException('No tienes acceso al inventario de esta regional.');
+      }
+      return;
+    }
+
+    if (userSucursalId !== sucursalId) {
       throw new ForbiddenException('No tienes acceso al inventario de esta sucursal.');
     }
   }

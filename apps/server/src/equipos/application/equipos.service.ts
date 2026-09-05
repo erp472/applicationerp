@@ -42,6 +42,7 @@ export class EquiposService {
 
     const { userId, ip } = auditStore.getStore() ?? {};
     void this.audit.log({
+      audit_key:     'ADM-08',
       usuario_id:    userId,
       accion:        'CREATE',
       entidad:       'equipos_autorizados',
@@ -80,6 +81,7 @@ export class EquiposService {
 
     const { userId, ip } = auditStore.getStore() ?? {};
     void this.audit.log({
+      audit_key:     'ADM-08',
       usuario_id:    userId,
       accion:        'UPDATE',
       entidad:       'equipos_autorizados',
@@ -98,6 +100,7 @@ export class EquiposService {
 
     const { userId, ip } = auditStore.getStore() ?? {};
     void this.audit.log({
+      audit_key:  'ADM-08',
       usuario_id: userId,
       accion:     'DELETE',
       entidad:    'equipos_autorizados',

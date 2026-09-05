@@ -11,7 +11,7 @@ export class AuditEvent {
   @Prop({ type: String, required: true })
   audit_key!: string;
 
-  @Prop({ type: String, required: true, enum: ['ADM', 'OPE', 'FIN'] })
+  @Prop({ type: String, required: true, enum: ['ADM', 'OPE', 'FIN', 'CBS'] })
   tipo!: string;
 
   @Prop({ type: String })
@@ -44,6 +44,10 @@ export class AuditEvent {
   @Prop({ type: String })
   mitre_technique?: string;
 
+  /** Enlaza con los documentos de `db_changes` que produjo este mismo request. */
+  @Prop({ type: String })
+  request_id?: string;
+
   /** Populated by timestamps option */
   timestamp!: Date;
 }
@@ -54,3 +58,4 @@ AuditEventSchema.index({ audit_key: 1, timestamp: -1 });
 AuditEventSchema.index({ usuario_id: 1, timestamp: -1 });
 AuditEventSchema.index({ ip: 1, timestamp: -1 });
 AuditEventSchema.index({ resultado: 1, timestamp: -1 });
+AuditEventSchema.index({ request_id: 1 });

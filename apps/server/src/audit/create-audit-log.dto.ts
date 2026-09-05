@@ -1,6 +1,10 @@
 import type { TipoTransaccion } from './decorators/audit-key.decorator.js';
 
-export type AuditAction  = 'CREATE' | 'READ' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'LOGOUT' | 'PRINT' | 'EXPORT' | 'DENIED';
+export const ACCIONES = [
+  'CREATE', 'READ', 'UPDATE', 'DELETE', 'LOGIN', 'LOGOUT', 'PRINT', 'EXPORT', 'DENIED',
+] as const;
+
+export type AuditAction  = (typeof ACCIONES)[number];
 export type AuditResult  = 'OK' | 'ERROR';
 
 export class CreateAuditLogDto {

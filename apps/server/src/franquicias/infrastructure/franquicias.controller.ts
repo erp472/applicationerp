@@ -16,6 +16,7 @@ import { RolesGuard } from '../../common/guards/roles.guard.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { Feature } from '../../common/decorators/feature.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
+import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 
 // El catálogo de franquicias lo parametriza Tesorería; el cajero solo lo consulta.
 const ROLES_TESORERIA = ['TESORERIA', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA'];
@@ -31,6 +32,7 @@ type AuthUser = { id: number; rol: string; sucursal_id: number | null };
 export class FranquiciasController {
   constructor(private readonly service: FranquiciasService) {}
 
+  @AuditKey('OPE-02')
   @Get()
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Franquicias habilitadas en la sucursal (para el datáfono del POS)' })
@@ -42,6 +44,7 @@ export class FranquiciasController {
     return this.service.listarPorSucursal(id);
   }
 
+  @AuditKey('ADM-04')
   @Get('catalogo')
   @Roles(...ROLES_TESORERIA)
   @ApiOperation({ summary: 'Catálogo completo de franquicias con su activación por sucursal' })
@@ -49,6 +52,7 @@ export class FranquiciasController {
     return this.service.listarCatalogo();
   }
 
+  @AuditKey('ADM-01')
   @Post()
   @Roles(...ROLES_TESORERIA)
   @ApiOperation({ summary: 'Crear franquicia' })
@@ -59,6 +63,7 @@ export class FranquiciasController {
     return this.service.crear(parsed.data);
   }
 
+  @AuditKey('ADM-02')
   @Patch(':id')
   @Roles(...ROLES_TESORERIA)
   @ApiOperation({ summary: 'Actualizar nombre o estado de una franquicia' })
@@ -68,6 +73,7 @@ export class FranquiciasController {
     return this.service.actualizar(id, parsed.data);
   }
 
+  @AuditKey('ADM-02')
   @Delete(':id')
   @Roles(...ROLES_TESORERIA)
   @ApiOperation({ summary: 'Retirar una franquicia del catálogo (soft delete)' })
@@ -75,6 +81,7 @@ export class FranquiciasController {
     return this.service.eliminar(id);
   }
 
+  @AuditKey('ADM-07')
   @Put(':id/sucursales/:sucursalId')
   @Roles(...ROLES_TESORERIA)
   @ApiOperation({ summary: 'Activar o desactivar la franquicia en una sucursal' })

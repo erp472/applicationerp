@@ -17,39 +17,29 @@ async function main() {
   const rolTesoreria   = await prisma.rol.findUniqueOrThrow({ where: { codigoroles: 'TESORERIA' } })
   const rolInventarios = await prisma.rol.findUniqueOrThrow({ where: { codigoroles: 'INVENTARIOS' } })
 
-  const hashTesoreria   = await hash('Tesoreria.472!', 10)
-  const hashInventarios = await hash('Inventarios.472!', 10)
+  // Nunca se toca la contraseña de un usuario ya creado: si existe, se deja intacto.
+  async function crearSiNoExiste(email: string, nombre: string, rolId: number, password: string) {
+    const existente = await prisma.usuario.findFirst({ where: { emailusuarios: email } })
+    if (existente) {
+      console.log(`= ${email} ya existe (id=${existente.idusuarios}) — sin cambios`)
+      return
+    }
+    const creado = await prisma.usuario.create({
+      data: {
+        sucursales_idsucursales: sucursal.idsucursales,
+        roles_idroles:           rolId,
+        nombreusuarios:          nombre,
+        emailusuarios:           email,
+        password_hashusuarios:   await hash(password, 10),
+        activousuarios:          true,
+      },
+    })
+    console.log(`✓ ${email} (id=${creado.idusuarios})`)
+    console.log(`  Password: ${password}`)
+  }
 
-  const tesoreria = await prisma.usuario.upsert({
-    where:  { emailusuarios: 'tesoreria@4-72.com.co' },
-    update: { password_hashusuarios: hashTesoreria, activousuarios: true },
-    create: {
-      sucursales_idsucursales: sucursal.idsucursales,
-      roles_idroles:           rolTesoreria.idroles,
-      nombreusuarios:          'Usuario Tesorería',
-      emailusuarios:           'tesoreria@4-72.com.co',
-      password_hashusuarios:   hashTesoreria,
-      activousuarios:          true,
-    },
-  })
-
-  const inventarios = await prisma.usuario.upsert({
-    where:  { emailusuarios: 'inventarios@4-72.com.co' },
-    update: { password_hashusuarios: hashInventarios, activousuarios: true },
-    create: {
-      sucursales_idsucursales: sucursal.idsucursales,
-      roles_idroles:           rolInventarios.idroles,
-      nombreusuarios:          'Usuario Inventarios',
-      emailusuarios:           'inventarios@4-72.com.co',
-      password_hashusuarios:   hashInventarios,
-      activousuarios:          true,
-    },
-  })
-
-  console.log(`✓ ${tesoreria.emailusuarios}    (id=${tesoreria.idusuarios}, rol=TESORERIA)`)
-  console.log(`  Password: Tesoreria.472!`)
-  console.log(`✓ ${inventarios.emailusuarios}  (id=${inventarios.idusuarios}, rol=INVENTARIOS)`)
-  console.log(`  Password: Inventarios.472!`)
+  await crearSiNoExiste('tesoreria@4-72.com.co',   'Usuario Tesorería',  rolTesoreria.idroles,   'Tesoreria.472!')
+  await crearSiNoExiste('inventarios@4-72.com.co', 'Usuario Inventarios', rolInventarios.idroles, 'Inventarios.472!')
 }
 
 main()

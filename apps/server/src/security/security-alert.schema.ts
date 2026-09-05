@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
-import type { AlertSeverity, MitreTechnique, NistCsfControl } from './security-alert.types.js';
+import { CBS_CATALOG, type AlertSeverity, type CbsCode, type MitreTechnique, type NistCsfControl } from './security-alert.types.js';
 
 export type SecurityAlertDoc = HydratedDocument<SecurityAlertMongo>;
 
@@ -30,8 +30,11 @@ export class SecurityAlertMongo {
   @Prop({ type: Number })
   usuario_id?: number;
 
+  @Prop({ type: String, required: true, enum: Object.keys(CBS_CATALOG) })
+  audit_key!: CbsCode;
+
   @Prop({ type: String })
-  audit_key?: string;
+  origen_audit_key?: string;
 
   @Prop({ type: Object })
   metadata?: Record<string, unknown>;
@@ -46,3 +49,4 @@ SecurityAlertSchema.index({ severidad: 1, timestamp: -1 });
 SecurityAlertSchema.index({ mitre: 1, timestamp: -1 });
 SecurityAlertSchema.index({ usuario_id: 1, timestamp: -1 });
 SecurityAlertSchema.index({ ip: 1, timestamp: -1 });
+SecurityAlertSchema.index({ audit_key: 1, timestamp: -1 });

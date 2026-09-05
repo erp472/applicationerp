@@ -1,8 +1,10 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Optional, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { PrismaClient } from '../../generated/prisma/client.js';
 import { PrismaPg } from '@prisma/adapter-pg';
-import type { operacion_auditoria } from '../../generated/prisma/enums.js';
 import { auditStore } from '../common/audit-context.js';
+import { MongoDbChangesService } from '../audit/mongo/mongo-db-changes.service.js';
+
+type Operacion = 'INSERT' | 'UPDATE' | 'DELETE';
 
 const WRITE_OPS = new Set([
   'create', 'createMany', 'createManyAndReturn',
@@ -11,7 +13,7 @@ const WRITE_OPS = new Set([
   'upsert',
 ]);
 
-const OP_MAP: Record<string, operacion_auditoria> = {
+const OP_MAP: Record<string, Operacion> = {
   create:                  'INSERT',
   createMany:              'INSERT',
   createManyAndReturn:     'INSERT',
@@ -36,24 +38,23 @@ function extractId(obj: unknown): number {
 
 @Injectable()
 export class PrismaService implements OnModuleInit, OnModuleDestroy {
-  // rawClient escribe auditoría sin pasar por el middleware — evita recursión
+  // rawClient lee el estado previo sin pasar por el middleware — evita recursión
   private readonly rawClient: PrismaClient;
   private readonly client:    PrismaClient;
 
-  constructor() {
+  constructor(@Optional() dbChanges?: MongoDbChangesService) {
     const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 
     this.rawClient = new PrismaClient({ adapter });
 
     const raw = this.rawClient;
+    const cambios = dbChanges;
 
     const extended = raw.$extends({
       query: {
         $allModels: {
           async $allOperations({ model, operation, args, query }) {
-            if (model === 'EventoAuditoria' || !WRITE_OPS.has(operation)) {
-              return query(args);
-            }
+            if (!WRITE_OPS.has(operation)) return query(args);
 
             // estado anterior para UPDATE / DELETE / upsert
             let antes: unknown = null;
@@ -68,22 +69,23 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
             const result = await query(args);
 
             const ctx = auditStore.getStore();
-            let operacion: operacion_auditoria = OP_MAP[operation] ?? 'INSERT';
+            let operacion: Operacion = OP_MAP[operation] ?? 'INSERT';
 
             // upsert: si no había registro previo fue INSERT
             if (operation === 'upsert' && antes === null) operacion = 'INSERT';
 
-            raw.eventoAuditoria.create({
-              data: {
-                tablaeventos_auditoria:         model,
-                operacioneventos_auditoria:     operacion,
-                registro_ideventos_auditoria:   extractId(result) || extractId(antes),
-                usuarios_idusuarios:            ctx?.userId ?? null,
-                ip_origeneventos_auditoria:     ctx?.ip ?? null,
-                datos_anteseventos_auditoria:   (antes ?? null) as object,
-                datos_despueseventos_auditoria: (result ?? null) as object,
-              },
-            }).catch(() => {});
+            const registroId = extractId(result) || extractId(antes);
+
+            cambios?.log({
+              tabla:         model,
+              operacion,
+              registro_id:   registroId,
+              usuario_id:    ctx?.userId,
+              ip:            ctx?.ip,
+              request_id:    ctx?.requestId,
+              datos_antes:   (antes ?? null) as Record<string, unknown> | null,
+              datos_despues: (result ?? null) as Record<string, unknown> | null,
+            });
 
             return result;
           },
@@ -135,10 +137,12 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   // ── 8. Cajas ───────────────────────────────────────────────────────────────
   get cajaPadre()       { return this.client.cajaPadre; }
   get caja()            { return this.client.caja; }
+  get servicioCaja()    { return this.client.servicioCaja; }
   get sesionCaja()      { return this.client.sesionCaja; }
 
   // ── 9. Movimientos de caja ─────────────────────────────────────────────────
   get movimientoCaja()  { return this.client.movimientoCaja; }
+  get movimientoTesoreria() { return this.client.movimientoTesoreria; }
   get franquicia()          { return this.client.franquicia; }
   get franquiciaSucursal()  { return this.client.franquiciaSucursal; }
   get consignacion()    { return this.client.consignacion; }
@@ -190,9 +194,6 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
   // ── 19. Alertas y anulaciones ──────────────────────────────────────────────
   get alerta()          { return this.client.alerta; }
   get anulacion()       { return this.client.anulacion; }
-
-  // ── 20. Auditoría — usa rawClient para evitar recursión en el middleware ───
-  get eventoAuditoria() { return this.rawClient.eventoAuditoria; }
 
   // ── 21. Feature flags ──────────────────────────────────────────────────────
   get featureFlag()        { return this.client.featureFlag; }

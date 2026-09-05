@@ -27,6 +27,7 @@ export class CajasScheduler {
     if (!systemUser) {
       this.logger.warn('Cron cierre automático: no se encontró usuario ADMIN_SISTEMA activo');
       void this.audit.log({
+        audit_key:     'ADM-09',
         accion:        'CREATE',
         entidad:       'job_cierre_automatico',
         entidad_id:    0,
@@ -66,6 +67,7 @@ export class CajasScheduler {
     this.logger.log(`Cron cierre automático finalizado — total sesiones cerradas: ${cerradas}`);
 
     void this.audit.log({
+      audit_key:     'ADM-09',
       usuario_id:    systemUser.idusuarios,
       accion:        'CREATE',
       entidad:       'job_cierre_automatico',

@@ -62,7 +62,7 @@ describe('SecurityRulesService — Reglas de detección MITRE ATT&CK / NIST CSF 
       const { service, mongoAudit, realtimeService } = await buildService({
         countLoginFailures: vi.fn().mockResolvedValue(4),
       });
-      await service.evaluate({ accion: 'LOGIN', entidad: 'auth', resultado: 'ERROR', ip_origen: '1.2.3.4' });
+      await service.evaluate({ audit_key: 'ADM-03', accion: 'CREATE', entidad: 'auth', resultado: 'ERROR', ip_origen: '1.2.3.4' });
       expect(realtimeService.broadcast).not.toHaveBeenCalled();
       expect(mongoAudit.countLoginFailures).toHaveBeenCalledWith('1.2.3.4', 5);
     });
@@ -71,7 +71,7 @@ describe('SecurityRulesService — Reglas de detección MITRE ATT&CK / NIST CSF 
       const { service, realtimeService } = await buildService({
         countLoginFailures: vi.fn().mockResolvedValue(5),
       });
-      await service.evaluate({ accion: 'LOGIN', entidad: 'auth', resultado: 'ERROR', ip_origen: '1.2.3.4' });
+      await service.evaluate({ audit_key: 'ADM-03', accion: 'CREATE', entidad: 'auth', resultado: 'ERROR', ip_origen: '1.2.3.4' });
       expect(realtimeService.broadcast).toHaveBeenCalledWith(
         'security.alert',
         expect.objectContaining({ mitre: 'T1110.001', nist_csf: 'DE.CM-7', severidad: 'CRITICAL' }),
@@ -80,23 +80,29 @@ describe('SecurityRulesService — Reglas de detección MITRE ATT&CK / NIST CSF 
 
     it('no evalúa brute force si el resultado es OK', async () => {
       const { service, mongoAudit } = await buildService();
-      await service.evaluate({ accion: 'LOGIN', entidad: 'auth', resultado: 'OK', ip_origen: '1.2.3.4' });
+      await service.evaluate({ audit_key: 'ADM-03', accion: 'CREATE', entidad: 'auth', resultado: 'OK', ip_origen: '1.2.3.4' });
+      expect(mongoAudit.countLoginFailures).not.toHaveBeenCalled();
+    });
+
+    it('no evalúa brute force si audit_key no es ADM-03', async () => {
+      const { service, mongoAudit } = await buildService();
+      await service.evaluate({ audit_key: 'FIN-01', accion: 'CREATE', entidad: 'ventas', resultado: 'ERROR', ip_origen: '1.2.3.4' });
       expect(mongoAudit.countLoginFailures).not.toHaveBeenCalled();
     });
 
     it('no evalúa brute force si no hay ip_origen', async () => {
       const { service, mongoAudit } = await buildService();
-      await service.evaluate({ accion: 'LOGIN', entidad: 'auth', resultado: 'ERROR' });
+      await service.evaluate({ audit_key: 'ADM-03', accion: 'CREATE', entidad: 'auth', resultado: 'ERROR' });
       expect(mongoAudit.countLoginFailures).not.toHaveBeenCalled();
     });
   });
 
-  describe('Regla 2 — Feature Flag Denied Abuse T1562 / DE.AE-3', () => {
+  describe('Regla 2 — CBS-02 Denied Abuse T1562 / DE.AE-3', () => {
     it('no dispara alerta si hay menos de 3 DENIED del usuario', async () => {
       const { service, realtimeService } = await buildService({
         countDeniedByUser: vi.fn().mockResolvedValue(2),
       });
-      await service.evaluate({ accion: 'DENIED', entidad: 'ventas', resultado: 'ERROR', usuario_id: 42 });
+      await service.evaluate({ audit_key: 'ADM-07', accion: 'DENIED', entidad: 'ventas', resultado: 'ERROR', usuario_id: 42 });
       expect(realtimeService.broadcast).not.toHaveBeenCalled();
     });
 
@@ -104,22 +110,33 @@ describe('SecurityRulesService — Reglas de detección MITRE ATT&CK / NIST CSF 
       const { service, realtimeService } = await buildService({
         countDeniedByUser: vi.fn().mockResolvedValue(3),
       });
-      await service.evaluate({ accion: 'DENIED', entidad: 'ventas', resultado: 'ERROR', usuario_id: 42 });
+      await service.evaluate({ audit_key: 'ADM-07', accion: 'DENIED', entidad: 'ventas', resultado: 'ERROR', usuario_id: 42 });
       expect(realtimeService.broadcast).toHaveBeenCalledWith(
         'security.alert',
-        expect.objectContaining({ mitre: 'T1562', nist_csf: 'DE.AE-3', severidad: 'HIGH' }),
+        expect.objectContaining({ audit_key: 'CBS-02', mitre: 'T1562', nist_csf: 'DE.AE-3', severidad: 'HIGH' }),
       );
     });
 
-    it('no evalúa si accion no es DENIED', async () => {
+    it('conserva el evento de negocio que la disparó en origen_audit_key', async () => {
+      const { service, realtimeService } = await buildService({
+        countDeniedByUser: vi.fn().mockResolvedValue(3),
+      });
+      await service.evaluate({ audit_key: 'ADM-08', accion: 'DENIED', entidad: 'ventas', resultado: 'ERROR', usuario_id: 42 });
+      expect(realtimeService.broadcast).toHaveBeenCalledWith(
+        'security.alert',
+        expect.objectContaining({ audit_key: 'CBS-02', origen_audit_key: 'ADM-08' }),
+      );
+    });
+
+    it('no evalúa un error administrativo que no sea un acceso denegado', async () => {
       const { service, mongoAudit } = await buildService();
-      await service.evaluate({ accion: 'READ', entidad: 'ventas', resultado: 'ERROR', usuario_id: 42 });
+      await service.evaluate({ audit_key: 'ADM-06', accion: 'READ', entidad: 'reportes', resultado: 'ERROR', usuario_id: 42 });
       expect(mongoAudit.countDeniedByUser).not.toHaveBeenCalled();
     });
 
     it('no evalúa si no hay usuario_id', async () => {
       const { service, mongoAudit } = await buildService();
-      await service.evaluate({ accion: 'DENIED', entidad: 'ventas', resultado: 'ERROR' });
+      await service.evaluate({ audit_key: 'ADM-07', accion: 'DENIED', entidad: 'ventas', resultado: 'ERROR' });
       expect(mongoAudit.countDeniedByUser).not.toHaveBeenCalled();
     });
   });
@@ -214,7 +231,7 @@ describe('SecurityRulesService — Reglas de detección MITRE ATT&CK / NIST CSF 
       const { service, alertModel, realtimeService } = await buildService({
         countLoginFailures: vi.fn().mockResolvedValue(10),
       });
-      await service.evaluate({ accion: 'LOGIN', entidad: 'auth', resultado: 'ERROR', ip_origen: '9.9.9.9' });
+      await service.evaluate({ audit_key: 'ADM-03', accion: 'CREATE', entidad: 'auth', resultado: 'ERROR', ip_origen: '9.9.9.9' });
       expect(alertModel.create).toHaveBeenCalled();
       expect(realtimeService.broadcast).toHaveBeenCalledWith('security.alert', expect.any(Object));
     });
@@ -225,7 +242,7 @@ describe('SecurityRulesService — Reglas de detección MITRE ATT&CK / NIST CSF 
         { create: vi.fn().mockRejectedValue(new Error('Mongo down')) },
       );
       await expect(
-        service.evaluate({ accion: 'LOGIN', entidad: 'auth', resultado: 'ERROR', ip_origen: '9.9.9.9' }),
+        service.evaluate({ audit_key: 'ADM-03', accion: 'CREATE', entidad: 'auth', resultado: 'ERROR', ip_origen: '9.9.9.9' }),
       ).resolves.not.toThrow();
     });
   });
@@ -236,7 +253,7 @@ describe('SecurityRulesService — Reglas de detección MITRE ATT&CK / NIST CSF 
         countLoginFailures: vi.fn().mockRejectedValue(new Error('Mongo timeout')),
       });
       await expect(
-        service.evaluate({ accion: 'LOGIN', entidad: 'auth', resultado: 'ERROR', ip_origen: '1.1.1.1' }),
+        service.evaluate({ audit_key: 'ADM-03', accion: 'CREATE', entidad: 'auth', resultado: 'ERROR', ip_origen: '1.1.1.1' }),
       ).resolves.not.toThrow();
     });
   });

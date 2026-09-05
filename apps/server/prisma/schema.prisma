@@ -63,6 +63,13 @@ enum estado_sesion_caja {
   forzada
 }
 
+// Tramo comercio → regional: lo que Tesorería asigna a la caja principal de un punto.
+enum tipo_movimiento_tesoreria {
+  apertura
+  ingreso
+  egreso
+}
+
 enum tipo_movimiento_caja {
   apertura
   cierre
@@ -278,12 +285,6 @@ enum estado_lote_masivo {
   anulado
 }
 
-enum operacion_auditoria {
-  INSERT
-  UPDATE
-  DELETE
-}
-
 enum entorno_feature_flag {
   all
   dev
@@ -422,7 +423,6 @@ model Sucursal {
   alertas               Alerta[]
   envios                Envio[]
   enviosMasivos         EnvioMasivo[]
-  eventosAuditoria      EventoAuditoria[]
 
   @@map("sucursales")
 }
@@ -556,7 +556,7 @@ model Usuario {
   diferenciasComoAprobador DiferenciaCaja[]      @relation("DiferenciaAprobador")
   cajasComoFijo            Caja[]                @relation("CajaCajeroFijo")
   puntosSupervisados       CajaPadre[]           @relation("CajaPadreSupervisor")
-  eventosAuditoria         EventoAuditoria[]
+  movimientosTesoreria     MovimientoTesoreria[] @relation("MovimientoTesoreriaUsuario")
   consultasInspektor      ConsultaInspektor[]
   featureFlagsUsuarios    FeatureFlagUsuario[]
 
@@ -854,6 +854,7 @@ model CajaPadre {
   sucursal   Sucursal  @relation(fields: [sucursales_idsucursales], references: [idsucursales])
   supervisor Usuario?  @relation("CajaPadreSupervisor", fields: [usuarios_idusuarios_supervisor], references: [idusuarios])
   cajas      Caja[]
+  movimientosTesoreria MovimientoTesoreria[]
 
   @@map("cajas_padres")
 }
@@ -877,9 +878,24 @@ model Caja {
   cajaPadre      CajaPadre? @relation(fields: [cajas_padres_idcajas_padres], references: [idcajas_padres])
   cajeroFijo     Usuario?   @relation("CajaCajeroFijo", fields: [usuarios_idusuarios_cajero_fijo], references: [idusuarios])
   sesiones       SesionCaja[]
+  serviciosCaja  ServicioCaja[]
 
   @@unique([codigocajas, sucursales_idsucursales])
   @@map("cajas")
+}
+
+/// Operaciones habilitadas por caja (giros, estampillas, apartado…). Sin fila el
+/// servicio se considera activo; solo se persiste lo que el supervisor cambia.
+model ServicioCaja {
+  cajas_idcajas            Int
+  codigoservicios_caja     String   @db.VarChar(50)
+  activoservicios_caja     Boolean  @default(true)
+  updated_atservicios_caja DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  caja Caja @relation(fields: [cajas_idcajas], references: [idcajas], onDelete: Cascade)
+
+  @@id([cajas_idcajas, codigoservicios_caja])
+  @@map("servicios_caja")
 }
 
 model SesionCaja {
@@ -943,6 +959,27 @@ model MovimientoCaja {
 
   @@index([sesiones_caja_idsesiones_caja], map: "idx_mov_caja_sesion")
   @@map("movimientos_caja")
+}
+
+// Historial del dinero que Tesorería mueve del comercio a la caja principal de un
+// punto. Vive fuera de sesiones_caja a propósito: la primera asignación ocurre
+// cuando se crea el supervisor, antes de que exista ninguna sesión.
+model MovimientoTesoreria {
+  idmovimientos_tesoreria                 Int                       @id @default(autoincrement())
+  cajas_padres_idcajas_padres             Int
+  usuarios_idusuarios                     Int
+  tipomovimientos_tesoreria               tipo_movimiento_tesoreria
+  montomovimientos_tesoreria              Decimal                   @db.Decimal(18, 2)
+  codigo_aprobacionmovimientos_tesoreria  String                    @unique @db.VarChar(40)
+  descripcionmovimientos_tesoreria        String
+  saldo_resultantemovimientos_tesoreria   Decimal                   @db.Decimal(18, 2)
+  created_atmovimientos_tesoreria         DateTime                  @default(now()) @db.Timestamptz(6)
+
+  cajaPadre CajaPadre @relation(fields: [cajas_padres_idcajas_padres], references: [idcajas_padres])
+  usuario   Usuario   @relation("MovimientoTesoreriaUsuario", fields: [usuarios_idusuarios], references: [idusuarios])
+
+  @@index([cajas_padres_idcajas_padres, created_atmovimientos_tesoreria], map: "idx_mov_tesoreria_punto")
+  @@map("movimientos_tesoreria")
 }
 
 model Consignacion {
@@ -1548,29 +1585,9 @@ model Anulacion {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 20. AUDITORÍA
+// 20. AUDITORÍA — vive en MongoDB (`audit_events` NIVEL 1 y `db_changes` NIVEL 4).
+// La tabla `eventos_auditoria` se eliminó en 20260904210000_drop_eventos_auditoria.
 // ══════════════════════════════════════════════════════════════════════════════
-
-model EventoAuditoria {
-  ideventos_auditoria            Int                 @id @default(autoincrement())
-  usuarios_idusuarios            Int?
-  sucursales_idsucursales        Int?
-  tablaeventos_auditoria         String              @db.VarChar(100)
-  operacioneventos_auditoria     operacion_auditoria
-  registro_ideventos_auditoria   Int
-  datos_anteseventos_auditoria   Json?               @db.JsonB
-  datos_despueseventos_auditoria Json?               @db.JsonB
-  ip_origeneventos_auditoria     String?             @db.Inet
-  mac_origeneventos_auditoria    String?             @db.VarChar(30)
-  created_ateventos_auditoria    DateTime            @default(now()) @db.Timestamptz(6)
-
-  usuario  Usuario?  @relation(fields: [usuarios_idusuarios], references: [idusuarios])
-  sucursal Sucursal? @relation(fields: [sucursales_idsucursales], references: [idsucursales])
-
-  @@index([tablaeventos_auditoria, created_ateventos_auditoria], map: "idx_auditoria_tabla_fecha")
-  @@index([usuarios_idusuarios, created_ateventos_auditoria], map: "idx_auditoria_usuario")
-  @@map("eventos_auditoria")
-}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 21. FEATURE FLAGS

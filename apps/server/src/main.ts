@@ -60,13 +60,17 @@ async function bootstrap() {
         socket.close(4401, 'Unauthorized');
         return;
       }
+      let rol: string | undefined;
       try {
-        jwtService.verify(token);
+        // El rol viaja en base64 dentro del payload; se decodifica aquí porque
+        // determina qué eventos puede recibir el socket (p. ej. auditoría).
+        const payload = jwtService.verify<{ rol?: string }>(token);
+        rol = payload.rol ? Buffer.from(payload.rol, 'base64').toString('utf8') : undefined;
       } catch {
         socket.close(4401, 'Invalid token');
         return;
       }
-      realtimeService.addClient(socket);
+      realtimeService.addClient(socket, rol);
       socket.send(JSON.stringify({ event: 'connection.ack', data: { ts: Date.now() } }));
 
       socket.on('message', (raw) => {

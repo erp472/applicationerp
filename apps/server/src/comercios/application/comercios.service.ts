@@ -36,6 +36,7 @@ export class ComerciosService {
 
     const { userId, ip } = auditStore.getStore() ?? {};
     void this.audit.log({
+      audit_key:     'ADM-01',
       usuario_id:    userId,
       accion:        'CREATE',
       entidad:       'comercios',
@@ -76,6 +77,7 @@ export class ComerciosService {
 
     const { userId, ip } = auditStore.getStore() ?? {};
     void this.audit.log({
+      audit_key:     'ADM-02',
       usuario_id:    userId,
       accion:        'UPDATE',
       entidad:       'comercios',
@@ -97,6 +99,7 @@ export class ComerciosService {
 
     const { userId, ip } = auditStore.getStore() ?? {};
     void this.audit.log({
+      audit_key:  'ADM-02',
       usuario_id: userId,
       accion:     'DELETE',
       entidad:    'comercios',

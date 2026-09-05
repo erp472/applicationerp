@@ -3,6 +3,29 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AuditEvent, type AuditEventDoc } from './audit-event.schema.js';
 
+export interface AuditFiltro {
+  entidad?:  string;
+  acciones?: readonly string[];
+  usuarioId?: number;
+  desde?:    Date;
+  hasta?:    Date;
+}
+
+export interface AuditQuery extends AuditFiltro {
+  pagina:    number;
+  limite:    number;
+}
+
+export interface AuditEventPlano extends AuditEvent {
+  _id: unknown;
+}
+
+/** El filtro por tabla es una subcadena escrita por el usuario; sin escapar,
+ *  un `(` o un `*` la convierte en una regex arbitraria contra la colección. */
+function escaparRegex(texto: string): string {
+  return texto.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 @Injectable()
 export class MongoAuditService {
   private readonly logger = new Logger(MongoAuditService.name);
@@ -22,6 +45,65 @@ export class MongoAuditService {
         `MongoAuditService.log failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     });
+  }
+
+  private construirFiltro(q: AuditFiltro): Record<string, unknown> {
+    return {
+      ...(q.entidad   && { entidad: { $regex: escaparRegex(q.entidad), $options: 'i' } }),
+      ...(q.acciones  && { accion: { $in: [...q.acciones] } }),
+      ...(q.usuarioId && { usuario_id: q.usuarioId }),
+      ...((q.desde || q.hasta) && {
+        timestamp: {
+          ...(q.desde && { $gte: q.desde }),
+          ...(q.hasta && { $lte: q.hasta }),
+        },
+      }),
+    };
+  }
+
+  /** Página de eventos ordenada del más reciente al más antiguo. */
+  async find(q: AuditQuery): Promise<{ total: number; datos: AuditEventPlano[] }> {
+    const filtro = this.construirFiltro(q);
+
+    const [total, datos] = await Promise.all([
+      this.auditEventModel.countDocuments(filtro),
+      this.auditEventModel
+        .find(filtro)
+        .sort({ timestamp: -1 })
+        .skip((q.pagina - 1) * q.limite)
+        .limit(q.limite)
+        .lean<AuditEventPlano[]>(),
+    ]);
+
+    return { total, datos };
+  }
+
+  /** Recorre todos los eventos que coincidan sin paginar, para exportaciones que
+   *  no caben en memoria. El consumidor debe iterarlo hasta el final o cerrarlo. */
+  cursor(q: AuditFiltro, lote = 1000) {
+    return this.auditEventModel
+      .find(this.construirFiltro(q))
+      .sort({ timestamp: -1 })
+      .batchSize(lote)
+      .lean<AuditEventPlano>()
+      .cursor();
+  }
+
+  /** Conteo por acción y total de errores desde una fecha, en una sola pasada por rama. */
+  async statsDesde(desde: Date): Promise<{ porAccion: Record<string, number>; errores: number }> {
+    const [grupos, errores] = await Promise.all([
+      this.auditEventModel.aggregate<{ _id: string | null; n: number }>([
+        { $match: { timestamp: { $gte: desde } } },
+        { $group: { _id: '$accion', n: { $sum: 1 } } },
+      ]),
+      this.auditEventModel.countDocuments({ timestamp: { $gte: desde }, resultado: 'ERROR' }),
+    ]);
+
+    const porAccion = Object.fromEntries(
+      grupos.map((g) => [g._id ?? 'DESCONOCIDA', g.n]),
+    );
+
+    return { porAccion, errores };
   }
 
   /** Count LOGIN failures from a given IP in the last N minutes (ADM-03 = login endpoint). */

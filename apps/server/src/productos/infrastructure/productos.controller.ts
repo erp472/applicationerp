@@ -20,7 +20,8 @@ import { ProductosPresenter } from './productos.presenter.js';
 import { ProductosDomainFilter } from './productos-domain.filter.js';
 import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 
-const ROLES_WRITE = ['ADMIN_SISTEMA', 'ADMIN_NACIONAL'];
+const ROLES_READ  = ['CAJERO', 'ADMINISTRATIVO', 'TESORERIA', 'INVENTARIOS', 'SUPERVISOR_REGIONAL', 'ADMIN_NACIONAL', 'ADMIN_SISTEMA'];
+const ROLES_WRITE = ['INVENTARIOS', 'ADMIN_NACIONAL', 'ADMIN_SISTEMA'];
 
 @ApiTags('productos')
 @ApiBearerAuth()
@@ -63,7 +64,7 @@ export class ProductosController {
 
   @AuditKey('ADM-04')
   @Get()
-  @Roles(...ROLES_WRITE, 'SUPERVISOR_REGIONAL', 'CAJERO', 'TESORERIA')
+  @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Listar productos del catálogo' })
   @ApiQuery({ name: 'tipo',   required: false, enum: ['estampilla', 'filatelia', 'empaque', 'material_oficina', 'otro'] })
   @ApiQuery({ name: 'activo', required: false, type: Boolean })
@@ -80,7 +81,7 @@ export class ProductosController {
 
   @AuditKey('ADM-04')
   @Get(':id')
-  @Roles(...ROLES_WRITE, 'SUPERVISOR_REGIONAL', 'CAJERO', 'TESORERIA')
+  @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Obtener producto por ID' })
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'Producto encontrado' })
@@ -146,7 +147,7 @@ export class ProductosController {
 
   @AuditKey('ADM-04')
   @Get(':id/sucursales')
-  @Roles(...ROLES_WRITE, 'SUPERVISOR_REGIONAL')
+  @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Listar sucursales activas de un producto' })
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'Lista de sucursales' })

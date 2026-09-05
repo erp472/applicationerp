@@ -23,6 +23,7 @@ import { CambioCustodiaSchema } from '../dto/cambio-custodia.dto.js';
 import { PagoAdministrativoSchema } from '../dto/pago-administrativo.dto.js';
 import { ConfirmarCustodiaSchema } from '../dto/confirmar-custodia.dto.js';
 import { ResolverDiferenciaSchema } from '../dto/resolver-diferencia.dto.js';
+import { HistoricoQuerySchema } from '../dto/query-caja.dto.js';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
 import { FeatureFlagGuard } from '../../common/guards/feature-flag.guard.js';
 import { RolesGuard } from '../../common/guards/roles.guard.js';
@@ -137,11 +138,27 @@ export class CajasController {
   @AuditKey('ADM-06')
   @Get('consolidado-comercio')
   @Feature('modulo:tesoreria')
-  @Roles(...ROLES_TESORERIA)
+  @Roles(...ROLES_TESORERIA, 'ADMIN_NACIONAL')
   @ApiOperation({ summary: 'Consolidado financiero nacional por medio de pago agrupado por regional' })
   @ApiQuery({ name: 'comercioId', type: Number, required: false, description: 'ID del comercio (default: 1)' })
-  async getConsolidadoComercio(@Query('comercioId') comercioId?: string) {
-    return this.service.getConsolidadoComercio(Number(comercioId ?? 1));
+  async getConsolidadoComercio(@CurrentUser() user: AuthUser, @Query('comercioId') comercioId?: string) {
+    const regionalId = user.rol === 'SUPERVISOR_REGIONAL' ? (user.regional_id ?? undefined) : undefined;
+    return this.service.getConsolidadoComercio(Number(comercioId ?? 1), regionalId);
+  }
+
+  @AuditKey('ADM-06')
+  @Get('historico-movimientos')
+  @Roles(...ROLES_GESTOR, 'TESORERIA')
+  @ApiOperation({ summary: 'Histórico de movimientos de todas las cajas (recaudos, facturación, anulaciones, ajustes)' })
+  async getHistoricoMovimientos(@CurrentUser() user: AuthUser, @Query() query: unknown) {
+    const parsed = HistoricoQuerySchema.safeParse(query);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+
+    return this.service.getHistoricoMovimientos({
+      ...parsed.data,
+      // El supervisor solo audita su regional; el resto de roles ve el comercio completo.
+      regionalId: user.rol === 'SUPERVISOR_REGIONAL' ? (user.regional_id ?? undefined) : parsed.data.regionalId,
+    });
   }
 
   @AuditKey('OPE-04')
@@ -158,6 +175,32 @@ export class CajasController {
     const parsed = z.object({ activo: z.boolean() }).safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
     return this.service.toggleServicioSucursal(sucursalId, servicioId, parsed.data.activo);
+  }
+
+  // ── Servicios habilitados por caja ────────────────────────────────────────
+
+  @Get(':cajaId/servicios')
+  @Roles(...ROLES_CAJERO, 'ADMIN_NACIONAL', 'TESORERIA')
+  @ApiOperation({ summary: 'Operaciones habilitadas en una caja (giros, estampillas, apartado…)' })
+  @ApiParam({ name: 'cajaId', type: Number })
+  async getServiciosCaja(@Param('cajaId', ParseIntPipe) cajaId: number) {
+    return this.service.getServiciosCaja(cajaId);
+  }
+
+  @AuditKey('OPE-04')
+  @Patch(':cajaId/servicios/:codigo')
+  @Roles(...ROLES_GESTOR)
+  @ApiOperation({ summary: 'Habilitar o inhabilitar una operación en una caja' })
+  @ApiParam({ name: 'cajaId', type: Number })
+  @ApiParam({ name: 'codigo', type: String })
+  async toggleServicioCaja(
+    @Param('cajaId', ParseIntPipe) cajaId: number,
+    @Param('codigo') codigo: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = z.object({ activo: z.boolean() }).safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    return this.service.toggleServicioCaja(cajaId, codigo, parsed.data.activo);
   }
 
   // ── Asignación de cajeros (ADMIN_SISTEMA only) ────────────────────────────

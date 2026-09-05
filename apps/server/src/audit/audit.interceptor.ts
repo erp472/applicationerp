@@ -41,7 +41,6 @@ export class AuditInterceptor implements NestInterceptor, OnModuleInit {
 
     if (SKIP_PATHS.has(path)) return next.handle();
 
-    const accion     = METHOD_TO_ACTION[req.method as string] ?? 'READ';
     const entidad    = path.split('/').filter(Boolean)[0] ?? 'unknown';
     const ip_origen: string = req.ip ?? req.headers?.['x-forwarded-for'] ?? '';
     const usuario_id: number | undefined = (req.user as { id?: number } | undefined)?.id;
@@ -50,6 +49,8 @@ export class AuditInterceptor implements NestInterceptor, OnModuleInit {
       AUDIT_KEY_METADATA,
       [ctx.getHandler(), ctx.getClass()],
     );
+
+    const accion = auditKeyMeta?.accion ?? METHOD_TO_ACTION[req.method as string] ?? 'READ';
 
     const buildDto = (resultado: 'OK' | 'ERROR', error_msg?: string) => ({
       accion,

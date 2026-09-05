@@ -19,7 +19,8 @@ import { ProductosPresenter } from './productos.presenter.js';
 import { ProductosDomainFilter } from './productos-domain.filter.js';
 import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 
-const ROLES_ADMIN = ['ADMIN_SISTEMA', 'ADMIN_NACIONAL'] as const;
+const ROLES_ADMIN = ['INVENTARIOS', 'ADMIN_NACIONAL', 'ADMIN_SISTEMA'] as const;
+const ROLES_READ  = ['CAJERO', 'ADMINISTRATIVO', 'TESORERIA', 'INVENTARIOS', 'SUPERVISOR_REGIONAL', 'ADMIN_NACIONAL', 'ADMIN_SISTEMA'] as const;
 
 const CreateFilateliaSchema = z.object({
   codigo:      z.string().min(1).max(50),
@@ -50,6 +51,7 @@ export class FilateliaAdminController {
 
   @AuditKey('ADM-04')
   @Get()
+  @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Listar ítems de filatelia (admin)' })
   @ApiQuery({ name: 'activo', required: false, type: Boolean })
   @ApiQuery({ name: 'buscar', required: false, type: String })
@@ -66,6 +68,7 @@ export class FilateliaAdminController {
 
   @AuditKey('ADM-04')
   @Get(':id')
+  @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Obtener ítem de filatelia por ID (admin)' })
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'Ítem de filatelia encontrado' })

@@ -27,6 +27,7 @@ export class GirosService {
   ) {}
 
   async emitirGiroNacional(cajaId: number, usuarioId: number, dto: EmitirGiroNacionalDto) {
+    await this.cajasService.assertServicioActivoEnCaja(cajaId, 'giro_nacional_emision');
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
     if (!sesion) throw new BadRequestException(`No hay sesión activa en la caja ${cajaId}`);
 
@@ -85,6 +86,7 @@ export class GirosService {
   }
 
   async pagarGiroNacional(cajaId: number, usuarioId: number, dto: PagarGiroNacionalDto) {
+    await this.cajasService.assertServicioActivoEnCaja(cajaId, 'giro_nacional_pago');
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
     if (!sesion) throw new BadRequestException(`No hay sesión activa en la caja ${cajaId}`);
 
@@ -107,6 +109,7 @@ export class GirosService {
   }
 
   async emitirGiroInternacional(cajaId: number, usuarioId: number, dto: EmitirGiroInternacionalDto) {
+    await this.cajasService.assertServicioActivoEnCaja(cajaId, 'giro_internacional_emision');
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
     if (!sesion) throw new BadRequestException(`No hay sesión activa en la caja ${cajaId}`);
 
@@ -167,6 +170,7 @@ export class GirosService {
   }
 
   async pagarGiroInternacional(cajaId: number, usuarioId: number, dto: PagarGiroInternacionalDto) {
+    await this.cajasService.assertServicioActivoEnCaja(cajaId, 'giro_internacional_pago');
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
     if (!sesion) throw new BadRequestException(`No hay sesión activa en la caja ${cajaId}`);
 
@@ -205,6 +209,9 @@ export class GirosService {
   async anularGiro(giroId: number) {
     const giro = await this.repo.findGiroById(giroId);
     if (!giro) throw new NotFoundException(`Giro ${giroId} no encontrado`);
+    if (giro.sesionCajaId) {
+      await this.cajasService.assertServicioActivoEnSesion(giro.sesionCajaId, 'giro_nacional_anulacion');
+    }
     return this.repo.anularGiro(giroId);
   }
 

@@ -26,6 +26,7 @@ export class RolesGuard implements CanActivate {
       const entidad = path.split('/').filter(Boolean)[0] ?? 'unknown';
 
       void this.audit.log({
+        audit_key:  'ADM-08',
         usuario_id: user?.id,
         accion:     'DENIED',
         entidad,

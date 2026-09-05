@@ -20,7 +20,7 @@ import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @AuditKey('ADM-03')
+  @AuditKey('ADM-03', 'LOGIN')
   @Post('login')
   @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @ApiOperation({ summary: 'Iniciar sesión', description: 'Devuelve un JWT Bearer token' })

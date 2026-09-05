@@ -11,6 +11,7 @@ import type { TipoProducto, EnvioEntity } from '../domain/venta.entity.js';
 import type { GuiaContexto } from '../infrastructure/ventas.presenter.js';
 import {
   VentaNoEncontradaError,
+  VentaYaAnuladaError,
   ClienteNoEncontradoError,
   ProductoNoEncontradoError,
   DetalleNoEncontradoError,
@@ -33,6 +34,8 @@ import {
   validarEfectivoSuficiente,
 } from '../domain/business-rules.js';
 import type { MedioPago } from '../../cajas/domain/caja.entity.js';
+import { TIPOS_RECAUDO } from '../../cajas/domain/business-rules.js';
+import type { ServicioCajaCodigo } from '../../cajas/domain/servicios-caja.js';
 import { puedeOperarSesion } from '../../cajas/domain/calculos/asignacion-caja.js';
 import type { DuenoSesion } from '../../cajas/domain/calculos/asignacion-caja.js';
 import { calcularPesoVolumetrico } from '../domain/calculos/peso-volumetrico.js';
@@ -54,7 +57,6 @@ import { calcularTotalEnvioInternacional } from '../domain/calculos/total-envio-
 import { calcularCertificacionCorreo } from '../domain/calculos/calcular-certificacion-correo.js';
 import { calcularDiasParaVencer } from '../domain/calculos/dias-para-vencer.js';
 import { evaluarAlertaVencimientoApartado } from '../domain/calculos/alerta-vencimiento.js';
-import { buildAnulacionVenta } from '../domain/calculos/anulacion-venta.js';
 import { calcularRenovacionApartado } from '../domain/calculos/renovacion-apartado.js';
 import { calcularTarifaInternacionalMs } from '../domain/calculos/tarifa-internacional-ms.js';
 import { verificarStockDisponible } from '../../inventario/domain/calculos/stock-disponible.js';
@@ -84,6 +86,15 @@ import { generarReciboPdf }   from '../domain/recibo-pdf.generator.js';
 import { svgToPdf }            from '../../common/svg-to-pdf.js';
 import { StorageService }       from '../../storage/storage.service.js';
 import * as fs from 'node:fs';
+
+/** Quién pide la anulación: hace falta el rol y la regional, no solo el id. */
+export interface AnuladorContext {
+  id:          number;
+  rol:         string;
+  regional_id: number | null;
+}
+
+const ROLES_ANULACION_AJENA = new Set(['SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA']);
 
 @Injectable()
 export class VentasService {
@@ -136,6 +147,31 @@ export class VentasService {
     }
   }
 
+  // Anular es lo único que supervisión hace sobre la caja de otro: corrige el error de un
+  // cajero que ya cerró la venta. La regla de propiedad solo debe frenar a un cajero
+  // metiéndose en el cajón ajeno, no al supervisor que el @Roles del endpoint ya autoriza.
+  private async assertPuedeAnular(
+    sesion:  DuenoSesion & { sucursalId: number },
+    usuario: AnuladorContext,
+  ): Promise<void> {
+    if (puedeOperarSesion(sesion, usuario.id)) return;
+
+    if (!ROLES_ANULACION_AJENA.has(usuario.rol)) {
+      throw new ForbiddenException('Esta caja está asignada a otro cajero');
+    }
+
+    // Un supervisor solo corrige lo suyo: sin esto anularía ventas de cualquier regional.
+    if (usuario.rol === 'SUPERVISOR_REGIONAL') {
+      const sucursal = await this.prisma.sucursal.findUnique({
+        where:  { idsucursales: sesion.sucursalId },
+        select: { regionales_idregionales: true },
+      });
+      if (!sucursal || sucursal.regionales_idregionales !== usuario.regional_id) {
+        throw new ForbiddenException('Esta caja no pertenece a tu regional');
+      }
+    }
+  }
+
   // ── Iniciar venta ─────────────────────────────────────────────────────────────
 
   async iniciarVenta(cajaId: number, dto: IniciarVentaDto, usuarioId: number) {
@@ -154,6 +190,7 @@ export class VentasService {
 
     const { userId, ip } = auditStore.getStore() ?? {};
     void this.audit.log({
+      audit_key: 'OPE-01',
       accion: 'CREATE', entidad: 'venta', entidad_id: venta.id, usuario_id: userId, ip_origen: ip,
       datos_despues: { clienteId: cliente.id, sesionCajaId: sesion!.id, cajaId },
     });
@@ -284,6 +321,9 @@ export class VentasService {
     }
 
     const valorCertificacion = esInternacional ? 0 : cotizacion.valorCertificacion;
+    if (Number(valorCertificacion) > 0) {
+      await this.cajasService.assertServicioActivoEnCaja(cajaId, 'certificaciones');
+    }
 
     const valorTotal = esInternacional
       ? Number(calcularTotalEnvioInternacional(
@@ -402,6 +442,10 @@ export class VentasService {
     if (!sesion) throw new SesionCajaInactivaError(cajaId);
     validarVentaEnSesion(ventaId, venta.sesionCajaId, sesion.id);
     this.assertOperaLaSesion(sesion, usuarioId);
+
+    for (const servicio of this._serviciosDeLaVenta(venta)) {
+      await this.cajasService.assertServicioActivoEnCaja(cajaId, servicio);
+    }
 
     // Validar stock para todos los productos que tienen inventario registrado
     const todosItems = venta.detalle ?? [];
@@ -552,6 +596,7 @@ export class VentasService {
 
     const { userId, ip } = auditStore.getStore() ?? {};
     void this.audit.log({
+      audit_key: 'FIN-01',
       accion: 'UPDATE', entidad: 'venta', entidad_id: ventaId, usuario_id: userId, ip_origen: ip,
       datos_despues: {
         evento:          'confirmar_pago',
@@ -635,15 +680,21 @@ export class VentasService {
 
   // ── Anular venta ──────────────────────────────────────────────────────────────
 
-  async anularVenta(ventaId: number, dto: AnularVentaDto, cajaId: number, usuarioId: number) {
+  async anularVenta(ventaId: number, dto: AnularVentaDto, cajaId: number, usuario: AnuladorContext) {
+    const usuarioId = usuario.id;
     const venta = await this.repo.findVentaConDetalle(ventaId);
     if (!venta) throw new VentaNoEncontradaError(ventaId);
-    validarVentaActiva(ventaId, venta.estado);
+    if (venta.estado === 'anulada') throw new VentaYaAnuladaError(ventaId);
 
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
     if (!sesion) throw new SesionCajaInactivaError(cajaId);
     validarVentaEnSesion(ventaId, venta.sesionCajaId, sesion.id);
-    this.assertOperaLaSesion(sesion, usuarioId);
+    await this.assertPuedeAnular(sesion, usuario);
+
+    // Un carrito en 'activa' nunca cobró ni descontó stock: eso pasa al confirmar. Solo
+    // una venta confirmada tiene algo que revertir; tratarlas igual sacaba del cajón plata
+    // que jamás entró y devolvía al inventario unidades que jamás salieron.
+    const fueCobrada = venta.estado === 'confirmada';
 
     // Anular envíos pendientes vinculados (no generaron guías aún)
     const enviosPendientes = await this.repo.findEnviosPendientesByVenta(ventaId);
@@ -665,30 +716,25 @@ export class VentasService {
 
     const ventaAnulada = await this.repo.anularVenta(ventaId);
 
-    // Restaurar inventario para todos los productos con stock registrado
-    for (const item of venta.detalle ?? []) {
-      const stock = await this.inventarioService.getStock(sesion.sucursalId, item.productoId);
-      if (stock === null) continue;
-      await this.inventarioService.restaurarInventario({
-        productoId:     item.productoId,
-        sucursalId:     sesion.sucursalId,
-        cantidad:       item.cantidad,
-        referenciaId:   ventaId,
-        referenciaTipo: 'VentaAnulada',
-        usuarioId,
-      });
+    if (fueCobrada) {
+      for (const item of venta.detalle ?? []) {
+        const stock = await this.inventarioService.getStock(sesion.sucursalId, item.productoId);
+        if (stock === null) continue;
+        await this.inventarioService.restaurarInventario({
+          productoId:     item.productoId,
+          sucursalId:     sesion.sucursalId,
+          cantidad:       item.cantidad,
+          referenciaId:   ventaId,
+          referenciaTipo: 'VentaAnulada',
+          usuarioId,
+        });
+      }
     }
 
     const tipoOriginal = this._resolverTipoMovimiento(venta.detalle ?? []);
-    const anulacion = buildAnulacionVenta(String(venta.total), tipoOriginal);
-
-    const { movimiento, saldoActual, alertas } = await this.cajasService.registrarMovimientoVenta({
-      sesionCajaId:   sesion.id,
-      tipo:           anulacion.movimientoCaja.tipoMovimiento as any,
-      monto:          anulacion.movimientoCaja.monto,
-      referenciaId:   ventaId,
-      referenciaTipo: 'Venta',
-    });
+    const { movimiento, saldoActual, alertas } = fueCobrada
+      ? await this.revertirMovimientosDeVenta(ventaId, sesion.id)
+      : { ...(await this.cajasService.getSaldoSesion(sesion.id)), movimiento: null };
 
     await this.prisma.anulacion.create({
       data: {
@@ -702,19 +748,70 @@ export class VentasService {
 
     const { userId, ip } = auditStore.getStore() ?? {};
     void this.audit.log({
+      // Anular una venta ya cobrada mueve dinero (reverso); cancelar un carrito sin cobrar no.
+      audit_key: fueCobrada ? 'FIN-03' : 'OPE-04',
       accion: 'UPDATE', entidad: 'venta', entidad_id: ventaId, usuario_id: userId, ip_origen: ip,
       datos_despues: {
-        evento:         'anular_venta',
+        evento:         fueCobrada ? 'anular_venta' : 'cancelar_carrito',
         motivo:         dto.motivo,
         total:          venta.total,
         tipoOriginal,
-        revertirStock:  anulacion.revertirStock,
+        revertirStock:  fueCobrada,
         sesionCajaId:   sesion!.id,
         cajaId,
       },
     });
 
+    if (fueCobrada) {
+      this.realtime?.broadcast('cajas.movimiento', {
+        sesionId: sesion.id,
+        cajaId,
+        tipo:     'anulacion',
+        ventaId,
+        saldoActual,
+      });
+    }
+
     return { venta: ventaAnulada, movimiento, saldoActual, alertas, motivo: dto.motivo };
+  }
+
+  /** Espeja los movimientos que la venta dejó en el cajón, uno por uno y con su medio de
+   *  pago original. Recalcular el total daría un número distinto: un pago mixto se guardó
+   *  partido en varias filas, y lo cobrado con tarjeta nunca entró al efectivo, así que
+   *  descontarlo como efectivo dejaría la sesión en faltante permanente. */
+  private async revertirMovimientosDeVenta(ventaId: number, sesionId: number) {
+    const originales = await this.prisma.movimientoCaja.findMany({
+      where: {
+        sesiones_caja_idsesiones_caja:   sesionId,
+        referencia_idmovimientos_caja:   ventaId,
+        referencia_tipomovimientos_caja: 'Venta',
+        tipomovimientos_caja:            { in: [...TIPOS_RECAUDO] as any[] },
+      },
+      select: {
+        montomovimientos_caja:      true,
+        medio_pagomovimientos_caja: true,
+      },
+    });
+
+    let ultimo: Awaited<ReturnType<typeof this.cajasService.registrarMovimientoVenta>> | null = null;
+    for (const original of originales) {
+      ultimo = await this.cajasService.registrarMovimientoVenta({
+        sesionCajaId:   sesionId,
+        tipo:           'anulacion' as any,
+        monto:          String(original.montomovimientos_caja),
+        medioPago:      (original.medio_pagomovimientos_caja ?? undefined) as any,
+        referenciaId:   ventaId,
+        referenciaTipo: 'Venta',
+        descripcion:    `Anulación de venta ${ventaId}`,
+      });
+    }
+
+    if (ultimo) return ultimo;
+
+    // Venta confirmada sin movimientos propios: todo su valor iba en apartados, que se
+    // registran contra su propia referencia y se liberan por separado.
+    const sesion = await this.cajasService.getSaldoSesion(sesionId);
+    return { movimiento: null, saldoActual: sesion.saldoActual, alertas: sesion.alertas };
   }
 
   // ── Listado de ventas del turno ───────────────────────────────────────────────
@@ -802,6 +899,7 @@ export class VentasService {
   // ── Contratación directa de apartado postal (flujo legacy — sin carrito) ────
 
   async contratarApartado(cajaId: number, clienteId: number, dto: ContratarApartadoDto) {
+    await this.cajasService.assertServicioActivoEnCaja(cajaId, 'apartado_postal');
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
     if (!sesion) throw new SesionCajaInactivaError(cajaId);
 
@@ -845,6 +943,7 @@ export class VentasService {
   // ── Renovación de apartado postal ────────────────────────────────────────────
 
   async renovarApartado(cajaId: number, apartadoId: number, dto: RenovarApartadoDto) {
+    await this.cajasService.assertServicioActivoEnCaja(cajaId, 'apartado_postal');
     const sesion = await this.cajasService.getSesionActivaByCaja(cajaId);
     if (!sesion) throw new SesionCajaInactivaError(cajaId);
 
@@ -1050,6 +1149,9 @@ export class VentasService {
     }
 
     const valorCertificacion = esInternacional ? 0 : cotizacion.valorCertificacion;
+    if (Number(valorCertificacion) > 0) {
+      await this.cajasService.assertServicioActivoEnCaja(cajaId, 'certificaciones');
+    }
 
     const valorTotal = esInternacional
       ? Number(calcularTotalEnvioInternacional(
@@ -1339,6 +1441,20 @@ export class VentasService {
     };
   }
 
+  private _serviciosDeLaVenta(venta: {
+    detalle?:             Array<{ tipoProducto?: string | null }> | null;
+    apartadosPendientes?: Array<unknown> | null;
+  }): ServicioCajaCodigo[] {
+    const tipos = new Set((venta.detalle ?? []).map(d => d.tipoProducto));
+    const servicios: ServicioCajaCodigo[] = [];
+
+    if (tipos.has('estampilla') || tipos.has('filatelia')) servicios.push('estampillas');
+    if (tipos.has('empaque'))                             servicios.push('empaques');
+    if ((venta.apartadosPendientes?.length ?? 0) > 0)     servicios.push('apartado_postal');
+
+    return servicios;
+  }
+
   private _resolverTipoMovimiento(detalle: Array<{ tipoProducto?: string | null }>) {
     const tipos = detalle.map(d => d.tipoProducto);
     if (tipos.some(t => t === 'otro'))                                    return 'venta_servicio'  as const;
@@ -1459,7 +1575,9 @@ export class VentasService {
         empresa:     dto.remitente.empresa,
         telefono:    dto.remitente.telefono,
         email:       dto.remitente.email,
+        direccion:   dto.remitente.direccion,
         ciudad:      dto.remitente.ciudad,
+        departamento: dto.remitente.departamento,
         pais:        dto.remitente.pais ?? 'CO',
         codigoPostal: dto.remitente.codigoPostal,
         documento:   dto.remitente.documento,
@@ -1473,6 +1591,7 @@ export class VentasService {
         email:       dto.destinatario.email,
         direccion:   dto.destinatario.direccion,
         ciudad:      dto.destinatario.ciudad,
+        departamento: dto.destinatario.departamento,
         pais:        dto.destinatario.pais ?? 'CO',
         codigoPostal: dto.destinatario.codigoPostal,
         documento:   dto.destinatario.documento,

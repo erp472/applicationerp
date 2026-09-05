@@ -1,9 +1,9 @@
-import { Injectable, Inject, BadRequestException, Optional } from '@nestjs/common';
+import { Injectable, Inject, BadRequestException, ForbiddenException, Optional } from '@nestjs/common';
 import crypto from 'crypto';
 import { CAJAS_REPOSITORY } from '../domain/caja.repository.js';
 import type { ICajasRepository } from '../domain/caja.repository.js';
 import { SESIONES_CAJA_REPOSITORY } from '../domain/sesion-caja.repository.js';
-import type { ISesionesCajaRepository } from '../domain/sesion-caja.repository.js';
+import type { ISesionesCajaRepository, HistoricoFiltros } from '../domain/sesion-caja.repository.js';
 import {
   CajaNoEncontradaError,
   CajaPadreNoEncontradaError,
@@ -39,6 +39,13 @@ import {
   TIPOS_MOVIMIENTO_SALIDA,
   esTarjeta,
 } from '../domain/business-rules.js';
+import type { CategoriaHistorico } from '../domain/business-rules.js';
+import {
+  SERVICIOS_CAJA,
+  esServicioCajaValido,
+  construirServiciosCaja,
+} from '../domain/servicios-caja.js';
+import type { ServicioCajaCodigo, ServicioCajaItem } from '../domain/servicios-caja.js';
 import { calcularCierreSesion } from '../domain/calculos/cierre-sesion.js';
 import { compararArqueoConSaldo } from '../domain/calculos/arqueo-denominaciones.js';
 import { calcularMonedaCirculante } from '../domain/calculos/moneda-circulante.js';
@@ -1003,11 +1010,16 @@ export class CajasService {
     franquiciaId?:   number;
     /** Baucher del datáfono — obligatorio para débito y crédito */
     codigoVoucher?:  string;
+    /** Operaciones que consume el movimiento; se rechaza si el supervisor inhabilitó alguna */
+    servicios?:      ServicioCajaCodigo[];
   }) {
     const sesion = await this.sesionesRepo.findById(params.sesionCajaId);
     if (!sesion) throw new SesionNoEncontradaError(params.sesionCajaId);
     validarSesionAbierta(params.sesionCajaId, sesion.estado);
     if (params.franquiciaId) await this.validarFranquiciaHabilitada(sesion.cajaId, params.franquiciaId);
+    for (const servicio of params.servicios ?? []) {
+      await this.assertServicioActivo(sesion.cajaId, servicio);
+    }
 
     const partes = repartirPagoPorMedio(params.monto, params.medioPago, params.montoEfectivo);
     const [movimiento] = await this.sesionesRepo.registrarMovimientosAtomicos(
@@ -1100,10 +1112,10 @@ export class CajasService {
 
   // ── Consolidado comercio (todas las regionales) ──────────────────────────────
 
-  async getConsolidadoComercio(comercioId: number) {
+  async getConsolidadoComercio(comercioId: number, regionalId?: number) {
     const [porRegional, porSesion] = await Promise.all([
-      this.sesionesRepo.getConsolidadoPorRegional(),
-      this.sesionesRepo.getConsolidadoPorSesion(),
+      this.sesionesRepo.getConsolidadoPorRegional(regionalId),
+      this.sesionesRepo.getConsolidadoPorSesion(regionalId),
     ]);
 
     const regionales = porRegional.map(r => ({
@@ -1136,12 +1148,57 @@ export class CajasService {
         cajaNombre:     s.cajaNombre,
         sucursalNombre: s.sucursalNombre,
         cajeroNombre:   s.cajeroNombre,
+        cajeroEmail:    s.cajeroEmail,
         total:          String(total),
         porMedio:       pm,
       };
     });
 
     return { ...consolidarComercio(comercioId, regionales), sesiones };
+  }
+
+  // ── Histórico de movimientos (supervisión) ───────────────────────────────────
+
+  async getHistoricoMovimientos(filtros: {
+    regionalId?: number;
+    sucursalId?: number;
+    cajaId?:     number;
+    categoria?:  CategoriaHistorico;
+    desde?:      string;
+    hasta?:      string;
+    limite?:     number;
+    pagina?:     number;
+  }) {
+    const limite = Math.min(filtros.limite ?? 50, 200);
+    const pagina = filtros.pagina ?? 1;
+
+    const query: HistoricoFiltros = {
+      regionalId: filtros.regionalId,
+      sucursalId: filtros.sucursalId,
+      cajaId:     filtros.cajaId,
+      categoria:  filtros.categoria,
+      desde:      filtros.desde ? new Date(`${filtros.desde}T00:00:00Z`) : undefined,
+      hasta:      filtros.hasta ? new Date(`${filtros.hasta}T23:59:59Z`) : undefined,
+      limite,
+      pagina,
+    };
+
+    const { items, total } = await this.sesionesRepo.getHistoricoMovimientos(query);
+
+    return {
+      items: items.map(m => ({
+        ...m,
+        // anularVenta exige sesión abierta y que la venta siga viva en ella, así que
+        // decidirlo aquí evita ofrecer un botón que el backend rechazaría al hacer clic.
+        puedeAnular: m.categoria === 'facturacion'
+          && m.ventaEstado === 'confirmada'
+          && m.sesionAbierta,
+      })),
+      total,
+      pagina,
+      limite,
+      totalPaginas: Math.max(1, Math.ceil(total / limite)),
+    };
   }
 
   // ── Panel admin ──────────────────────────────────────────────────────────────
@@ -1153,6 +1210,49 @@ export class CajasService {
   async toggleServicioSucursal(sucursalId: number, servicioId: number, activo: boolean) {
     await this.cajasRepo.toggleServicioSucursal(sucursalId, servicioId, activo);
     return { sucursalId, servicioId, activo };
+  }
+
+  // ── Servicios habilitados por caja ──────────────────────────────────────────
+
+  async getServiciosCaja(cajaId: number): Promise<ServicioCajaItem[]> {
+    const caja = await this.cajasRepo.findById(cajaId);
+    if (!caja) throw new CajaNoEncontradaError(cajaId);
+
+    const porCaja = await this.cajasRepo.getServiciosCaja([cajaId]);
+    return construirServiciosCaja(porCaja.get(cajaId) ?? new Map());
+  }
+
+  async toggleServicioCaja(cajaId: number, codigo: string, activo: boolean) {
+    if (!esServicioCajaValido(codigo)) {
+      throw new BadRequestException(`Servicio desconocido: ${codigo}`);
+    }
+    const caja = await this.cajasRepo.findById(cajaId);
+    if (!caja) throw new CajaNoEncontradaError(cajaId);
+
+    await this.cajasRepo.setServicioCaja(cajaId, codigo, activo);
+    this.realtime?.broadcast('cajas.servicios', { cajaId, codigo, activo });
+
+    return { cajaId, codigo, nombre: SERVICIOS_CAJA[codigo], activo };
+  }
+
+  /** Se llama antes de escribir nada, para no dejar el giro/venta creado y luego rechazar la plata. */
+  async assertServicioActivoEnCaja(cajaId: number, codigo: ServicioCajaCodigo): Promise<void> {
+    await this.assertServicioActivo(cajaId, codigo);
+  }
+
+  async assertServicioActivoEnSesion(sesionId: number, codigo: ServicioCajaCodigo): Promise<void> {
+    const sesion = await this.sesionesRepo.findById(sesionId);
+    if (!sesion) throw new SesionNoEncontradaError(sesionId);
+    await this.assertServicioActivo(sesion.cajaId, codigo);
+  }
+
+  private async assertServicioActivo(cajaId: number, codigo: ServicioCajaCodigo): Promise<void> {
+    const porCaja = await this.cajasRepo.getServiciosCaja([cajaId]);
+    if (porCaja.get(cajaId)?.get(codigo) === false) {
+      throw new ForbiddenException(
+        `El servicio "${SERVICIOS_CAJA[codigo]}" está inhabilitado en esta caja por el supervisor`,
+      );
+    }
   }
 
   // ── Scope helpers (usado por el controller para CAJERO / SUPERVISOR_REGIONAL) ─

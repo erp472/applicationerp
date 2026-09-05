@@ -15,8 +15,10 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
 import { InventarioDomainFilter } from './inventario-domain.filter.js';
 import { InventarioPresenter } from './inventario.presenter.js';
 
-const ROLES_READ  = ['CAJERO', 'USUARIO_POST', 'INVENTARIOS', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL'] as const;
-const ROLES_WRITE = ['INVENTARIOS', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL'] as const;
+const ROLES_READ  = ['CAJERO', 'ADMINISTRATIVO', 'TESORERIA', 'USUARIO_POST', 'INVENTARIOS', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL'] as const;
+const ROLES_WRITE = ['INVENTARIOS', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL'] as const;
+
+type AuthUser = { id: number; rol: string; sucursal_id: number | null; regional_id: number | null };
 
 const EntradaSchema = z.object({
   productoId:  z.number().int().positive(),
@@ -35,17 +37,17 @@ export class InventarioController {
   @AuditKey('ADM-04')
   @Get('sucursales')
   @Roles(...ROLES_READ)
-  @ApiOperation({ summary: 'Lista de sucursales con alertas de stock' })
-  listSucursales(@CurrentUser() user: { id: number; rol: string; sucursal_id: number | null }) {
-    return this.service.getSucursales(user.rol, user.sucursal_id);
+  @ApiOperation({ summary: 'Lista de sucursales con alertas de stock (filtrada por rol)' })
+  listSucursales(@CurrentUser() user: AuthUser) {
+    return this.service.getSucursales(user.rol, user.sucursal_id, user.regional_id);
   }
 
   @AuditKey('ADM-04')
   @Get('alertas')
   @Roles(...ROLES_READ)
-  @ApiOperation({ summary: 'Resumen de alertas de stock por sucursal' })
-  getAlertas(@CurrentUser() user: { id: number; rol: string; sucursal_id: number | null }) {
-    return this.service.getAlertasResumen(user.rol, user.sucursal_id);
+  @ApiOperation({ summary: 'Resumen de alertas de stock por sucursal (filtrada por rol)' })
+  getAlertas(@CurrentUser() user: AuthUser) {
+    return this.service.getAlertasResumen(user.rol, user.sucursal_id, user.regional_id);
   }
 
   @AuditKey('ADM-04')
@@ -55,10 +57,10 @@ export class InventarioController {
   async listStock(
     @Param('sucursalId', ParseIntPipe) sucursalId: number,
     @Query() rawQuery: unknown,
-    @CurrentUser() user: { id: number; rol: string; sucursal_id: number | null },
+    @CurrentUser() user: AuthUser,
   ) {
     const query = QueryInventarioSchema.parse(rawQuery);
-    const { datos, total } = await this.service.listStock(sucursalId, query, user.rol, user.sucursal_id);
+    const { datos, total } = await this.service.listStock(sucursalId, query, user.rol, user.sucursal_id, user.regional_id);
     return { datos: InventarioPresenter.toStockList(datos), total };
   }
 
@@ -70,10 +72,10 @@ export class InventarioController {
   async ajustar(
     @Param('sucursalId', ParseIntPipe) sucursalId: number,
     @Body() rawBody: unknown,
-    @CurrentUser() user: { id: number; rol: string; sucursal_id: number | null },
+    @CurrentUser() user: AuthUser,
   ) {
     const body = AjusteInventarioSchema.parse(rawBody);
-    const item = await this.service.ajustar(sucursalId, body.productoId, body.cantidad_nueva, body.observacion, user.id, user.rol, user.sucursal_id);
+    const item = await this.service.ajustar(sucursalId, body.productoId, body.cantidad_nueva, body.observacion, user.id, user.rol, user.sucursal_id, user.regional_id);
     return InventarioPresenter.toStock(item);
   }
 
@@ -85,10 +87,10 @@ export class InventarioController {
   async entrada(
     @Param('sucursalId', ParseIntPipe) sucursalId: number,
     @Body() rawBody: unknown,
-    @CurrentUser() user: { id: number; rol: string; sucursal_id: number | null },
+    @CurrentUser() user: AuthUser,
   ) {
     const body = EntradaSchema.parse(rawBody);
-    const item = await this.service.registrarEntrada(sucursalId, body.productoId, body.cantidad, body.observacion, user.id, user.rol, user.sucursal_id);
+    const item = await this.service.registrarEntrada(sucursalId, body.productoId, body.cantidad, body.observacion, user.id, user.rol, user.sucursal_id, user.regional_id);
     return InventarioPresenter.toStock(item);
   }
 
@@ -99,10 +101,10 @@ export class InventarioController {
   async listMovimientos(
     @Param('sucursalId', ParseIntPipe) sucursalId: number,
     @Query() rawQuery: unknown,
-    @CurrentUser() user: { id: number; rol: string; sucursal_id: number | null },
+    @CurrentUser() user: AuthUser,
   ) {
     const query = QueryMovimientosSchema.parse(rawQuery);
-    const { datos, total } = await this.service.listMovimientos(sucursalId, query, user.rol, user.sucursal_id);
+    const { datos, total } = await this.service.listMovimientos(sucursalId, query, user.rol, user.sucursal_id, user.regional_id);
     return { datos: datos.map(m => InventarioPresenter.toMovimiento(m)), total };
   }
 
@@ -111,16 +113,14 @@ export class InventarioController {
   @AuditKey('ADM-04')
   @Get('ordenes')
   @Roles(...ROLES_READ)
-  @ApiOperation({ summary: 'Listar órdenes de inventario' })
+  @ApiOperation({ summary: 'Listar órdenes de inventario (filtrada por rol)' })
   async listOrdenes(
-    @CurrentUser() user: { id: number; rol: string; sucursal_id: number | null },
+    @CurrentUser() user: AuthUser,
     @Query('sucursalId') sucursalIdRaw?: string,
     @Query('estado')     estado?: string,
   ) {
-    const sucursalId = sucursalIdRaw
-      ? Number(sucursalIdRaw)
-      : user.sucursal_id ?? undefined;
-    return this.service.listOrdenes(sucursalId, estado);
+    const sucursalId = sucursalIdRaw ? Number(sucursalIdRaw) : user.sucursal_id ?? undefined;
+    return this.service.listOrdenes(sucursalId, estado, user.rol, user.regional_id);
   }
 
   @AuditKey('ADM-04')
@@ -128,13 +128,11 @@ export class InventarioController {
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Órdenes pendientes de confirmación — alerta orden_inventario' })
   async getOrdenesPendientes(
-    @CurrentUser() user: { id: number; rol: string; sucursal_id: number | null },
+    @CurrentUser() user: AuthUser,
     @Query('sucursalId') sucursalIdRaw?: string,
   ) {
-    const sucursalId = sucursalIdRaw
-      ? Number(sucursalIdRaw)
-      : user.sucursal_id ?? undefined;
-    return this.service.getOrdenesPendientes(sucursalId);
+    const sucursalId = sucursalIdRaw ? Number(sucursalIdRaw) : user.sucursal_id ?? undefined;
+    return this.service.getOrdenesPendientes(sucursalId, user.rol, user.regional_id);
   }
 
   @AuditKey('OPE-01')
@@ -143,7 +141,7 @@ export class InventarioController {
   @ApiOperation({ summary: 'Crear orden de reposición de inventario' })
   async crearOrden(
     @Body() body: unknown,
-    @CurrentUser() user: { id: number; rol: string; sucursal_id: number | null },
+    @CurrentUser() user: AuthUser,
   ) {
     const OrdenSchema = z.object({
       sucursalId: z.number().int().positive(),
@@ -164,7 +162,7 @@ export class InventarioController {
   async actualizarEstadoOrden(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: unknown,
-    @CurrentUser() user: { id: number; rol: string; sucursal_id: number | null },
+    @CurrentUser() user: AuthUser,
   ) {
     const EstadoSchema = z.object({
       estado: z.enum(['confirmada', 'rechazada', 'parcial']),

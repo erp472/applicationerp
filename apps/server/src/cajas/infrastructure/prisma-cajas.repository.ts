@@ -332,6 +332,37 @@ export class PrismaCajasRepository implements ICajasRepository {
     });
   }
 
+  async getServiciosCaja(cajaIds: number[]): Promise<Map<number, Map<string, boolean>>> {
+    const filas = await this.prisma.servicioCaja.findMany({
+      where:  { cajas_idcajas: { in: cajaIds } },
+      select: { cajas_idcajas: true, codigoservicios_caja: true, activoservicios_caja: true },
+    });
+
+    const porCaja = new Map<number, Map<string, boolean>>();
+    for (const id of cajaIds) porCaja.set(id, new Map());
+    for (const f of filas) {
+      porCaja.get(f.cajas_idcajas)?.set(f.codigoservicios_caja, f.activoservicios_caja);
+    }
+    return porCaja;
+  }
+
+  async setServicioCaja(cajaId: number, codigo: string, activo: boolean): Promise<void> {
+    await this.prisma.servicioCaja.upsert({
+      where: {
+        cajas_idcajas_codigoservicios_caja: {
+          cajas_idcajas:        cajaId,
+          codigoservicios_caja: codigo,
+        },
+      },
+      update: { activoservicios_caja: activo },
+      create: {
+        cajas_idcajas:        cajaId,
+        codigoservicios_caja: codigo,
+        activoservicios_caja: activo,
+      },
+    });
+  }
+
   async setSupervisorPunto(cajaPadreId: number, supervisorId: number | null): Promise<void> {
     await this.prisma.cajaPadre.update({
       where: { idcajas_padres: cajaPadreId },

@@ -19,7 +19,8 @@ import { ProductosPresenter } from './productos.presenter.js';
 import { ProductosDomainFilter } from './productos-domain.filter.js';
 import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 
-const ROLES_ADMIN = ['ADMIN_SISTEMA', 'ADMIN_NACIONAL'] as const;
+const ROLES_ADMIN = ['INVENTARIOS', 'ADMIN_NACIONAL', 'ADMIN_SISTEMA'] as const;
+const ROLES_READ  = ['CAJERO', 'ADMINISTRATIVO', 'TESORERIA', 'INVENTARIOS', 'SUPERVISOR_REGIONAL', 'ADMIN_NACIONAL', 'ADMIN_SISTEMA'] as const;
 
 export const SERIES_ESTAMPILLA = [
   'Banco de la Moneda',
@@ -54,6 +55,7 @@ export class EstampillasAdminController {
 
   @AuditKey('ADM-04')
   @Get()
+  @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Listar estampillas (admin)' })
   @ApiQuery({ name: 'activo', required: false, type: Boolean })
   @ApiQuery({ name: 'buscar', required: false, type: String })
@@ -69,6 +71,7 @@ export class EstampillasAdminController {
 
   @AuditKey('ADM-04')
   @Get(':id')
+  @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Obtener estampilla por ID (admin)' })
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'Estampilla encontrada' })

@@ -19,6 +19,33 @@ export const TIPOS_MOVIMIENTO_ENTRADA = new Set([
   'apartado_postal',
 ]);
 
+// Lo que el comercio le cobró al público. Deja fuera cambio_custodia_in, reposicion
+// y diferencia_sobrante: esos son plata que ya estaba en la caja fuerte moviéndose
+// hacia el cajón, y sumarlos como recaudo contaba el mismo dinero en cada traslado.
+export const TIPOS_RECAUDO = new Set([
+  'venta_producto', 'venta_servicio', 'venta_estampilla',
+  'giro_emision_cobro', 'recaudo', 'apartado_postal',
+]);
+
+// Cómo se le presenta el movimiento a supervisión en el histórico. Los tipos que no
+// aparecen aquí son plata moviéndose dentro del propio comercio (custodia, reposición,
+// traslado, consignación): no son operaciones contra el público y tienen su propia vista.
+export const CATEGORIAS_HISTORICO = {
+  recaudos:    ['recaudo'],
+  facturacion: ['venta_producto', 'venta_servicio', 'venta_estampilla', 'giro_emision_cobro', 'apartado_postal'],
+  anulaciones: ['anulacion'],
+  ajustes:     ['diferencia_sobrante', 'diferencia_faltante'],
+} as const;
+
+export type CategoriaHistorico = keyof typeof CATEGORIAS_HISTORICO;
+
+export function categoriaDeMovimiento(tipo: string): CategoriaHistorico | null {
+  for (const [categoria, tipos] of Object.entries(CATEGORIAS_HISTORICO)) {
+    if ((tipos as readonly string[]).includes(tipo)) return categoria as CategoriaHistorico;
+  }
+  return null;
+}
+
 // traslado_caja_fuerte: el cajero entrega físicamente a bóveda — reduce saldo del cajón
 export const TIPOS_MOVIMIENTO_SALIDA = new Set([
   'cambio_custodia_out', 'giro_pago', 'consignacion',
