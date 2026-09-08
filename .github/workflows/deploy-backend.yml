@@ -1,0 +1,39 @@
+name: Deploy Backend to Azure
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'apps/server/**'
+      - '.github/workflows/deploy-backend.yml'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: acr472pos.azurecr.io
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/server
+          file: apps/server/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: acr472pos.azurecr.io/backend472:latest
+
+      - name: Restart App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: backend472
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          images: acr472pos.azurecr.io/backend472:latest
