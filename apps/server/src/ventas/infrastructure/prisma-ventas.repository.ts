@@ -489,6 +489,61 @@ export class PrismaVentasRepository implements IVentasRepository {
     });
   }
 
+  async findVentasHistorico(filtros: import('../domain/venta.repository.js').VentaHistoricoFiltros): Promise<{ total: number; datos: VentaEntity[] }> {
+    const { fechaInicio, fechaFin, sucursalId, cajaId, regionalId, page, limit } = filtros;
+    const skip = (page - 1) * limit;
+
+    const sucursalFilter = sucursalId || regionalId
+      ? {
+          sucursal: {
+            ...(sucursalId && { idsucursales:              sucursalId }),
+            ...(regionalId && { regionales_idregionales:  regionalId }),
+          },
+        }
+      : {};
+
+    const cajasFilter = sucursalId || cajaId || regionalId
+      ? {
+          sesionCaja: {
+            caja: {
+              ...(cajaId && { idcajas: cajaId }),
+              ...sucursalFilter,
+            },
+          },
+        }
+      : {};
+
+    const where: Prisma.VentaWhereInput = {
+      estadoventas:     { not: 'activa' as any },
+      created_atventas: { gte: fechaInicio, lte: fechaFin },
+      ...cajasFilter,
+    };
+
+    const [total, rows] = await Promise.all([
+      this.prisma.venta.count({ where }),
+      this.prisma.venta.findMany({
+        where,
+        select: {
+          ...SELECT_VENTA,
+          detalle: { select: SELECT_DETALLE },
+          envios:  true,
+        },
+        orderBy: { created_atventas: 'desc' },
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    const datos = rows.map((r: any) => {
+      const { detalle, envios, ...ventaRow } = r;
+      const entity = toVentaEntity(ventaRow, detalle);
+      entity.envios = (envios as any[]).map(toEnvioEntity);
+      return entity;
+    });
+
+    return { total, datos };
+  }
+
   // ── Detalle / Carrito ────────────────────────────────────────────────────────
 
   async agregarDetalle(data: AgregarDetalleData): Promise<VentaDetalleEntity> {

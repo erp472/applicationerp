@@ -20,7 +20,7 @@ export class SecurityController {
     private readonly alertModel: Model<SecurityAlertDoc>,
   ) {}
 
-  @AuditKey('ADM-05')
+  @AuditKey('ADM-08')
   @Get('alerts')
   @ApiOperation({ summary: 'Últimas 50 alertas de seguridad' })
   @ApiQuery({ name: 'severidad', required: false, enum: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] })
@@ -42,7 +42,7 @@ export class SecurityController {
     return { alertas };
   }
 
-  @AuditKey('ADM-06')
+  @AuditKey('ADM-09')
   @Get('stats')
   @ApiOperation({ summary: 'Estadísticas de alertas del día (agrupadas por severidad)' })
   async getStats() {

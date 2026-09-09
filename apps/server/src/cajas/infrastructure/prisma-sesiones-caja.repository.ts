@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import type { ISesionesCajaRepository, CrearSesionData, CerrarSesionData, RegistrarMovimientoData, CrearReposicionData, CrearConsignacionData, AprobarConsignacionData, CrearDiferenciaData, AprobarDiferenciaData, DiferenciasFiltros, DiferenciaRegistroItem, HistoricoFiltros, HistoricoMovimientoItem } from '../domain/sesion-caja.repository.js';
+import type { ISesionesCajaRepository, CrearSesionData, CerrarSesionData, RegistrarMovimientoData, CrearReposicionData, CrearConsignacionData, AprobarConsignacionData, CrearDiferenciaData, AprobarDiferenciaData, DiferenciasFiltros, DiferenciaRegistroItem, HistoricoFiltros, HistoricoMovimientoItem, SesionesHistoricoFiltros, SesionHistoricoItem } from '../domain/sesion-caja.repository.js';
 import type {
   SesionCajaEntity,
   MovimientoCajaEntity,
@@ -881,6 +881,76 @@ export class PrismaSesionesCajaRepository implements ISesionesCajaRepository {
       })(),
       cajas: cards,
     };
+  }
+
+  async findSesionesHistorico(filtros: SesionesHistoricoFiltros): Promise<{ items: SesionHistoricoItem[]; total: number }> {
+    const { regionalId, sucursalId, cajaId, desde, hasta, pagina, limite } = filtros;
+
+    const cajaFilter: Record<string, unknown> = { deleted_atcajas: null };
+    if (cajaId)     cajaFilter['idcajas'] = cajaId;
+    if (sucursalId) cajaFilter['sucursales_idsucursales'] = sucursalId;
+    if (regionalId) cajaFilter['sucursal'] = { regionales_idregionales: regionalId };
+
+    const where = {
+      caja: cajaFilter,
+      ...(desde || hasta ? {
+        fecha_aperturasesiones_caja: {
+          ...(desde ? { gte: desde } : {}),
+          ...(hasta ? { lte: hasta } : {}),
+        },
+      } : {}),
+    };
+
+    const [total, rows] = await Promise.all([
+      this.prisma.sesionCaja.count({ where }),
+      this.prisma.sesionCaja.findMany({
+        where,
+        orderBy: { fecha_aperturasesiones_caja: 'desc' },
+        skip:    (pagina - 1) * limite,
+        take:    limite,
+        select: {
+          idsesiones_caja:               true,
+          cajas_idcajas:                 true,
+          monto_aperturasesiones_caja:   true,
+          monto_cierrasesiones_caja:     true,
+          fecha_aperturasesiones_caja:   true,
+          fecha_cierrasesiones_caja:     true,
+          estadosesiones_caja:           true,
+          cierre_forzadosesiones_caja:   true,
+          observacionessesiones_caja:    true,
+          caja: {
+            select: {
+              nombrecajas: true,
+              sucursal: {
+                select: {
+                  idsucursales:     true,
+                  nombresucursales: true,
+                  regional:         { select: { nombreregionales: true } },
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+    const items: SesionHistoricoItem[] = rows.map(r => ({
+      id:             r.idsesiones_caja,
+      cajaId:         r.cajas_idcajas,
+      cajaNombre:     r.caja.nombrecajas,
+      sucursalId:     r.caja.sucursal.idsucursales,
+      sucursalNombre: r.caja.sucursal.nombresucursales,
+      regionalNombre: r.caja.sucursal.regional.nombreregionales,
+      montoApertura:  r.monto_aperturasesiones_caja.toString(),
+      montoCierre:    r.monto_cierrasesiones_caja?.toString() ?? null,
+      fechaApertura:  r.fecha_aperturasesiones_caja,
+      fechaCierre:    r.fecha_cierrasesiones_caja,
+      estado:         r.estadosesiones_caja,
+      cierreForzado:  r.cierre_forzadosesiones_caja,
+      observaciones:  r.observacionessesiones_caja,
+    }));
+
+    return { items, total };
   }
 
   async updateCajeroAsignado(sesionId: number, cajeroId: number | null): Promise<SesionCajaEntity> {

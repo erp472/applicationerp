@@ -121,6 +121,16 @@ export interface CrearEnvioData {
   esCorrespondencia?:   boolean;
 }
 
+export interface VentaHistoricoFiltros {
+  fechaInicio: Date;
+  fechaFin:    Date;
+  sucursalId?: number;
+  cajaId?:     number;
+  regionalId?: number;
+  page:        number;
+  limit:       number;
+}
+
 export interface IVentasRepository {
   // Clientes
   findClienteByDocumento(tipo: string, numero: string): Promise<ClienteResumenEntity | null>;
@@ -141,6 +151,7 @@ export interface IVentasRepository {
   anularVenta(id: number): Promise<VentaEntity>;
   listVentasBySession(sesionCajaId: number, fecha?: Date): Promise<VentaEntity[]>;
   findVentasBySucursalHoy(sucursalId: number): Promise<VentaEntity[]>;
+  findVentasHistorico(filtros: VentaHistoricoFiltros): Promise<{ total: number; datos: VentaEntity[] }>;
 
   // Detalle (carrito)
   agregarDetalle(data: AgregarDetalleData): Promise<VentaDetalleEntity>;

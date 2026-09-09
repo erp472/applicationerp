@@ -1,4 +1,4 @@
-import { Injectable, Inject, Optional, ForbiddenException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, Optional, ForbiddenException, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { CajasService }       from '../../cajas/application/cajas.service.js';
 import { InventarioService }  from '../../inventario/application/inventario.service.js';
 import { AuditService }       from '../../audit/audit.service.js';
@@ -9,6 +9,7 @@ import { VENTAS_REPOSITORY } from '../domain/venta.repository.js';
 import type { IVentasRepository } from '../domain/venta.repository.js';
 import type { TipoProducto, EnvioEntity } from '../domain/venta.entity.js';
 import type { GuiaContexto } from '../infrastructure/ventas.presenter.js';
+import { VentasPresenter }   from '../infrastructure/ventas.presenter.js';
 import {
   VentaNoEncontradaError,
   VentaYaAnuladaError,
@@ -672,6 +673,58 @@ export class VentasService {
     return this.repo.findVentasBySucursalHoy(sucursalId);
   }
 
+  async getVentasHistorico(params: {
+    fechaInicio: string;
+    fechaFin:    string;
+    sucursalId?: number;
+    cajaId?:     number;
+    page:        number;
+    limit:       number;
+    actor: { rol: string; sucursal_id: number | null; regional_id: number | null };
+  }) {
+    const fechaInicio = new Date(`${params.fechaInicio}T00:00:00`);
+    const fechaFin    = new Date(`${params.fechaFin}T23:59:59.999`);
+    const limit       = Math.min(params.limit, 100);
+
+    // Aislamiento por rol
+    let sucursalId = params.sucursalId;
+    let regionalId: number | undefined;
+
+    const { rol, sucursal_id, regional_id } = params.actor;
+
+    if (rol === 'SUPERVISOR_REGIONAL') {
+      if (regional_id != null) {
+        // Ve su regional completa pero no puede saltar a otra
+        regionalId = regional_id;
+        sucursalId = undefined;
+      } else if (sucursal_id != null) {
+        // Supervisor de sucursal fija: solo ve su sucursal
+        sucursalId = sucursal_id;
+      }
+    }
+    // TESORERIA, ADMIN_SISTEMA, ADMIN_NACIONAL: visibilidad total, sin restricción impuesta
+
+    const { total, datos } = await this.repo.findVentasHistorico({
+      fechaInicio,
+      fechaFin,
+      sucursalId,
+      cajaId:    params.cajaId,
+      regionalId,
+      page:      params.page,
+      limit,
+    });
+
+    return {
+      total,
+      pagina:       params.page,
+      totalPaginas: Math.ceil(total / limit),
+      datos:        datos.map(v => ({
+        ...VentasPresenter.toVenta(v),
+        envios: v.envios?.map(e => VentasPresenter.toEnvio(e)) ?? [],
+      })),
+    };
+  }
+
   async getSaldoAFavor(clienteId: number): Promise<{ saldoAFavor: number }> {
     const cliente = await this.repo.findClienteById(clienteId);
     if (!cliente) throw new ClienteNoEncontradoError('id', String(clienteId));
@@ -1302,6 +1355,67 @@ export class VentasService {
         ? new Date(envio.createdAt.getTime() + dias * 86_400_000).toISOString()
         : null,
     };
+  }
+
+  async getEnvioDetalle(envioId: number) {
+    const row = await this.prisma.envio.findUnique({
+      where:  { idenvios: envioId },
+      select: {
+        idenvios:                           true,
+        numero_guiaenvios:                  true,
+        estadoenvios:                       true,
+        remitente_nombreenvios:             true,
+        remitente_documentoenvios:          true,
+        remitente_emailenvios:              true,
+        remitente_telefonoenvios:           true,
+        remitente_direccionenvios:          true,
+        remitente_ciudadenvios:             true,
+        remitente_departamentoenvios:       true,
+        remitente_codigo_postalenvios:      true,
+        destinatario_nombreenvios:          true,
+        destinatario_documentoenvios:       true,
+        destinatario_emailenvios:           true,
+        destinatario_telefonoenvios:        true,
+        destinatario_direccionenvios:       true,
+        destinatario_ciudadenvios:          true,
+        destinatario_departamentoenvios:    true,
+        destinatario_codigo_postalenvios:   true,
+        destinatario_paisenvios:            true,
+      },
+    });
+    if (!row) throw new NotFoundException(`Envío ${envioId} no encontrado`);
+    return row;
+  }
+
+  async actualizarDireccionEnvio(envioId: number, dto: import('../dto/actualizar-direccion-envio.dto.js').ActualizarDireccionEnvioDto) {
+    const exists = await this.prisma.envio.findUnique({
+      where:  { idenvios: envioId },
+      select: { idenvios: true, estadoenvios: true },
+    });
+    if (!exists) throw new NotFoundException(`Envío ${envioId} no encontrado`);
+    if (exists.estadoenvios === 'despachado' || exists.estadoenvios === 'en_transito' || exists.estadoenvios === 'entregado') {
+      throw new BadRequestException(`No se puede modificar la dirección de un envío en estado "${exists.estadoenvios}"`);
+    }
+
+    const updated = await this.prisma.envio.update({
+      where: { idenvios: envioId },
+      data: {
+        ...(dto.destinatarioNombre      !== undefined && { destinatario_nombreenvios:          dto.destinatarioNombre }),
+        ...(dto.destinatarioDocumento   !== undefined && { destinatario_documentoenvios:       dto.destinatarioDocumento }),
+        ...(dto.destinatarioTelefono    !== undefined && { destinatario_telefonoenvios:        dto.destinatarioTelefono }),
+        ...(dto.destinatarioEmail       !== undefined && { destinatario_emailenvios:           dto.destinatarioEmail }),
+        ...(dto.destinatarioDireccion   !== undefined && { destinatario_direccionenvios:       dto.destinatarioDireccion }),
+        ...(dto.destinatarioCiudad      !== undefined && { destinatario_ciudadenvios:          dto.destinatarioCiudad }),
+        ...(dto.destinatarioDepartamento !== undefined && { destinatario_departamentoenvios:   dto.destinatarioDepartamento }),
+        ...(dto.destinatarioCodigoPostal !== undefined && { destinatario_codigo_postalenvios:  dto.destinatarioCodigoPostal }),
+        ...(dto.destinatarioPais        !== undefined && { destinatario_paisenvios:            dto.destinatarioPais }),
+        updated_atenvios: new Date(),
+        // invalidate cached PDF so it regenerates with new address
+        pdf_guia_pathenvios: null,
+      },
+      select: { idenvios: true, numero_guiaenvios: true, estadoenvios: true },
+    });
+    return updated;
   }
 
   async getEnvioGuiaPdf(envioId: number): Promise<Buffer> {

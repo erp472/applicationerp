@@ -14,6 +14,16 @@ const securityAlertsTotal = new promClient.Counter({
   labelNames: ['mitre', 'nist_csf', 'severidad'],
 });
 
+/** Tiempo mínimo entre dos alertas del mismo tipo para el mismo contexto (IP o usuario).
+ *  Evita que cada evento por encima del umbral genere una alerta nueva. */
+const CBS_COOLDOWN_MINUTOS: Record<CbsCode, number> = {
+  'CBS-01': 30,
+  'CBS-02': 15,
+  'CBS-03': 10,
+  'CBS-04': 60,
+  'CBS-05': 10,
+};
+
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2);
 }
@@ -60,7 +70,7 @@ export class SecurityRulesService {
 
     const count = await this.mongoAudit.countLoginFailures(dto.ip_origen, 5);
     if (count >= 5) {
-      this.emitAlert('CBS-01', dto, {
+      await this.emitAlert('CBS-01', dto, {
         descripcion: `Brute force login detectado: ${count} intentos fallidos en 5 min desde IP ${dto.ip_origen}`,
         metadata:    { intentos: count, ventana_minutos: 5 },
       });
@@ -77,7 +87,7 @@ export class SecurityRulesService {
 
     const count = await this.mongoAudit.countDeniedByUser(dto.usuario_id, 10);
     if (count >= 3) {
-      this.emitAlert('CBS-02', dto, {
+      await this.emitAlert('CBS-02', dto, {
         descripcion: `Abuso de acceso denegado: usuario ${dto.usuario_id} acumuló ${count} DENIED en 10 min`,
         metadata:    { intentos_denied: count, ventana_minutos: 10 },
       });
@@ -92,7 +102,7 @@ export class SecurityRulesService {
 
     const count = await this.mongoAudit.countEventsByUser(dto.usuario_id, 'READ', 5);
     if (count >= 100) {
-      this.emitAlert('CBS-03', dto, {
+      await this.emitAlert('CBS-03', dto, {
         descripcion: `Acceso masivo a datos: usuario ${dto.usuario_id} realizó ${count} lecturas en 5 min`,
         metadata:    { lecturas: count, ventana_minutos: 5 },
       });
@@ -108,7 +118,7 @@ export class SecurityRulesService {
     const esHoraAnomala = horaUtc < 6 || horaUtc >= 22;
     if (!esHoraAnomala) return;
 
-    this.emitAlert('CBS-04', dto, {
+    await this.emitAlert('CBS-04', dto, {
       descripcion: `Operación financiera fuera de horario: ${dto.accion} a las ${horaUtc}:xx UTC`,
       metadata:    { hora_utc: horaUtc, entidad: dto.entidad },
     });
@@ -122,7 +132,7 @@ export class SecurityRulesService {
 
     const count = await this.mongoAudit.countFailuresByIp(dto.ip_origen, 2);
     if (count >= 20) {
-      this.emitAlert('CBS-05', dto, {
+      await this.emitAlert('CBS-05', dto, {
         descripcion: `Oleada de errores desde IP ${dto.ip_origen}: ${count} errores en 2 min`,
         metadata:    { errores: count, ventana_minutos: 2 },
       });
@@ -131,11 +141,26 @@ export class SecurityRulesService {
 
   // ─── Alert emission ───────────────────────────────────────────────────────
 
-  private emitAlert(
+  /** Cooldown en memoria: evita rafagas de alertas del mismo CBS+contexto. */
+  private readonly recentAlerts = new Map<string, number>();
+
+  private yaAlerto(cbs: CbsCode, ip?: string, usuarioId?: number): boolean {
+    const key      = `${cbs}:${ip ?? ''}:${usuarioId ?? ''}`;
+    const cooldown = CBS_COOLDOWN_MINUTOS[cbs] * 60_000;
+    const last     = this.recentAlerts.get(key);
+    if (last !== undefined && Date.now() - last < cooldown) return true;
+    this.recentAlerts.set(key, Date.now());
+    return false;
+  }
+
+  private async emitAlert(
     cbs: CbsCode,
     origen: EvaluateInput,
     detalle: { descripcion: string; metadata?: Record<string, unknown> },
-  ): void {
+  ): Promise<void> {
+    // Deduplicación: no emitir si ya se alertó en la ventana de cooldown
+    if (this.yaAlerto(cbs, origen.ip_origen, origen.usuario_id)) return;
+
     const { mitre, nist_csf, severidad } = CBS_CATALOG[cbs];
 
     const alert: SecurityAlert = {
@@ -152,14 +177,8 @@ export class SecurityRulesService {
       metadata:         detalle.metadata,
     };
 
-    // Prometheus counter
-    securityAlertsTotal.inc({
-      mitre:     alert.mitre,
-      nist_csf:  alert.nist_csf,
-      severidad: alert.severidad,
-    });
+    securityAlertsTotal.inc({ mitre: alert.mitre, nist_csf: alert.nist_csf, severidad: alert.severidad });
 
-    // Persist to MongoDB (fire-and-forget)
     this.alertModel.create({
       id:               alert.id,
       audit_key:        alert.audit_key,
@@ -177,10 +196,7 @@ export class SecurityRulesService {
       );
     });
 
-    // WebSocket broadcast (fire-and-forget)
     this.realtimeService.broadcast('security.alert', alert);
-
-    // Structured log
     this.logger.warn(JSON.stringify(alert));
   }
 }

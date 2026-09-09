@@ -1201,6 +1201,39 @@ export class CajasService {
     };
   }
 
+  // ── Reporte histórico de sesiones ────────────────────────────────────────────
+
+  async getSesionesHistorico(filtros: {
+    regionalId?: number;
+    sucursalId?: number;
+    cajaId?:     number;
+    desde?:      string;
+    hasta?:      string;
+    pagina?:     number;
+    limite?:     number;
+  }) {
+    const limite = Math.min(filtros.limite ?? 50, 200);
+    const pagina = filtros.pagina ?? 1;
+
+    const { items, total } = await this.sesionesRepo.findSesionesHistorico({
+      regionalId: filtros.regionalId,
+      sucursalId: filtros.sucursalId,
+      cajaId:     filtros.cajaId,
+      desde:      filtros.desde ? new Date(`${filtros.desde}T00:00:00Z`) : undefined,
+      hasta:      filtros.hasta ? new Date(`${filtros.hasta}T23:59:59Z`) : undefined,
+      pagina,
+      limite,
+    });
+
+    return {
+      items,
+      total,
+      pagina,
+      limite,
+      totalPaginas: Math.max(1, Math.ceil(total / limite)),
+    };
+  }
+
   // ── Panel admin ──────────────────────────────────────────────────────────────
 
   async getPanelAdmin(regionalId?: number) {

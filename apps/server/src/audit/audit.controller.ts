@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, Res, UseGuards } from '@nestjs/common';
 import { Readable } from 'node:stream';
 import type { FastifyReply } from 'fastify';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { AuditService } from './audit.service.js';
+import { MongoDbChangesService } from './mongo/mongo-db-changes.service.js';
 import { ACCIONES } from './create-audit-log.dto.js';
 import { AuditKey } from './decorators/audit-key.decorator.js';
 
@@ -30,7 +31,10 @@ function parseHasta(v?: string): Date | undefined {
 @Roles('ADMIN_SISTEMA')
 @ApiBearerAuth()
 export class AuditController {
-  constructor(private readonly audit: AuditService) {}
+  constructor(
+    private readonly audit: AuditService,
+    private readonly dbChanges: MongoDbChangesService,
+  ) {}
 
   @AuditKey('ADM-05')
   @Get()
@@ -72,7 +76,15 @@ export class AuditController {
     return this.audit.statsHoy();
   }
 
-  @AuditKey('ADM-06', 'EXPORT')
+  @AuditKey('ADM-10')
+  @Get('db-changes/:requestId')
+  @ApiOperation({ summary: 'Cambios de BD correlacionados con un evento de auditoría' })
+  async getDbCambios(@Param('requestId') requestId: string) {
+    const cambios = await this.dbChanges.findByRequestId(requestId);
+    return { cambios };
+  }
+
+  @AuditKey('ADM-07', 'EXPORT')
   @Get('export')
   @ApiOperation({ summary: 'Exportar eventos de auditoría como CSV (Excel)' })
   @ApiQuery({ name: 'tabla',      required: false })

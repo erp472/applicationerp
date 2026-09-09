@@ -20,8 +20,9 @@ import { ProductosPresenter } from './productos.presenter.js';
 import { ProductosDomainFilter } from './productos-domain.filter.js';
 import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 
-const ROLES_READ  = ['CAJERO', 'ADMINISTRATIVO', 'TESORERIA', 'INVENTARIOS', 'SUPERVISOR_REGIONAL', 'ADMIN_NACIONAL', 'ADMIN_SISTEMA'];
-const ROLES_WRITE = ['INVENTARIOS', 'ADMIN_NACIONAL', 'ADMIN_SISTEMA'];
+const ROLES_READ   = ['CAJERO', 'ADMINISTRATIVO', 'TESORERIA', 'INVENTARIOS', 'SUPERVISOR_REGIONAL', 'ADMIN_NACIONAL', 'ADMIN_SISTEMA'];
+const ROLES_WRITE  = ['INVENTARIOS', 'ADMIN_NACIONAL', 'ADMIN_SISTEMA'];
+const ROLES_DELETE = ['ADMIN_NACIONAL', 'ADMIN_SISTEMA'];
 
 @ApiTags('productos')
 @ApiBearerAuth()
@@ -105,7 +106,7 @@ export class ProductosController {
 
   @AuditKey('ADM-07')
   @Delete(':id')
-  @Roles(...ROLES_WRITE)
+  @Roles(...ROLES_DELETE)
   @ApiOperation({ summary: 'Eliminar producto del catálogo (soft delete)' })
   @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'Producto eliminado' })
@@ -131,7 +132,7 @@ export class ProductosController {
 
   @AuditKey('ADM-07')
   @Delete(':id/sucursales/:sucursalId')
-  @Roles(...ROLES_WRITE)
+  @Roles(...ROLES_DELETE)
   @ApiOperation({ summary: 'Desasignar producto de una sucursal' })
   @ApiParam({ name: 'id', type: Number })
   @ApiParam({ name: 'sucursalId', type: Number })

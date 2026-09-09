@@ -19,8 +19,9 @@ import { AgregarApartadoCarritoSchema }    from '../dto/agregar-apartado-carrito
 import { RenovarApartadoSchema }     from '../dto/renovar-apartado.dto.js';
 import { CrearApartadoAdminSchema }  from '../dto/crear-apartado-admin.dto.js';
 import { UpdateApartadoAdminSchema } from '../dto/update-apartado-admin.dto.js';
-import { CrearEnvioSchema }          from '../dto/crear-envio.dto.js';
-import { GuardarDireccionSchema }    from '../dto/guardar-direccion.dto.js';
+import { CrearEnvioSchema }                    from '../dto/crear-envio.dto.js';
+import { GuardarDireccionSchema }             from '../dto/guardar-direccion.dto.js';
+import { ActualizarDireccionEnvioSchema }     from '../dto/actualizar-direccion-envio.dto.js';
 import { JwtAuthGuard }           from '../../common/guards/jwt-auth.guard.js';
 import { FeatureFlagGuard }       from '../../common/guards/feature-flag.guard.js';
 import { RolesGuard }             from '../../common/guards/roles.guard.js';
@@ -553,6 +554,39 @@ export class VentasController {
     return this.service.getVentasDia(sucursalId);
   }
 
+  // ── Reporte histórico de ventas ───────────────────────────────────────────────
+
+  @AuditKey('ADM-06')
+  @Get('reporte/historico')
+  @Roles('SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL', 'TESORERIA')
+  @ApiOperation({ summary: 'Reporte histórico de ventas paginado con filtros de fecha y sucursal' })
+  @ApiQuery({ name: 'fechaInicio', type: String, required: true,  description: 'YYYY-MM-DD' })
+  @ApiQuery({ name: 'fechaFin',    type: String, required: true,  description: 'YYYY-MM-DD' })
+  @ApiQuery({ name: 'sucursalId',  type: Number, required: false })
+  @ApiQuery({ name: 'cajaId',      type: Number, required: false })
+  @ApiQuery({ name: 'page',        type: Number, required: false })
+  @ApiQuery({ name: 'limit',       type: Number, required: false })
+  async getReporteHistorico(
+    @CurrentUser() actor: { rol: string; sucursal_id: number | null; regional_id: number | null },
+    @Query('fechaInicio') fechaInicio?: string,
+    @Query('fechaFin')    fechaFin?:    string,
+    @Query('sucursalId')  sucursalIdRaw?: string,
+    @Query('cajaId')      cajaIdRaw?:     string,
+    @Query('page')        pageRaw?:       string,
+    @Query('limit')       limitRaw?:      string,
+  ) {
+    if (!fechaInicio || !fechaFin) throw new BadRequestException('fechaInicio y fechaFin son requeridos');
+    return this.service.getVentasHistorico({
+      fechaInicio,
+      fechaFin,
+      sucursalId: sucursalIdRaw ? Number(sucursalIdRaw) : undefined,
+      cajaId:     cajaIdRaw     ? Number(cajaIdRaw)     : undefined,
+      page:  pageRaw  ? Math.max(1, Number(pageRaw))  : 1,
+      limit: limitRaw ? Math.min(100, Number(limitRaw)) : 20,
+      actor,
+    });
+  }
+
   @AuditKey('ADM-04')
   @Get('sucursal/:sucursalId/punto-admision')
   @Roles(...ROLES_READ)
@@ -673,6 +707,30 @@ export class VentasController {
         ? (user.sucursal_id ?? undefined)
         : undefined;
     return this.service.getAnulacionesPendientes(sucursalId);
+  }
+
+  // ── Detalle y modificación de dirección de un envío ──────────────────────────
+
+  @AuditKey('ADM-04')
+  @Get('envios/:envioId')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Obtener datos completos de un envío (incluye remitente y destinatario)' })
+  @ApiParam({ name: 'envioId', type: Number })
+  async getEnvioDetalle(@Param('envioId', ParseIntPipe) envioId: number) {
+    return this.service.getEnvioDetalle(envioId);
+  }
+
+  @AuditKey('ADM-04')
+  @Patch('envios/:envioId/direccion')
+  @Roles(...ROLES_SUPERVISOR, 'ADMIN_NACIONAL')
+  @ApiOperation({ summary: 'Corregir dirección del destinatario antes del despacho — solo supervisores' })
+  @ApiParam({ name: 'envioId', type: Number })
+  async actualizarDireccionEnvio(
+    @Param('envioId', ParseIntPipe) envioId: number,
+    @Body() body: unknown,
+  ) {
+    const dto = ActualizarDireccionEnvioSchema.parse(body);
+    return this.service.actualizarDireccionEnvio(envioId, dto);
   }
 
   // ── Guía PDF de envío individual ──────────────────────────────────────────────

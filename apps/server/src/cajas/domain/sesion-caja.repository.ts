@@ -50,6 +50,32 @@ export interface HistoricoMovimientoItem {
   ventaEstado:    string | null;
 }
 
+export interface SesionesHistoricoFiltros {
+  regionalId?: number;
+  sucursalId?: number;
+  cajaId?:     number;
+  desde?:      Date;
+  hasta?:      Date;
+  pagina:      number;
+  limite:      number;
+}
+
+export interface SesionHistoricoItem {
+  id:               number;
+  cajaId:           number;
+  cajaNombre:       string;
+  sucursalId:       number;
+  sucursalNombre:   string;
+  regionalNombre:   string;
+  montoApertura:    string;
+  montoCierre:      string | null;
+  fechaApertura:    Date;
+  fechaCierre:      Date | null;
+  estado:           string;
+  cierreForzado:    boolean;
+  observaciones:    string | null;
+}
+
 export interface DiferenciasFiltros {
   tipo?:     'faltante' | 'sobrante';
   estado?:   'pendiente' | 'aprobada' | 'rechazada';
@@ -198,4 +224,5 @@ export interface ISesionesCajaRepository {
   }[]>;
   getBalancePagos(fechaInicio: Date, fechaFin: Date): Promise<BalancePagosRow[]>;
   getHistoricoMovimientos(filtros: HistoricoFiltros): Promise<{ items: HistoricoMovimientoItem[]; total: number }>;
+  findSesionesHistorico(filtros: SesionesHistoricoFiltros): Promise<{ items: SesionHistoricoItem[]; total: number }>;
 }

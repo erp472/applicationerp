@@ -880,6 +880,48 @@ export class CajasController {
   // ── Reportes ──────────────────────────────────────────────────────────────
 
   @AuditKey('ADM-06')
+  @Get('reporte/sesiones')
+  @Roles(...ROLES_GESTOR, 'TESORERIA')
+  @ApiOperation({ summary: 'Histórico global de aperturas y cierres de sesiones de caja' })
+  @ApiQuery({ name: 'sucursalId', type: Number, required: false })
+  @ApiQuery({ name: 'cajaId',     type: Number, required: false })
+  @ApiQuery({ name: 'desde',      type: String, required: false, description: 'YYYY-MM-DD' })
+  @ApiQuery({ name: 'hasta',      type: String, required: false, description: 'YYYY-MM-DD' })
+  @ApiQuery({ name: 'pagina',     type: Number, required: false })
+  @ApiQuery({ name: 'limite',     type: Number, required: false })
+  async getReporteSesiones(
+    @CurrentUser() user: AuthUser,
+    @Query('sucursalId') sucursalIdRaw?: string,
+    @Query('cajaId')     cajaIdRaw?:     string,
+    @Query('desde')      desde?:         string,
+    @Query('hasta')      hasta?:         string,
+    @Query('pagina')     paginaRaw?:     string,
+    @Query('limite')     limiteRaw?:     string,
+  ) {
+    let sucursalId = sucursalIdRaw ? Number(sucursalIdRaw) : undefined;
+    let regionalId: number | undefined;
+
+    if (user.rol === 'SUPERVISOR_REGIONAL') {
+      if (user.regional_id != null) {
+        regionalId = user.regional_id;
+        sucursalId = undefined;
+      } else if (user.sucursal_id != null) {
+        sucursalId = user.sucursal_id;
+      }
+    }
+
+    return this.service.getSesionesHistorico({
+      regionalId,
+      sucursalId,
+      cajaId:  cajaIdRaw  ? Number(cajaIdRaw)  : undefined,
+      desde,
+      hasta,
+      pagina:  paginaRaw  ? Number(paginaRaw)  : 1,
+      limite:  limiteRaw  ? Number(limiteRaw)  : 50,
+    });
+  }
+
+  @AuditKey('ADM-06')
   @Get('reportes/balance-pagos')
   @Feature('modulo:tesoreria')
   @Roles(...ROLES_TESORERIA)
