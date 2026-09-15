@@ -28,7 +28,9 @@ export class ConfigService {
   get jwtExpiresIn() { return this.env.JWT_EXPIRES_IN; }
 
   get corsOrigins(): string[] {
-    return this.env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean);
+    const configured = this.env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean);
+    const desktopOrigins = ['tauri://localhost', 'https://tauri.localhost', 'http://tauri.localhost'];
+    return [...new Set([...configured, ...desktopOrigins])];
   }
 
   get isProd() { return this.env.NODE_ENV === 'production'; }
