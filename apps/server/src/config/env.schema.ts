@@ -11,7 +11,8 @@ export const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default('8h'),
 
   // Comma-separated list of allowed origins. In dev, defaults to localhost + tauri.
-  CORS_ORIGIN: z.string().default('http://localhost:5173,tauri://localhost'),
+  // tauri://localhost = macOS/Linux, https://tauri.localhost = Windows
+  CORS_ORIGIN: z.string().default('http://localhost:5173,tauri://localhost,https://tauri.localhost'),
 
   REDIS_HOST: z.string().default('localhost'),
   REDIS_PORT: z.coerce.number().int().min(1).default(6379),
