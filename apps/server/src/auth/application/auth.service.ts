@@ -131,7 +131,7 @@ export class AuthService {
 
       const equipo = await this.prisma.equipoAutorizado.findFirst({
         where: {
-          mac_addressequipos_autorizados: mac.toLowerCase(),
+          mac_addressequipos_autorizados: mac.toUpperCase(),
           ...(sucursalId != null ? { sucursales_idsucursales: sucursalId } : {}),
           activoequipos_autorizados: true,
         },
@@ -145,8 +145,8 @@ export class AuthService {
     if (!mac) throw new UnauthorizedException('Este equipo no está autorizado. Contáctese con soporte: applicationerp472@gmail.com');
 
     const where = sucursalId != null
-      ? { mac_addressequipos_autorizados: mac.toLowerCase(), sucursales_idsucursales: sucursalId, activoequipos_autorizados: true }
-      : { mac_addressequipos_autorizados: mac.toLowerCase(), activoequipos_autorizados: true };
+      ? { mac_addressequipos_autorizados: mac.toUpperCase(), sucursales_idsucursales: sucursalId, activoequipos_autorizados: true }
+      : { mac_addressequipos_autorizados: mac.toUpperCase(), activoequipos_autorizados: true };
 
     const equipo = await this.prisma.equipoAutorizado.findFirst({ where });
 
