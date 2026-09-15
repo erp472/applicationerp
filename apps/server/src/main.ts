@@ -28,9 +28,22 @@ async function bootstrap() {
     }),
   );
 
-  // 🤓 connect all origins with all methods in cors
+  // Origen fijo de la app de escritorio Tauri (no depende de CORS_ORIGIN)
+  const DESKTOP_ORIGINS = ['tauri://localhost', 'https://tauri.localhost', 'http://tauri.localhost'];
+  const webOrigins = (process.env.CORS_ORIGIN ?? '*')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+  const allowAll = webOrigins.includes('*');
+
   await app.register(cors, {
-    origin: process.env.CORS_ORIGIN ?? '*',
+    origin: (origin, cb) => {
+      if (!origin || allowAll || webOrigins.includes(origin) || DESKTOP_ORIGINS.includes(origin)) {
+        cb(null, true);
+        return;
+      }
+      cb(new Error(`Origen no permitido por CORS: ${origin}`), false);
+    },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
   });
