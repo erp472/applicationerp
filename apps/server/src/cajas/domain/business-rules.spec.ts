@@ -3,15 +3,19 @@ import {
   validarUnicidadSesion,
   validarSesionAbierta,
   validarSaldoSuficiente,
-  validarCajaGeneralMinimo,
+  validarAperturaPunto,
+  validarBaseAsignadaMaxima,
   validarConsignacionPendiente,
   evaluarAlertas,
+  afectaEfectivo,
+  deltaEfectivo,
 } from './business-rules.js';
 import {
   CajaYaAbiertaError,
   SesionYaCerradaError,
   SaldoInsuficienteError,
-  BaseMinimaVioladaError,
+  AperturaExcedeAsignacionPuntoError,
+  BaseExcedeLimiteCajaError,
   ConsignacionEstadoInvalidoError,
 } from './caja.errors.js';
 
@@ -50,15 +54,37 @@ describe('Cajas business rules', () => {
     });
   });
 
-  describe('BR-CAJ-004 validarCajaGeneralMinimo', () => {
-    it('lanza BaseMinimaVioladaError si la operación deja la caja general por debajo del mínimo', () => {
-      expect(() => validarCajaGeneralMinimo('500000', '400000', '200000')).toThrow(BaseMinimaVioladaError);
+  describe('BR-CAJ-010 validarAperturaPunto', () => {
+    it('rechaza abrir el punto con el global de la Caja General', () => {
+      expect(() => validarAperturaPunto('5000000', '1000000', 'Punto Bogotá Centro'))
+        .toThrow(AperturaExcedeAsignacionPuntoError);
     });
-    it('permite la operación si la caja general queda exactamente en el mínimo', () => {
-      expect(() => validarCajaGeneralMinimo('500000', '300000', '200000')).not.toThrow();
+    it('permite abrir exactamente con la base asignada al punto', () => {
+      expect(() => validarAperturaPunto('1000000', '1000000', 'Punto Bogotá Centro')).not.toThrow();
     });
-    it('permite la operación si la caja general queda por encima del mínimo', () => {
-      expect(() => validarCajaGeneralMinimo('500000', '100000', '200000')).not.toThrow();
+    it('permite abrir por debajo de la base asignada', () => {
+      expect(() => validarAperturaPunto('400000', '1000000', 'Punto Bogotá Centro')).not.toThrow();
+    });
+    it('nombra el punto y su base en el mensaje', () => {
+      expect(() => validarAperturaPunto('5000000', '1000000', 'Punto Bogotá Centro'))
+        .toThrow(/Punto Bogotá Centro/);
+    });
+  });
+
+  describe('BR-CAJ-009 validarBaseAsignadaMaxima', () => {
+    it('rechaza asignar a un POS la bóveda entera del punto', () => {
+      expect(() => validarBaseAsignadaMaxima('5000000', '500000', 'POS-BOG-001-01'))
+        .toThrow(BaseExcedeLimiteCajaError);
+    });
+    it('permite la base exacta configurada', () => {
+      expect(() => validarBaseAsignadaMaxima('500000', '500000', 'POS-BOG-001-01')).not.toThrow();
+    });
+    it('permite una base menor a la configurada', () => {
+      expect(() => validarBaseAsignadaMaxima('200000', '500000', 'POS-BOG-001-01')).not.toThrow();
+    });
+    it('nombra la caja y el fondo configurado en el mensaje', () => {
+      expect(() => validarBaseAsignadaMaxima('5000000', '500000', 'POS-BOG-001-01'))
+        .toThrow(/POS-BOG-001-01/);
     });
   });
 
@@ -95,6 +121,41 @@ describe('Cajas business rules', () => {
     it('no lanza limite_efectivo_caja si limiteAlerta es null', () => {
       const alertas = evaluarAlertas('1000000', '100000', null);
       expect(alertas).not.toContain('limite_efectivo_caja');
+    });
+  });
+
+  describe('afectaEfectivo', () => {
+    it('trata los movimientos internos sin medio de pago como efectivo', () => {
+      expect(afectaEfectivo(null)).toBe(true);
+      expect(afectaEfectivo(undefined)).toBe(true);
+    });
+    it('acepta el efectivo declarado', () => {
+      expect(afectaEfectivo('efectivo')).toBe(true);
+    });
+    it('rechaza los medios que no entran al cajón', () => {
+      for (const medio of ['tarjeta_debito', 'tarjeta_credito', 'transferencia',
+                           'consignacion', 'cheque', 'preporteado',
+                           'mixto_preporteado', 'estampilla']) {
+        expect(afectaEfectivo(medio)).toBe(false);
+      }
+    });
+  });
+
+  describe('deltaEfectivo', () => {
+    it('suma una venta en efectivo', () => {
+      expect(deltaEfectivo('venta_producto', 11204, 'efectivo')).toBe(11204);
+    });
+    it('no mueve el cajón con una venta con tarjeta', () => {
+      expect(deltaEfectivo('venta_producto', 350000, 'tarjeta_credito')).toBe(0);
+    });
+    it('no mueve el cajón con un apartado preporteado', () => {
+      expect(deltaEfectivo('apartado_postal', 87500, 'preporteado')).toBe(0);
+    });
+    it('resta las salidas de efectivo', () => {
+      expect(deltaEfectivo('cambio_custodia_out', 96224, null)).toBe(-96224);
+    });
+    it('ignora los tipos neutros como apertura', () => {
+      expect(deltaEfectivo('apertura', 500000, null)).toBe(0);
     });
   });
 });

@@ -1,0 +1,123 @@
+{
+  "uid": "pos472-feature-flags",
+  "title": "4-72 POS — Feature Flags",
+  "description": "Estado de feature flags por entorno y plataforma. Fuente: tabla feature_flags.",
+  "tags": ["feature-flags"],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "time": { "from": "now-24h", "to": "now" },
+  "timezone": "browser",
+  "panels": [
+
+    {
+      "id": 1, "title": "Flags activos",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] } } },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) AS value FROM feature_flags WHERE activofeature_flags = true",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 2, "title": "Flags inactivos",
+      "type": "stat",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "gray", "value": null }] } } },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) AS value FROM feature_flags WHERE activofeature_flags = false",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 3, "title": "Flags en entorno prod",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "orange", "value": null }] } } },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) AS value FROM feature_flags WHERE entornofeature_flags IN ('prod', 'all') AND activofeature_flags = true",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 4, "title": "Flags solo en dev/staging",
+      "type": "stat",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } } },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) AS value FROM feature_flags WHERE entornofeature_flags IN ('dev', 'staging') AND activofeature_flags = true",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 10, "title": "Todos los flags — estado actual",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 4, "w": 24, "h": 12 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "sortBy": [{ "displayName": "código", "desc": false }] },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "activo" }, "properties": [
+            { "id": "mappings", "value": [{ "type": "value", "options": { "true": { "color": "green", "text": "✓ Activo" }, "false": { "color": "gray", "text": "✗ Inactivo" } } }] },
+            { "id": "custom.width", "value": 120 }
+          ]},
+          { "matcher": { "id": "byName", "options": "entorno" }, "properties": [{ "id": "custom.width", "value": 100 }] },
+          { "matcher": { "id": "byName", "options": "plataforma" }, "properties": [{ "id": "custom.width", "value": 100 }] }
+        ]
+      },
+      "targets": [{
+        "rawSql": "SELECT codigofeature_flags AS \"código\", COALESCE(descripcionfeature_flags, '—') AS descripción, activofeature_flags AS activo, entornofeature_flags AS entorno, plataformafeature_flags AS plataforma, updated_atfeature_flags AS \"última actualización\" FROM feature_flags ORDER BY codigofeature_flags",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 11, "title": "Distribución por entorno (activos)",
+      "type": "piechart",
+      "gridPos": { "x": 0, "y": 16, "w": 8, "h": 8 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "pieType": "donut", "legend": { "displayMode": "table", "placement": "right" } },
+      "targets": [{
+        "rawSql": "SELECT entornofeature_flags AS metric, COUNT(*) AS value FROM feature_flags WHERE activofeature_flags = true GROUP BY 1",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 12, "title": "Distribución por plataforma (activos)",
+      "type": "piechart",
+      "gridPos": { "x": 8, "y": 16, "w": 8, "h": 8 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "pieType": "donut", "legend": { "displayMode": "table", "placement": "right" } },
+      "targets": [{
+        "rawSql": "SELECT plataformafeature_flags AS metric, COUNT(*) AS value FROM feature_flags WHERE activofeature_flags = true GROUP BY 1",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 13, "title": "Cambios recientes a flags (auditoría)",
+      "type": "table",
+      "gridPos": { "x": 16, "y": 16, "w": 8, "h": 8 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "sortBy": [{ "displayName": "fecha", "desc": true }] },
+      "targets": [{
+        "rawSql": "SELECT ea.created_ateventos_auditoria AS fecha, ea.operacioneventos_auditoria AS operación, u.nombreusuarios AS usuario, ea.registro_ideventos_auditoria AS flag_id FROM eventos_auditoria ea LEFT JOIN usuarios u ON u.idusuarios = ea.usuarios_idusuarios WHERE ea.tablaeventos_auditoria = 'feature_flags' AND ea.created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() ORDER BY ea.created_ateventos_auditoria DESC LIMIT 20",
+        "format": "table", "refId": "A"
+      }]
+    }
+  ]
+}

@@ -6,6 +6,7 @@ export const CreateProductoSchema = z.object({
   codigo:             z.string().min(1).max(50),
   nombre:             z.string().min(1).max(200),
   descripcion:        z.string().nullable().optional(),
+  serie:              z.string().max(100).nullable().optional(),
   tipo:               TipoProductoEnum,
   precio:             z.number().positive(),
   porcentaje_tax:     z.number().min(0).max(100).default(0),

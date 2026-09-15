@@ -1,18 +1,27 @@
 import {
-  Controller, Get, Post, Delete,
-  Body, Param, Query, UseGuards, UseFilters,
+  Controller, Get, Post, Patch, Delete, Put,
+  Body, Param, Query, Res, UseGuards, UseFilters,
   ParseIntPipe, BadRequestException, HttpCode, HttpStatus,
 } from '@nestjs/common';
+import type { FastifyReply } from 'fastify';
 import {
   ApiTags, ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse,
 } from '@nestjs/swagger';
+import { AuditKey }               from '../../audit/decorators/audit-key.decorator.js';
 import { VentasService }          from '../application/ventas.service.js';
 import { IniciarVentaSchema }        from '../dto/iniciar-venta.dto.js';
 import { AgregarProductoSchema }     from '../dto/agregar-producto.dto.js';
 import { ConfirmarVentaSchema }      from '../dto/confirmar-venta.dto.js';
 import { AnularVentaSchema }         from '../dto/anular-venta.dto.js';
-import { ContratarApartadoSchema }   from '../dto/contratar-apartado.dto.js';
-import { CrearEnvioSchema }          from '../dto/crear-envio.dto.js';
+import { SetTarifasEspecialSchema }  from '../dto/set-tarifas-especial.dto.js';
+import { ContratarApartadoSchema }         from '../dto/contratar-apartado.dto.js';
+import { AgregarApartadoCarritoSchema }    from '../dto/agregar-apartado-carrito.dto.js';
+import { RenovarApartadoSchema }     from '../dto/renovar-apartado.dto.js';
+import { CrearApartadoAdminSchema }  from '../dto/crear-apartado-admin.dto.js';
+import { UpdateApartadoAdminSchema } from '../dto/update-apartado-admin.dto.js';
+import { CrearEnvioSchema }                    from '../dto/crear-envio.dto.js';
+import { GuardarDireccionSchema }             from '../dto/guardar-direccion.dto.js';
+import { ActualizarDireccionEnvioSchema }     from '../dto/actualizar-direccion-envio.dto.js';
 import { JwtAuthGuard }           from '../../common/guards/jwt-auth.guard.js';
 import { FeatureFlagGuard }       from '../../common/guards/feature-flag.guard.js';
 import { RolesGuard }             from '../../common/guards/roles.guard.js';
@@ -21,9 +30,12 @@ import { Feature }                from '../../common/decorators/feature.decorato
 import { CurrentUser }            from '../../common/decorators/current-user.decorator.js';
 import { VentasPresenter }        from './ventas.presenter.js';
 import { VentasDomainFilter }     from './ventas-domain.filter.js';
+import { CajasDomainFilter }      from '../../cajas/infrastructure/cajas-domain.filter.js';
 import type { TipoProducto }      from '../domain/venta.entity.js';
 
-const ROLES_CAJERO     = ['CAJERO', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA'];
+// Solo CAJERO hace ventas — SUPERVISOR_REGIONAL no opera la caja auxiliar
+const ROLES_CAJERO     = ['CAJERO', 'ADMIN_SISTEMA'];
+// SUPERVISOR puede anular como autorización, no como operador de venta
 const ROLES_SUPERVISOR = ['SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA'];
 const ROLES_READ       = ['CAJERO', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL'];
 
@@ -31,13 +43,24 @@ const ROLES_READ       = ['CAJERO', 'SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA', 'ADM
 @ApiBearerAuth()
 @Controller('ventas')
 @UseGuards(JwtAuthGuard, FeatureFlagGuard, RolesGuard)
-@Feature('modulo_ventas')
-@UseFilters(new VentasDomainFilter())
+@Feature('modulo:ventas')
+@UseFilters(new VentasDomainFilter(), new CajasDomainFilter())
 export class VentasController {
   constructor(private readonly service: VentasService) {}
 
   // ── Catálogo ─────────────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-04')
+  @Get('punto/:cajaId/estampillas-disponibles')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Estampillas disponibles por denominación y serie (para preporteado)' })
+  @ApiParam({ name: 'cajaId', type: Number })
+  @ApiResponse({ status: 200, description: 'Lista de denominaciones con stock y serie' })
+  async getEstampillasDisponibles(@Param('cajaId', ParseIntPipe) cajaId: number) {
+    return this.service.getEstampillasDisponibles(cajaId);
+  }
+
+  @AuditKey('ADM-04')
   @Get('catalogo/productos')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Catálogo de productos disponibles en la sucursal' })
@@ -51,8 +74,32 @@ export class VentasController {
     return productos.map(VentasPresenter.toProducto);
   }
 
+  @AuditKey('OPE-02')
+  @Get('catalogo/especiales/:productoId/tarifas')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Tarifas por rango de cantidad para un servicio especial' })
+  @ApiParam({ name: 'productoId', type: Number })
+  async getTarifasEspecial(@Param('productoId', ParseIntPipe) productoId: number) {
+    return this.service.getTarifasEspecial(productoId);
+  }
+
+  @AuditKey('OPE-04')
+  @Put('catalogo/especiales/:productoId/tarifas')
+  @Roles('INVENTARIOS', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL')
+  @ApiOperation({ summary: 'Reemplaza todas las tarifas por cantidad de un servicio especial (admin)' })
+  @ApiParam({ name: 'productoId', type: Number })
+  async setTarifasEspecial(
+    @Param('productoId', ParseIntPipe) productoId: number,
+    @Body() body: unknown,
+  ) {
+    const parsed = SetTarifasEspecialSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    return this.service.setTarifasEspecial(productoId, parsed.data);
+  }
+
   // ── Clientes ──────────────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-04')
   @Get('clientes/buscar')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Buscar cliente por tipo y número de documento' })
@@ -66,8 +113,62 @@ export class VentasController {
     return cliente ? VentasPresenter.toCliente(cliente) : null;
   }
 
+  @AuditKey('ADM-04')
+  @Get('clientes/:clienteId/saldo-a-favor')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Consultar saldo a favor acumulado del cliente (por compras filatelia)' })
+  @ApiParam({ name: 'clienteId', type: Number })
+  async getSaldoAFavor(@Param('clienteId', ParseIntPipe) clienteId: number) {
+    return this.service.getSaldoAFavor(clienteId);
+  }
+
+  @AuditKey('ADM-04')
+  @Get('clientes/:clienteId/direcciones')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Direcciones frecuentes del cliente en envíos anteriores' })
+  @ApiParam({ name: 'clienteId', type: Number })
+  @ApiQuery({ name: 'rol', required: false, enum: ['remitente', 'destinatario'] })
+  async getDireccionesFrecuentes(
+    @Param('clienteId', ParseIntPipe) clienteId: number,
+    @Query('rol') rol?: string,
+  ) {
+    const rolVal = (rol === 'remitente' || rol === 'destinatario') ? rol : undefined;
+    return this.service.getDireccionesFrecuentes(clienteId, rolVal);
+  }
+
+  @AuditKey('OPE-04')
+  @Post('clientes/:clienteId/direcciones')
+  @Roles(...ROLES_READ)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Guardar dirección frecuente manualmente' })
+  @ApiParam({ name: 'clienteId', type: Number })
+  async guardarDireccionManual(
+    @Param('clienteId', ParseIntPipe) clienteId: number,
+    @Body() body: unknown,
+  ) {
+    const parsed = GuardarDireccionSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    await this.service.guardarDireccionManual(clienteId, parsed.data);
+  }
+
+  @AuditKey('ADM-04')
+  @Get('direcciones')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Direcciones frecuentes por número de documento del destinatario/remitente' })
+  @ApiQuery({ name: 'documento', required: true, description: 'Número de documento (CC, NIT, etc.)' })
+  @ApiQuery({ name: 'rol', required: false, enum: ['remitente', 'destinatario'] })
+  async getDireccionesPorDocumento(
+    @Query('documento') documento: string,
+    @Query('rol')       rol?: string,
+  ) {
+    if (!documento?.trim()) return [];
+    const rolVal = (rol === 'remitente' || rol === 'destinatario') ? rol : undefined;
+    return this.service.getDireccionesPorDocumento(documento.trim(), rolVal);
+  }
+
   // ── Iniciar venta ─────────────────────────────────────────────────────────────
 
+  @AuditKey('OPE-01')
   @Post('punto/:cajaId/iniciar')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Iniciar venta en caja auxiliar — busca/vincula cliente y crea el carrito' })
@@ -88,6 +189,7 @@ export class VentasController {
 
   // ── Carrito ───────────────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-04')
   @Get(':ventaId/carrito')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Ver carrito actual con todos los ítems y totales' })
@@ -96,6 +198,7 @@ export class VentasController {
     return VentasPresenter.toVenta(await this.service.getCarrito(ventaId));
   }
 
+  @AuditKey('OPE-01')
   @Post(':ventaId/carrito/producto')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Agregar producto al carrito' })
@@ -106,13 +209,15 @@ export class VentasController {
     @Param('ventaId', ParseIntPipe) ventaId: number,
     @Query('cajaId', ParseIntPipe)  cajaId:  number,
     @Body() body: unknown,
+    @CurrentUser() user: { id: number },
   ) {
     const parsed = AgregarProductoSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
-    const result = await this.service.agregarProducto(ventaId, parsed.data, cajaId);
+    const result = await this.service.agregarProducto(ventaId, parsed.data, cajaId, user.id);
     return { detalle: VentasPresenter.toDetalle(result.detalle), nombreProducto: result.nombreProducto };
   }
 
+  @AuditKey('OPE-04')
   @Delete(':ventaId/carrito/:detalleId')
   @Roles(...ROLES_CAJERO)
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -126,34 +231,80 @@ export class VentasController {
     await this.service.eliminarProducto(ventaId, detalleId);
   }
 
-  // ── Confirmar pago ────────────────────────────────────────────────────────────
-
-  @Post(':ventaId/confirmar')
+  @AuditKey('OPE-03')
+  @Post(':ventaId/carrito/envio')
   @Roles(...ROLES_CAJERO)
-  @ApiOperation({ summary: 'Confirmar pago — registra MovimientoCaja en la caja auxiliar' })
+  @ApiOperation({ summary: 'Agregar servicio postal al carrito — crea guía en estado pendiente, se factura al confirmar la venta' })
   @ApiParam({ name: 'ventaId', type: Number })
   @ApiQuery({ name: 'cajaId', type: Number, required: true })
-  @ApiResponse({ status: 200, description: 'Venta confirmada. Retorna cambio (si efectivo) + saldo actualizado + alertas.' })
+  @ApiResponse({ status: 201, description: 'Envío agregado al carrito. numeroGuia pre-asignado, estado=pendiente.' })
+  async agregarEnvioAlCarrito(
+    @Param('ventaId', ParseIntPipe) ventaId: number,
+    @Query('cajaId', ParseIntPipe)  cajaId:  number,
+    @Body() body: unknown,
+    @CurrentUser() user: { id: number },
+  ) {
+    const parsed = CrearEnvioSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    const result = await this.service.agregarEnvioAlCarrito(ventaId, cajaId, user.id, parsed.data);
+    return {
+      envio:                VentasPresenter.toEnvio(result.envio),
+      guia:                 VentasPresenter.toGuia(result.envio, await this.service.getContextoGuia(result.envio)),
+      cotizacion:           { pesoTarificadoKg: result.cotizacion.pesoTarificadoKg, valorServicio: result.cotizacion.valorServicio },
+      numeroGuia:           result.numeroGuia,
+      estado:               'pendiente',
+      seleccionEstampillas: result.seleccionEstampillas,
+    };
+  }
+
+  @AuditKey('OPE-04')
+  @Delete(':ventaId/carrito/envio/:envioId')
+  @Roles(...ROLES_CAJERO)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Eliminar envío pendiente del carrito' })
+  @ApiParam({ name: 'ventaId', type: Number })
+  @ApiParam({ name: 'envioId', type: Number })
+  async eliminarEnvioDelCarrito(
+    @Param('ventaId', ParseIntPipe) ventaId: number,
+    @Param('envioId', ParseIntPipe) envioId: number,
+  ) {
+    await this.service.eliminarEnvioDelCarrito(ventaId, envioId);
+  }
+
+  // ── Confirmar pago ────────────────────────────────────────────────────────────
+
+  @AuditKey('FIN-01')
+  @Post(':ventaId/confirmar')
+  @Roles(...ROLES_CAJERO)
+  @ApiOperation({ summary: 'Confirmar pago — registra MovimientoCaja, factura envíos pendientes y genera guías' })
+  @ApiParam({ name: 'ventaId', type: Number })
+  @ApiQuery({ name: 'cajaId', type: Number, required: true })
+  @ApiResponse({ status: 200, description: 'Venta confirmada. Retorna cambio + saldo + alertas + guias (si había envíos en carrito).' })
   @ApiResponse({ status: 422, description: 'Carrito vacío' })
   async confirmarVenta(
     @Param('ventaId', ParseIntPipe) ventaId: number,
     @Query('cajaId', ParseIntPipe)  cajaId:  number,
     @Body() body: unknown,
+    @CurrentUser() user: { id: number },
   ) {
     const parsed = ConfirmarVentaSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
-    const result = await this.service.confirmarVenta(ventaId, parsed.data, cajaId);
+    const result = await this.service.confirmarVenta(ventaId, parsed.data, cajaId, user.id);
     return {
       venta:       VentasPresenter.toVenta(result.venta),
       movimiento:  result.movimiento,
       saldoActual: result.saldoActual,
       alertas:     result.alertas,
       cambio:      result.cambio,
+      guias:       await Promise.all(
+        result.guias.map(async (e) => VentasPresenter.toGuia(e, await this.service.getContextoGuia(e))),
+      ),
     };
   }
 
   // ── Anular factura ────────────────────────────────────────────────────────────
 
+  @AuditKey('FIN-03')
   @Post(':ventaId/anular')
   @Roles(...ROLES_SUPERVISOR)
   @ApiOperation({ summary: 'Anular venta — reversa el movimiento de caja y libera recursos' })
@@ -164,10 +315,11 @@ export class VentasController {
     @Param('ventaId', ParseIntPipe) ventaId: number,
     @Query('cajaId', ParseIntPipe)  cajaId:  number,
     @Body() body: unknown,
+    @CurrentUser() user: { id: number; rol: string; regional_id: number | null },
   ) {
     const parsed = AnularVentaSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
-    const result = await this.service.anularVenta(ventaId, parsed.data, cajaId);
+    const result = await this.service.anularVenta(ventaId, parsed.data, cajaId, user);
     return {
       venta:       VentasPresenter.toVenta(result.venta),
       movimiento:  result.movimiento,
@@ -177,8 +329,46 @@ export class VentasController {
     };
   }
 
+  // ── Apartado Postal en carrito ────────────────────────────────────────────────
+
+  @AuditKey('OPE-01')
+  @Post(':ventaId/carrito/apartado')
+  @Roles(...ROLES_CAJERO)
+  @ApiOperation({ summary: 'Agregar apartado postal al carrito — reserva y suma al total de la venta' })
+  @ApiParam({ name: 'ventaId', type: Number })
+  @ApiQuery({ name: 'cajaId', type: Number, required: true })
+  @ApiQuery({ name: 'clienteId', type: Number, required: true })
+  @ApiResponse({ status: 201, description: 'Apartado reservado y agregado al carrito' })
+  @ApiResponse({ status: 409, description: 'Apartado no disponible' })
+  async agregarApartadoAlCarrito(
+    @Param('ventaId',             ParseIntPipe) ventaId:   number,
+    @Query('cajaId',    ParseIntPipe)           cajaId:    number,
+    @Query('clienteId', ParseIntPipe)           clienteId: number,
+    @Body() body: unknown,
+  ) {
+    const parsed = AgregarApartadoCarritoSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    const result = await this.service.agregarApartadoAlCarrito(ventaId, cajaId, clienteId, parsed.data);
+    return { apartado: VentasPresenter.toApartado(result.apartado), cotizacion: result.cotizacion };
+  }
+
+  @AuditKey('OPE-04')
+  @Delete(':ventaId/carrito/apartado/:apartadoId')
+  @Roles(...ROLES_CAJERO)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Eliminar apartado reservado del carrito — libera el apartado' })
+  @ApiParam({ name: 'ventaId', type: Number })
+  @ApiParam({ name: 'apartadoId', type: Number })
+  async eliminarApartadoDelCarrito(
+    @Param('ventaId',    ParseIntPipe) ventaId:    number,
+    @Param('apartadoId', ParseIntPipe) apartadoId: number,
+  ) {
+    await this.service.eliminarApartadoDelCarrito(ventaId, apartadoId);
+  }
+
   // ── Apartado Postal ───────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-04')
   @Get('apartados/disponibles')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Apartados postales disponibles en una sucursal' })
@@ -191,6 +381,20 @@ export class VentasController {
     return this.service.getApartadosDisponibles(sucursalId, tamano);
   }
 
+  @AuditKey('ADM-04')
+  @Get('apartados/todos')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Todos los apartados postales de una sucursal (cualquier estado)' })
+  @ApiQuery({ name: 'sucursalId', type: Number, required: true })
+  @ApiQuery({ name: 'tamano', required: false, enum: ['pequeno', 'mediano', 'grande'] })
+  async getApartadosPorSucursal(
+    @Query('sucursalId', ParseIntPipe) sucursalId: number,
+    @Query('tamano') tamano?: string,
+  ) {
+    return this.service.getApartadosPorSucursal(sucursalId, tamano);
+  }
+
+  @AuditKey('FIN-01')
   @Post('punto/:cajaId/apartado')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Contratar apartado postal — registra MovimientoCaja tipo apartado_postal' })
@@ -214,8 +418,35 @@ export class VentasController {
     };
   }
 
+  @AuditKey('FIN-01')
+  @Post('punto/:cajaId/apartado/:id/renovar')
+  @Roles(...ROLES_CAJERO)
+  @ApiOperation({ summary: 'Renovar apartado postal — extiende fechaFin y registra cobro en caja' })
+  @ApiParam({ name: 'cajaId', type: Number })
+  @ApiParam({ name: 'id', type: Number })
+  @ApiResponse({ status: 201, description: 'Apartado renovado y movimiento registrado' })
+  @ApiResponse({ status: 404, description: 'Apartado no encontrado' })
+  @ApiResponse({ status: 409, description: 'Apartado no está ocupado' })
+  async renovarApartado(
+    @Param('cajaId', ParseIntPipe) cajaId:     number,
+    @Param('id',     ParseIntPipe) apartadoId: number,
+    @Body() body: unknown,
+  ) {
+    const parsed = RenovarApartadoSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    const result = await this.service.renovarApartado(cajaId, apartadoId, parsed.data);
+    return {
+      apartado:    result.apartado,
+      renovacion:  result.renovacion,
+      movimiento:  result.movimiento,
+      saldoActual: result.saldoActual,
+      alertas:     result.alertas,
+    };
+  }
+
   // ── Servicios Postales ────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-04')
   @Get('servicios-postales')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Catálogo de servicios postales disponibles en la sucursal' })
@@ -224,6 +455,29 @@ export class VentasController {
     return this.service.getServiciosPostales(sucursalId);
   }
 
+  @AuditKey('ADM-04')
+  @Get('servicios-postales/:servicioId/paises-destino')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Lista de países de destino con tarifas configuradas para el servicio' })
+  @ApiParam({ name: 'servicioId', type: Number })
+  async getPaisesDestino(@Param('servicioId', ParseIntPipe) servicioId: number) {
+    return this.service.getPaisesDestinoByServicio(servicioId);
+  }
+
+  @AuditKey('ADM-04')
+  @Get('conversion-moneda')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Convertir COP a USD usando TRM del día' })
+  @ApiQuery({ name: 'valorCop', type: Number, required: true })
+  @ApiQuery({ name: 'trmDia',   type: Number, required: true })
+  conversionMoneda(
+    @Query('valorCop') valorCopS: string,
+    @Query('trmDia')   trmDiaS:   string,
+  ) {
+    return this.service.conversionMoneda(Number(valorCopS), Number(trmDiaS));
+  }
+
+  @AuditKey('OPE-02')
   @Get('servicios-postales/cotizar')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Cotizar tarifa de envío según servicio, peso y dimensiones' })
@@ -232,14 +486,22 @@ export class VentasController {
   @ApiQuery({ name: 'altoCm',       type: Number,  required: false })
   @ApiQuery({ name: 'anchoCm',      type: Number,  required: false })
   @ApiQuery({ name: 'largoCm',      type: Number,  required: false })
-  @ApiQuery({ name: 'paisDestino',  required: false })
+  @ApiQuery({ name: 'paisDestino',       required: false })
+  @ApiQuery({ name: 'ciudadDestino',  required: false })
+  @ApiQuery({ name: 'tipoTrayecto',   required: false, enum: ['URBANO','NACIONAL','ESPECIAL'], description: 'Tipo de trayecto para servicios nacionales (reemplaza ciudadDestino en lookup de tarifa)' })
+  @ApiQuery({ name: 'porcentajeArancel', type: Number, required: false, description: 'Porcentaje arancel destino — retorna estimado aduana en USD' })
+  @ApiQuery({ name: 'trmDia',            type: Number, required: false, description: 'TRM del día para conversión COP→USD en estimado de aduana' })
   async cotizarEnvio(
-    @Query('servicioId',   ParseIntPipe)  servicioId:   number,
-    @Query('pesoFisicoKg') pesoFisicoKgS: string,
-    @Query('altoCm')       altoCmS?:      string,
-    @Query('anchoCm')      anchoCmS?:     string,
-    @Query('largoCm')      largoCmS?:     string,
-    @Query('paisDestino')  paisDestino = 'CO',
+    @Query('servicioId',      ParseIntPipe)  servicioId:     number,
+    @Query('pesoFisicoKg')   pesoFisicoKgS: string,
+    @Query('altoCm')          altoCmS?:      string,
+    @Query('anchoCm')         anchoCmS?:     string,
+    @Query('largoCm')         largoCmS?:     string,
+    @Query('paisDestino')     paisDestino = 'CO',
+    @Query('ciudadDestino')   ciudadDestino?: string,
+    @Query('tipoTrayecto')    tipoTrayecto?: 'URBANO' | 'NACIONAL' | 'ESPECIAL',
+    @Query('porcentajeArancel') porcentajeArancelS?: string,
+    @Query('trmDia')            trmDiaS?:            string,
   ) {
     return this.service.cotizarEnvio(
       servicioId,
@@ -248,9 +510,14 @@ export class VentasController {
       anchoCmS ? Number(anchoCmS) : undefined,
       largoCmS ? Number(largoCmS) : undefined,
       paisDestino,
+      ciudadDestino,
+      porcentajeArancelS ? Number(porcentajeArancelS) : undefined,
+      trmDiaS            ? Number(trmDiaS)            : undefined,
+      tipoTrayecto,
     );
   }
 
+  @AuditKey('FIN-01')
   @Post('punto/:cajaId/envio')
   @Roles(...ROLES_CAJERO)
   @ApiOperation({ summary: 'Crear guía postal — registra MovimientoCaja tipo venta_servicio' })
@@ -266,16 +533,72 @@ export class VentasController {
     if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
     const result = await this.service.crearEnvio(cajaId, user.id, parsed.data);
     return {
-      envio:       result.envio,
-      cotizacion:  { pesoTarificadoKg: result.cotizacion.pesoTarificadoKg, valorServicio: result.cotizacion.valorServicio },
-      movimiento:  result.movimiento,
-      saldoActual: result.saldoActual,
-      alertas:     result.alertas,
+      guia:                 VentasPresenter.toGuia(result.envio, await this.service.getContextoGuia(result.envio)),
+      envio:                VentasPresenter.toEnvio(result.envio),
+      cotizacion:           { pesoTarificadoKg: result.cotizacion.pesoTarificadoKg, valorServicio: result.cotizacion.valorServicio },
+      movimiento:           result.movimiento,
+      saldoActual:          result.saldoActual,
+      alertas:              result.alertas,
+      seleccionEstampillas: result.seleccionEstampillas,
     };
+  }
+
+  // ── Ventas del día por sucursal ───────────────────────────────────────────────
+
+  @AuditKey('ADM-06')
+  @Get('sucursal/:sucursalId/dia')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Ventas confirmadas del día en una sucursal (con detalle de productos)' })
+  @ApiParam({ name: 'sucursalId', type: Number })
+  async getVentasDia(@Param('sucursalId', ParseIntPipe) sucursalId: number) {
+    return this.service.getVentasDia(sucursalId);
+  }
+
+  // ── Reporte histórico de ventas ───────────────────────────────────────────────
+
+  @AuditKey('ADM-06')
+  @Get('reporte/historico')
+  @Roles('SUPERVISOR_REGIONAL', 'ADMIN_SISTEMA', 'ADMIN_NACIONAL', 'TESORERIA')
+  @ApiOperation({ summary: 'Reporte histórico de ventas paginado con filtros de fecha y sucursal' })
+  @ApiQuery({ name: 'fechaInicio', type: String, required: true,  description: 'YYYY-MM-DD' })
+  @ApiQuery({ name: 'fechaFin',    type: String, required: true,  description: 'YYYY-MM-DD' })
+  @ApiQuery({ name: 'sucursalId',  type: Number, required: false })
+  @ApiQuery({ name: 'cajaId',      type: Number, required: false })
+  @ApiQuery({ name: 'page',        type: Number, required: false })
+  @ApiQuery({ name: 'limit',       type: Number, required: false })
+  async getReporteHistorico(
+    @CurrentUser() actor: { rol: string; sucursal_id: number | null; regional_id: number | null },
+    @Query('fechaInicio') fechaInicio?: string,
+    @Query('fechaFin')    fechaFin?:    string,
+    @Query('sucursalId')  sucursalIdRaw?: string,
+    @Query('cajaId')      cajaIdRaw?:     string,
+    @Query('page')        pageRaw?:       string,
+    @Query('limit')       limitRaw?:      string,
+  ) {
+    if (!fechaInicio || !fechaFin) throw new BadRequestException('fechaInicio y fechaFin son requeridos');
+    return this.service.getVentasHistorico({
+      fechaInicio,
+      fechaFin,
+      sucursalId: sucursalIdRaw ? Number(sucursalIdRaw) : undefined,
+      cajaId:     cajaIdRaw     ? Number(cajaIdRaw)     : undefined,
+      page:  pageRaw  ? Math.max(1, Number(pageRaw))  : 1,
+      limit: limitRaw ? Math.min(100, Number(limitRaw)) : 20,
+      actor,
+    });
+  }
+
+  @AuditKey('ADM-04')
+  @Get('sucursal/:sucursalId/punto-admision')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Código y nombre del punto de admisión — encabezado de la guía postal' })
+  @ApiParam({ name: 'sucursalId', type: Number })
+  async getPuntoAdmision(@Param('sucursalId', ParseIntPipe) sucursalId: number) {
+    return this.service.getPuntoAdmision(sucursalId);
   }
 
   // ── Resumen del turno ─────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-06')
   @Get('punto/:cajaId/resumen')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Resumen de ventas del turno activo por categoría (sellos, apartados, servicios, productos)' })
@@ -287,11 +610,166 @@ export class VentasController {
 
   // ── Listado del turno ─────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-06')
   @Get('punto/:cajaId/turno')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Movimientos globales del turno activo — incluye ventas, apartados, servicios y anulaciones' })
   @ApiParam({ name: 'cajaId', type: Number })
   async listMovimientosTurno(@Param('cajaId', ParseIntPipe) cajaId: number) {
     return this.service.listMovimientosTurno(cajaId);
+  }
+
+  // ── Admin CRUD Apartados ──────────────────────────────────────────────────────
+
+  @AuditKey('ADM-04')
+  @Get('admin/apartados')
+  @Roles('ADMIN_SISTEMA', 'ADMIN_NACIONAL')
+  @ApiOperation({ summary: 'Listar todos los apartados postales (admin)' })
+  @ApiQuery({ name: 'sucursalId', type: Number, required: false })
+  @ApiQuery({ name: 'estado',     type: String, required: false, enum: ['disponible', 'ocupado', 'vencido', 'mantenimiento'] })
+  @ApiQuery({ name: 'tamano',     type: String, required: false, enum: ['pequeno', 'mediano', 'grande'] })
+  async listApartadosAdmin(
+    @Query('sucursalId') sucursalIdRaw?: string,
+    @Query('estado')     estado?: string,
+    @Query('tamano')     tamano?: string,
+  ) {
+    const sucursalId = sucursalIdRaw ? Number(sucursalIdRaw) : undefined;
+    return this.service.listApartadosAdmin({ sucursalId, estado, tamano });
+  }
+
+  @AuditKey('ADM-01')
+  @Post('admin/apartados')
+  @Roles('ADMIN_SISTEMA', 'ADMIN_NACIONAL')
+  @ApiOperation({ summary: 'Crear apartado postal' })
+  @ApiResponse({ status: 201, description: 'Apartado creado' })
+  @ApiResponse({ status: 409, description: 'Número duplicado en la sucursal' })
+  async createApartadoAdmin(@Body() body: unknown) {
+    const parsed = CrearApartadoAdminSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    return this.service.createApartadoAdmin(parsed.data);
+  }
+
+  @AuditKey('OPE-04')
+  @Patch('admin/apartados/:id')
+  @Roles('ADMIN_SISTEMA', 'ADMIN_NACIONAL')
+  @ApiOperation({ summary: 'Actualizar tamaño, estado o días de alerta de un apartado' })
+  @ApiParam({ name: 'id', type: Number })
+  async updateApartadoAdmin(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: unknown,
+  ) {
+    const parsed = UpdateApartadoAdminSchema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.flatten());
+    return this.service.updateApartadoAdmin(id, parsed.data);
+  }
+
+  @AuditKey('OPE-04')
+  @Delete('admin/apartados/:id')
+  @Roles('ADMIN_SISTEMA', 'ADMIN_NACIONAL')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Eliminar (soft) un apartado — solo si está disponible o en mantenimiento' })
+  @ApiParam({ name: 'id', type: Number })
+  async deleteApartadoAdmin(@Param('id', ParseIntPipe) id: number) {
+    await this.service.deleteApartadoAdmin(id);
+  }
+
+  // ── Alertas ───────────────────────────────────────────────────────────────
+
+  @AuditKey('ADM-04')
+  @Get('alertas/apartados')
+  @Roles('SUPERVISOR_REGIONAL', 'ADMIN_NACIONAL', 'ADMIN_SISTEMA')
+  @ApiOperation({ summary: 'Apartados próximos a vencer y vencidos — para Dashboard de alertas' })
+  @ApiQuery({ name: 'sucursalId', type: Number, required: false })
+  async getAlertasApartados(
+    @Query('sucursalId') sucursalIdRaw?: string,
+    @CurrentUser() user?: { id: number; rol: string; sucursal_id: number | null },
+  ) {
+    const sucursalId = sucursalIdRaw
+      ? Number(sucursalIdRaw)
+      : user?.rol === 'SUPERVISOR_REGIONAL'
+        ? (user.sucursal_id ?? undefined)
+        : undefined;
+    return this.service.getAlertasApartados(sucursalId);
+  }
+
+  @AuditKey('ADM-04')
+  @Get('alertas/anulaciones')
+  @Roles('SUPERVISOR_REGIONAL', 'ADMIN_NACIONAL', 'ADMIN_SISTEMA')
+  @ApiOperation({ summary: 'Anulaciones pendientes de aprobación — para Dashboard de alertas' })
+  @ApiQuery({ name: 'sucursalId', type: Number, required: false })
+  async getAnulacionesPendientes(
+    @Query('sucursalId') sucursalIdRaw?: string,
+    @CurrentUser() user?: { id: number; rol: string; sucursal_id: number | null },
+  ) {
+    const sucursalId = sucursalIdRaw
+      ? Number(sucursalIdRaw)
+      : user?.rol === 'SUPERVISOR_REGIONAL'
+        ? (user.sucursal_id ?? undefined)
+        : undefined;
+    return this.service.getAnulacionesPendientes(sucursalId);
+  }
+
+  // ── Detalle y modificación de dirección de un envío ──────────────────────────
+
+  @AuditKey('ADM-04')
+  @Get('envios/:envioId')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Obtener datos completos de un envío (incluye remitente y destinatario)' })
+  @ApiParam({ name: 'envioId', type: Number })
+  async getEnvioDetalle(@Param('envioId', ParseIntPipe) envioId: number) {
+    return this.service.getEnvioDetalle(envioId);
+  }
+
+  @AuditKey('ADM-04')
+  @Patch('envios/:envioId/direccion')
+  @Roles(...ROLES_SUPERVISOR, 'ADMIN_NACIONAL')
+  @ApiOperation({ summary: 'Corregir dirección del destinatario antes del despacho — solo supervisores' })
+  @ApiParam({ name: 'envioId', type: Number })
+  async actualizarDireccionEnvio(
+    @Param('envioId', ParseIntPipe) envioId: number,
+    @Body() body: unknown,
+  ) {
+    const dto = ActualizarDireccionEnvioSchema.parse(body);
+    return this.service.actualizarDireccionEnvio(envioId, dto);
+  }
+
+  // ── Guía PDF de envío individual ──────────────────────────────────────────────
+
+  @AuditKey('ADM-06')
+  @Get('envios/:envioId/guia-pdf')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Descargar guía postal individual en PDF' })
+  @ApiParam({ name: 'envioId', type: Number })
+  async descargarGuiaEnvioPdf(
+    @Param('envioId', ParseIntPipe) envioId: number,
+    @Res() reply: FastifyReply,
+  ) {
+    const buffer = await this.service.getEnvioGuiaPdf(envioId);
+    reply
+      .header('Content-Type', 'application/pdf')
+      .header('Content-Disposition', `attachment; filename="guia-${envioId}.pdf"`)
+      .send(buffer);
+  }
+
+  // ── Recibo de venta en PDF ────────────────────────────────────────────────────
+
+  @AuditKey('ADM-06')
+  @Get(':ventaId/recibo-pdf')
+  @Roles(...ROLES_READ)
+  @ApiOperation({ summary: 'Generar recibo de venta en PDF' })
+  @ApiParam({ name: 'ventaId', type: Number })
+  @ApiQuery({ name: 'efectivo', required: false, type: Number, description: 'Efectivo recibido para calcular cambio' })
+  @ApiResponse({ status: 200, description: 'PDF del recibo' })
+  async descargarReciboPdf(
+    @Param('ventaId', ParseIntPipe) ventaId: number,
+    @Query('efectivo') efectivoRaw: string | undefined,
+    @Res() reply: FastifyReply,
+  ) {
+    const efectivoRecibido = efectivoRaw ? parseFloat(efectivoRaw) : undefined;
+    const buffer = await this.service.getVentaReciboPdf(ventaId, efectivoRecibido);
+    reply
+      .header('Content-Type', 'application/pdf')
+      .header('Content-Disposition', `inline; filename="recibo-${ventaId}.pdf"`)
+      .send(buffer);
   }
 }

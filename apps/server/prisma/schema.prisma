@@ -47,6 +47,7 @@ enum tipo_servicio_envio {
   internacional_ms
   internacional_courier
   apartado_postal
+  alistamiento
 }
 
 enum tipo_caja {
@@ -60,6 +61,13 @@ enum estado_sesion_caja {
   abierta
   cerrada
   forzada
+}
+
+// Tramo comercio → regional: lo que Tesorería asigna a la caja principal de un punto.
+enum tipo_movimiento_tesoreria {
+  apertura
+  ingreso
+  egreso
 }
 
 enum tipo_movimiento_caja {
@@ -93,6 +101,7 @@ enum medio_pago {
   consignacion
   preporteado
   mixto_preporteado
+  estampilla
 }
 
 enum medio_consignacion {
@@ -109,10 +118,13 @@ enum estado_aprobacion {
   pendiente
   aprobada
   rechazada
+  en_transito
+  confirmada
 }
 
 enum estado_venta {
   activa
+  confirmada
   anulada
 }
 
@@ -123,6 +135,7 @@ enum tipo_envio {
 }
 
 enum estado_envio {
+  pendiente
   facturado
   en_saca
   despachado
@@ -187,6 +200,7 @@ enum tamano_apartado_postal {
 
 enum estado_apartado_postal {
   disponible
+  reservado
   ocupado
   vencido
   mantenimiento
@@ -265,10 +279,10 @@ enum estado_alerta {
   vista
 }
 
-enum operacion_auditoria {
-  INSERT
-  UPDATE
-  DELETE
+enum estado_lote_masivo {
+  borrador
+  confirmado
+  anulado
 }
 
 enum entorno_feature_flag {
@@ -289,8 +303,13 @@ enum plataforma_feature_flag {
 // ══════════════════════════════════════════════════════════════════════════════
 
 model Pais {
-  idpaises     Int    @id
-  nombrepaises String @db.VarChar(100)
+  idpaises     Int     @id
+  nombrepaises String  @db.VarChar(100)
+  iso2         String? @db.VarChar(2)
+  iso3         String? @db.VarChar(3)
+  phonecode    String? @db.VarChar(10)
+  region       String? @db.VarChar(50)
+  activo       Boolean @default(true)
 
   departamentos Departamento[]
   sucursales    Sucursal[]
@@ -300,9 +319,10 @@ model Pais {
 }
 
 model Departamento {
-  iddepartamentos     Int    @id
+  iddepartamentos     Int     @id
   paises_idpaises     Int
-  nombredepartamentos String @db.VarChar(100)
+  nombredepartamentos String  @db.VarChar(100)
+  activo              Boolean @default(true)
 
   pais       Pais       @relation(fields: [paises_idpaises], references: [idpaises])
   ciudades   Ciudad[]
@@ -313,9 +333,10 @@ model Departamento {
 }
 
 model Ciudad {
-  idciudades                    Int    @id
+  idciudades                    Int     @id
   departamentos_iddepartamentos Int
-  nombreciudades                String @db.VarChar(100)
+  nombreciudades                String  @db.VarChar(100)
+  activo                        Boolean @default(true)
 
   departamento Departamento @relation(fields: [departamentos_iddepartamentos], references: [iddepartamentos])
   sucursales   Sucursal[]
@@ -387,6 +408,7 @@ model Sucursal {
   usuarios              Usuario[]
   productosSucursal     ProductoSucursal[]
   serviciosSucursal     ServicioSucursal[]
+  franquiciasSucursal   FranquiciaSucursal[]
   cajasPadres           CajaPadre[]
   cajas                 Caja[]
   inventarioSucursal    InventarioSucursal[]
@@ -400,7 +422,7 @@ model Sucursal {
   conveniosSucursal     ConvenioSucursal[]
   alertas               Alerta[]
   envios                Envio[]
-  eventosAuditoria      EventoAuditoria[]
+  enviosMasivos         EnvioMasivo[]
 
   @@map("sucursales")
 }
@@ -408,7 +430,7 @@ model Sucursal {
 model EquipoAutorizado {
   idequipos_autorizados                Int                       @id @default(autoincrement())
   sucursales_idsucursales              Int
-  mac_addressequipos_autorizados       String                    @unique @db.VarChar(30)
+  mac_addressequipos_autorizados       String                    @db.VarChar(30)
   nombreequipos_autorizados            String?                   @db.VarChar(100)
   sistema_operativoequipos_autorizados sistema_operativo_equipo?
   activoequipos_autorizados            Boolean                   @default(true)
@@ -417,6 +439,7 @@ model EquipoAutorizado {
 
   sucursal Sucursal @relation(fields: [sucursales_idsucursales], references: [idsucursales])
 
+  @@unique([mac_addressequipos_autorizados, sucursales_idsucursales], name: "equipos_autorizados_mac_sucursal_key")
   @@map("equipos_autorizados")
 }
 
@@ -495,7 +518,9 @@ model Usuario {
   nombreusuarios                String    @db.VarChar(200)
   emailusuarios                 String    @unique @db.VarChar(200)
   password_hashusuarios         String    @db.VarChar(500)
-  telefonousuarios              String?   @db.VarChar(20)
+  telefonousuarios              String?                  @db.VarChar(20)
+  tipo_documentousuarios        tipo_documento_identidad?
+  numero_documentousuarios      String?                  @db.VarChar(30)
   activousuarios                Boolean   @default(true)
   ultimo_loginusuarios          DateTime? @db.Timestamptz(6)
   created_atusuarios            DateTime  @default(now()) @db.Timestamptz(6)
@@ -510,11 +535,13 @@ model Usuario {
 
   sesionesApertura        SesionCaja[]          @relation("SesionCajaApertura")
   sesionesCierre          SesionCaja[]          @relation("SesionCajaCierre")
+  sesionesCajeroAsignado  SesionCaja[]          @relation("SesionCajaCajeroAsignado")
   consignaciones          Consignacion[]        @relation("ConsignacionUsuario")
   consignacionesAprobadas Consignacion[]        @relation("ConsignacionAprobador")
   reposicionesCaja        ReposicionCaja[]
   ventas                  Venta[]
   envios                  Envio[]
+  enviosMasivos           EnvioMasivo[]
   sacas                   Saca[]
   giros                   Giro[]
   recaudos                Recaudo[]
@@ -523,9 +550,13 @@ model Usuario {
   ordenesConfirmadas      OrdenInventario[]     @relation("OrdenInventarioConfirmador")
   alertasCreadas          Alerta[]              @relation("AlertaCreador")
   alertasResueltas        Alerta[]              @relation("AlertaResolutor")
-  anulacionesSolicitadas  Anulacion[]           @relation("AnulacionSolicitante")
-  anulacionesAprobadas    Anulacion[]           @relation("AnulacionAprobador")
-  eventosAuditoria        EventoAuditoria[]
+  anulacionesSolicitadas   Anulacion[]           @relation("AnulacionSolicitante")
+  anulacionesAprobadas     Anulacion[]           @relation("AnulacionAprobador")
+  diferenciasComoCustodio  DiferenciaCaja[]      @relation("DiferenciaCustodio")
+  diferenciasComoAprobador DiferenciaCaja[]      @relation("DiferenciaAprobador")
+  cajasComoFijo            Caja[]                @relation("CajaCajeroFijo")
+  puntosSupervisados       CajaPadre[]           @relation("CajaPadreSupervisor")
+  movimientosTesoreria     MovimientoTesoreria[] @relation("MovimientoTesoreriaUsuario")
   consultasInspektor      ConsultaInspektor[]
   featureFlagsUsuarios    FeatureFlagUsuario[]
 
@@ -568,25 +599,29 @@ model Producto {
   codigoproductos             String       @unique @db.VarChar(50)
   nombreproductos             String       @db.VarChar(200)
   descripcionproductos        String?
+  serieproductos              String?      @db.VarChar(100)
   tipoproductos               tipo_producto
   precioproductos             Decimal      @db.Decimal(18, 2)
   precio_sin_taxproductos     Decimal?     @db.Decimal(18, 2)
   porcentaje_taxproductos     Decimal      @default(0) @db.Decimal(5, 2)
   pesoproductos               Decimal?     @db.Decimal(8, 3)
   factor_volumetricoproductos Decimal?     @db.Decimal(8, 4)
-  imagen_urlproductos         String?      @db.VarChar(500)
+  imagen_urlproductos              String?      @db.VarChar(500)
+  cantidad_minima_ventaproductos   Int?
+  cantidad_maxima_ventaproductos   Int?
   activoproductos             Boolean      @default(true)
   created_atproductos         DateTime     @default(now()) @db.Timestamptz(6)
   updated_atproductos         DateTime     @default(now()) @db.Timestamptz(6)
   deleted_atproductos         DateTime?    @db.Timestamptz(6)
 
-  productosSucursal     ProductoSucursal[]
-  tarifasProducto       TarifaProducto[]
-  ventasDetalle         VentaDetalle[]
-  enviosItems           EnvioItem[]
-  inventarioSucursal    InventarioSucursal[]
-  movimientosInventario MovimientoInventario[]
-  ordenesItems          OrdenInventarioItem[]
+  productosSucursal       ProductoSucursal[]
+  tarifasProducto         TarifaProducto[]
+  tarifasEspecialCantidad TarifaEspecialCantidad[]
+  ventasDetalle           VentaDetalle[]
+  enviosItems             EnvioItem[]
+  inventarioSucursal      InventarioSucursal[]
+  movimientosInventario   MovimientoInventario[]
+  ordenesItems            OrdenInventarioItem[]
 
   @@map("productos")
 }
@@ -621,6 +656,23 @@ model TarifaProducto {
   @@map("tarifas_producto")
 }
 
+model TarifaEspecialCantidad {
+  idtarifas_especial_cantidad    Int       @id @default(autoincrement())
+  productos_idproductos          Int
+  min_cantidadtarifas_especial   Int
+  max_cantidadtarifas_especial   Int?
+  preciotarifas_especial         Decimal   @db.Decimal(18, 2)
+  activotarifas_especial         Boolean   @default(true)
+  created_attarifas_especial     DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_attarifas_especial     DateTime? @db.Timestamptz(6)
+
+  producto Producto @relation(fields: [productos_idproductos], references: [idproductos])
+
+  @@unique([productos_idproductos, min_cantidadtarifas_especial])
+  @@index([productos_idproductos, activotarifas_especial], map: "idx_tarifas_especial_lookup")
+  @@map("tarifas_especial_cantidad")
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // 6. CATÁLOGO: SERVICIOS DE ENVÍO
 // ══════════════════════════════════════════════════════════════════════════════
@@ -638,6 +690,12 @@ model Servicio {
   factor_volumetricoservicios       Int                 @default(2500)
   tiempo_entrega_diasservicios      Int?
   codigo_sigmaservicios             String?             @db.VarChar(50)
+  prefijo_guia_servicios            String?             @db.VarChar(5)
+  tarifa_certificacionservicios     Decimal?            @db.Decimal(18, 2)
+  minimo_seguro_postalservicios     Decimal?            @db.Decimal(18, 2)
+  alto_max_cmservicios              Decimal?            @db.Decimal(8, 1)
+  ancho_max_cmservicios             Decimal?            @db.Decimal(8, 1)
+  largo_max_cmservicios             Decimal?            @db.Decimal(8, 1)
   activoservicios                   Boolean             @default(true)
   created_atservicios               DateTime            @default(now()) @db.Timestamptz(6)
   deleted_atservicios               DateTime?           @db.Timestamptz(6)
@@ -645,6 +703,7 @@ model Servicio {
   serviciosSucursal ServicioSucursal[]
   tarifasServicio   TarifaServicio[]
   envios            Envio[]
+  enviosMasivos     EnvioMasivo[]
 
   @@map("servicios")
 }
@@ -659,6 +718,33 @@ model ServicioSucursal {
 
   @@id([sucursales_idsucursales, servicios_idservicios])
   @@map("servicios_sucursal")
+}
+
+model Franquicia {
+  idfranquicias         Int       @id @default(autoincrement())
+  codigofranquicias     String    @unique @db.VarChar(20)
+  nombrefranquicias     String    @db.VarChar(100)
+  activofranquicias     Boolean   @default(true)
+  created_atfranquicias DateTime  @default(now()) @db.Timestamptz(6)
+  updated_atfranquicias DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_atfranquicias DateTime? @db.Timestamptz(6)
+
+  franquiciasSucursal FranquiciaSucursal[]
+  movimientosCaja     MovimientoCaja[]
+
+  @@map("franquicias")
+}
+
+model FranquiciaSucursal {
+  sucursales_idsucursales    Int
+  franquicias_idfranquicias  Int
+  activofranquicias_sucursal Boolean @default(true)
+
+  sucursal   Sucursal   @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  franquicia Franquicia @relation(fields: [franquicias_idfranquicias], references: [idfranquicias])
+
+  @@id([sucursales_idsucursales, franquicias_idfranquicias])
+  @@map("franquicias_sucursal")
 }
 
 model TarifaServicio {
@@ -703,6 +789,7 @@ model Cliente {
   tipos_cliente_idtipos_cliente Int?
   nivel_sisbenclientes          Int?
   envios_sisben_anoclientes     Int                      @default(0)
+  saldo_a_favclientes           Decimal                  @default(0) @db.Decimal(18, 2)
   activoclientes                Boolean                  @default(true)
   created_atclientes            DateTime                 @default(now()) @db.Timestamptz(6)
   updated_atclientes            DateTime                 @default(now()) @db.Timestamptz(6)
@@ -711,16 +798,43 @@ model Cliente {
   comercio    Comercio?    @relation(fields: [comercios_idcomercios], references: [idcomercios])
   tipoCliente TipoCliente? @relation(fields: [tipos_cliente_idtipos_cliente], references: [idtipos_cliente])
 
-  ventas            Venta[]
-  envios            Envio[]
-  apartadosPostales ApartadoPostal[]
-  giros             Giro[]
-  recaudos          Recaudo[]
-  facturas          Factura[]
+  ventas                Venta[]
+  envios                Envio[]
+  enviosMasivos         EnvioMasivo[]
+  apartadosPostales     ApartadoPostal[]
+  giros                 Giro[]
+  recaudos              Recaudo[]
+  facturas              Factura[]
+  direccionesFrecuentes DireccionFrecuente[]
 
   @@unique([tipo_documentoclientes, numero_documentoclientes])
   @@index([tipo_documentoclientes, numero_documentoclientes], map: "idx_clientes_doc")
   @@map("clientes")
+}
+
+model DireccionFrecuente {
+  iddireccionesfrecuentes       Int      @id @default(autoincrement())
+  clientes_idclientes           Int
+  roldireccionesfrecuentes      String   @db.VarChar(20)
+  nombredireccionesfrecuentes   String   @db.VarChar(300)
+  empresadireccionesfrecuentes  String?  @db.VarChar(300)
+  telefonodirfrecuentes         String?  @db.VarChar(20)
+  emaildirfrecuentes            String?  @db.VarChar(200)
+  direcciondirfrecuentes        String?
+  ciudaddirfrecuentes           String?  @db.VarChar(100)
+  departamentodirfrecuentes     String?  @db.VarChar(100)
+  paisdirfrecuentes             String   @default("CO") @db.VarChar(5)
+  codigo_postaldirfrecuentes    String?  @db.VarChar(20)
+  documentodirfrecuentes        String?  @db.VarChar(50)
+  usosdirfrecuentes             Int      @default(1)
+  ultimo_usodirfrecuentes       DateTime @default(now()) @db.Timestamptz(6)
+  created_atdirfrecuentes       DateTime @default(now()) @db.Timestamptz(6)
+
+  cliente Cliente @relation(fields: [clientes_idclientes], references: [idclientes], onDelete: Cascade)
+
+  @@index([clientes_idclientes, roldireccionesfrecuentes], map: "idx_dir_frecuentes_cliente_rol")
+  @@index([documentodirfrecuentes, roldireccionesfrecuentes], map: "idx_dir_frecuentes_doc_rol")
+  @@map("direcciones_frecuentes")
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -728,46 +842,68 @@ model Cliente {
 // ══════════════════════════════════════════════════════════════════════════════
 
 model CajaPadre {
-  idcajas_padres           Int       @id @default(autoincrement())
-  sucursales_idsucursales  Int
-  nombrecajas_padres       String    @db.VarChar(100)
-  base_generalcajas_padres Decimal   @default(0) @db.Decimal(18, 2)
-  hora_resetcajas_padres   DateTime? @db.Time(6)
-  created_atcajas_padres   DateTime  @default(now()) @db.Timestamptz(6)
-  deleted_atcajas_padres   DateTime? @db.Timestamptz(6)
+  idcajas_padres                    Int       @id @default(autoincrement())
+  sucursales_idsucursales           Int
+  usuarios_idusuarios_supervisor    Int?
+  nombrecajas_padres                String    @db.VarChar(100)
+  base_generalcajas_padres          Decimal   @default(0) @db.Decimal(18, 2)
+  hora_resetcajas_padres            DateTime? @db.Time(6)
+  created_atcajas_padres            DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_atcajas_padres            DateTime? @db.Timestamptz(6)
 
-  sucursal Sucursal @relation(fields: [sucursales_idsucursales], references: [idsucursales])
-  cajas    Caja[]
+  sucursal   Sucursal  @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  supervisor Usuario?  @relation("CajaPadreSupervisor", fields: [usuarios_idusuarios_supervisor], references: [idusuarios])
+  cajas      Caja[]
+  movimientosTesoreria MovimientoTesoreria[]
 
   @@map("cajas_padres")
 }
 
 model Caja {
-  idcajas                     Int       @id @default(autoincrement())
-  sucursales_idsucursales     Int
-  cajas_padres_idcajas_padres Int?
-  codigocajas                 String    @db.VarChar(20)
-  nombrecajas                 String    @db.VarChar(100)
-  tipocajas                   tipo_caja
-  base_diacajas               Decimal   @default(0) @db.Decimal(18, 2)
-  limite_alertacajas          Decimal?  @db.Decimal(18, 2)
-  activocajas                 Boolean   @default(true)
-  created_atcajas             DateTime  @default(now()) @db.Timestamptz(6)
-  deleted_atcajas             DateTime? @db.Timestamptz(6)
+  idcajas                           Int       @id @default(autoincrement())
+  sucursales_idsucursales           Int
+  cajas_padres_idcajas_padres       Int?
+  usuarios_idusuarios_cajero_fijo   Int?
+  codigocajas                       String    @db.VarChar(20)
+  nombrecajas                       String    @db.VarChar(100)
+  tipocajas                         tipo_caja
+  base_diacajas                     Decimal   @default(0) @db.Decimal(18, 2)
+  limite_alertacajas                Decimal?  @db.Decimal(18, 2)
+  t_targetcajas                     Decimal?  @db.Decimal(18, 2)
+  activocajas                       Boolean   @default(true)
+  created_atcajas                   DateTime  @default(now()) @db.Timestamptz(6)
+  deleted_atcajas                   DateTime? @db.Timestamptz(6)
 
-  sucursal   Sucursal   @relation(fields: [sucursales_idsucursales], references: [idsucursales])
-  cajaPadre  CajaPadre? @relation(fields: [cajas_padres_idcajas_padres], references: [idcajas_padres])
-  sesiones   SesionCaja[]
+  sucursal       Sucursal   @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  cajaPadre      CajaPadre? @relation(fields: [cajas_padres_idcajas_padres], references: [idcajas_padres])
+  cajeroFijo     Usuario?   @relation("CajaCajeroFijo", fields: [usuarios_idusuarios_cajero_fijo], references: [idusuarios])
+  sesiones       SesionCaja[]
+  serviciosCaja  ServicioCaja[]
 
   @@unique([codigocajas, sucursales_idsucursales])
   @@map("cajas")
 }
 
+/// Operaciones habilitadas por caja (giros, estampillas, apartado…). Sin fila el
+/// servicio se considera activo; solo se persiste lo que el supervisor cambia.
+model ServicioCaja {
+  cajas_idcajas            Int
+  codigoservicios_caja     String   @db.VarChar(50)
+  activoservicios_caja     Boolean  @default(true)
+  updated_atservicios_caja DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  caja Caja @relation(fields: [cajas_idcajas], references: [idcajas], onDelete: Cascade)
+
+  @@id([cajas_idcajas, codigoservicios_caja])
+  @@map("servicios_caja")
+}
+
 model SesionCaja {
   idsesiones_caja              Int                @id @default(autoincrement())
   cajas_idcajas                Int
-  usuarios_idusuarios_apertura Int
-  usuarios_idusuarios_cierre   Int?
+  usuarios_idusuarios_apertura          Int
+  usuarios_idusuarios_cierre            Int?
+  usuarios_idusuarios_cajero_asignado   Int?
   equipo_macsesiones_caja      String?            @db.VarChar(30)
   monto_aperturasesiones_caja  Decimal            @default(0) @db.Decimal(18, 2)
   monto_cierrasesiones_caja    Decimal?           @db.Decimal(18, 2)
@@ -778,16 +914,19 @@ model SesionCaja {
   observacionessesiones_caja            String?
   arqueo_denominacionessesiones_caja    Json?
 
-  caja           Caja    @relation(fields: [cajas_idcajas], references: [idcajas])
-  usuarioApertura Usuario @relation("SesionCajaApertura", fields: [usuarios_idusuarios_apertura], references: [idusuarios])
-  usuarioCierre   Usuario? @relation("SesionCajaCierre", fields: [usuarios_idusuarios_cierre], references: [idusuarios])
+  caja              Caja     @relation(fields: [cajas_idcajas], references: [idcajas])
+  usuarioApertura   Usuario  @relation("SesionCajaApertura", fields: [usuarios_idusuarios_apertura], references: [idusuarios])
+  usuarioCierre     Usuario? @relation("SesionCajaCierre", fields: [usuarios_idusuarios_cierre], references: [idusuarios])
+  cajeroAsignado    Usuario? @relation("SesionCajaCajeroAsignado", fields: [usuarios_idusuarios_cajero_asignado], references: [idusuarios])
 
   movimientosCaja  MovimientoCaja[]
   consignaciones   Consignacion[]
   reposicionesOrigen  ReposicionCaja[] @relation("ReposicionOrigen")
   reposicionesDestino ReposicionCaja[] @relation("ReposicionDestino")
+  diferencias      DiferenciaCaja[]
   ventas           Venta[]
   envios           Envio[]
+  enviosMasivos    EnvioMasivo[]
   sacas            Saca[]
   apartadosPostales ApartadoPostal[]
   giros            Giro[]
@@ -811,12 +950,36 @@ model MovimientoCaja {
   referencia_idmovimientos_caja   Int?
   referencia_tipomovimientos_caja String?              @db.VarChar(50)
   descripcionmovimientos_caja     String?
+  franquicias_idfranquicias       Int?
+  codigo_vouchermovimientos_caja  String?              @db.VarChar(30)
   created_atmovimientos_caja      DateTime             @default(now()) @db.Timestamptz(6)
 
-  sesionCaja SesionCaja @relation(fields: [sesiones_caja_idsesiones_caja], references: [idsesiones_caja])
+  sesionCaja SesionCaja  @relation(fields: [sesiones_caja_idsesiones_caja], references: [idsesiones_caja])
+  franquicia Franquicia? @relation(fields: [franquicias_idfranquicias], references: [idfranquicias])
 
   @@index([sesiones_caja_idsesiones_caja], map: "idx_mov_caja_sesion")
   @@map("movimientos_caja")
+}
+
+// Historial del dinero que Tesorería mueve del comercio a la caja principal de un
+// punto. Vive fuera de sesiones_caja a propósito: la primera asignación ocurre
+// cuando se crea el supervisor, antes de que exista ninguna sesión.
+model MovimientoTesoreria {
+  idmovimientos_tesoreria                 Int                       @id @default(autoincrement())
+  cajas_padres_idcajas_padres             Int
+  usuarios_idusuarios                     Int
+  tipomovimientos_tesoreria               tipo_movimiento_tesoreria
+  montomovimientos_tesoreria              Decimal                   @db.Decimal(18, 2)
+  codigo_aprobacionmovimientos_tesoreria  String                    @unique @db.VarChar(40)
+  descripcionmovimientos_tesoreria        String
+  saldo_resultantemovimientos_tesoreria   Decimal                   @db.Decimal(18, 2)
+  created_atmovimientos_tesoreria         DateTime                  @default(now()) @db.Timestamptz(6)
+
+  cajaPadre CajaPadre @relation(fields: [cajas_padres_idcajas_padres], references: [idcajas_padres])
+  usuario   Usuario   @relation("MovimientoTesoreriaUsuario", fields: [usuarios_idusuarios], references: [idusuarios])
+
+  @@index([cajas_padres_idcajas_padres, created_atmovimientos_tesoreria], map: "idx_mov_tesoreria_punto")
+  @@map("movimientos_tesoreria")
 }
 
 model Consignacion {
@@ -850,6 +1013,7 @@ model ReposicionCaja {
   usuarios_idusuarios                   Int?
   estadoreposiciones_caja               estado_aprobacion @default(pendiente)
   motivoreposiciones_caja               String?
+  codigo_remesareposiciones_caja        String?           @unique
   created_atreposiciones_caja           DateTime          @default(now()) @db.Timestamptz(6)
 
   sesionOrigen  SesionCaja @relation("ReposicionOrigen", fields: [sesiones_caja_idsesiones_caja_origen], references: [idsesiones_caja])
@@ -857,6 +1021,25 @@ model ReposicionCaja {
   usuario       Usuario?   @relation(fields: [usuarios_idusuarios], references: [idusuarios])
 
   @@map("reposiciones_caja")
+}
+
+model DiferenciaCaja {
+  iddiferencias_caja            Int               @id @default(autoincrement())
+  sesiones_caja_idsesiones_caja Int
+  tipo_diferencia               String            @db.VarChar(10)
+  monto_diferencia              Decimal           @db.Decimal(18, 2)
+  custodio_id                   Int?
+  estado                        estado_aprobacion @default(pendiente)
+  aprobador_id                  Int?
+  observaciones                 String?
+  created_at                    DateTime          @default(now()) @db.Timestamptz(6)
+
+  sesionCaja SesionCaja @relation(fields: [sesiones_caja_idsesiones_caja], references: [idsesiones_caja])
+  custodio   Usuario?   @relation("DiferenciaCustodio", fields: [custodio_id], references: [idusuarios])
+  aprobador  Usuario?   @relation("DiferenciaAprobador", fields: [aprobador_id], references: [idusuarios])
+
+  @@index([sesiones_caja_idsesiones_caja], map: "idx_diferencias_caja_sesion")
+  @@map("diferencias_caja")
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -885,7 +1068,10 @@ model Venta {
   cliente    Cliente?   @relation(fields: [clientes_idclientes], references: [idclientes])
   documento  Documento? @relation(fields: [documentos_iddocumentos], references: [iddocumentos])
 
-  detalle VentaDetalle[]
+  detalle             VentaDetalle[]
+  envios              Envio[]
+  apartadosPendientes ApartadoPostal[]
+  lotesMasivos        EnvioMasivo[]
 
   @@index([sesiones_caja_idsesiones_caja], map: "idx_ventas_sesion")
   @@index([created_atventas], map: "idx_ventas_fecha")
@@ -928,6 +1114,7 @@ model Envio {
   remitente_telefonoenvios           String?     @db.VarChar(20)
   remitente_direccionenvios          String?
   remitente_ciudadenvios             String?     @db.VarChar(100)
+  remitente_departamentoenvios       String?     @db.VarChar(100)
   remitente_codigo_postalenvios      String?     @db.VarChar(20)
   destinatario_nombreenvios          String?     @db.VarChar(300)
   destinatario_documentoenvios       String?     @db.VarChar(30)
@@ -936,6 +1123,7 @@ model Envio {
   destinatario_telefonoenvios        String?     @db.VarChar(20)
   destinatario_direccionenvios       String?
   destinatario_ciudadenvios          String?     @db.VarChar(100)
+  destinatario_departamentoenvios    String?     @db.VarChar(100)
   destinatario_paisenvios            String      @default("CO") @db.VarChar(5)
   destinatario_codigo_postalenvios   String?     @db.VarChar(20)
   peso_fisico_kgenvios               Decimal     @db.Decimal(8, 3)
@@ -945,10 +1133,12 @@ model Envio {
   peso_volumetrico_kgenvios          Decimal?    @db.Decimal(8, 3)
   peso_tarificado_kgenvios           Decimal     @db.Decimal(8, 3)
   valor_declaradoenvios              Decimal?    @db.Decimal(18, 2)
+  contenidoenvios                    String?     @db.VarChar(200)
   observacionesenvios                String?
   valor_servicioenvios               Decimal     @db.Decimal(18, 2)
   valor_estampillasenvios            Decimal     @default(0) @db.Decimal(18, 2)
   valor_seguroenvios                 Decimal     @default(0) @db.Decimal(18, 2)
+  valor_certificacionenvios          Decimal     @default(0) @db.Decimal(18, 2)
   valor_totalenvios                  Decimal     @db.Decimal(18, 2)
   medio_pagoenvios                   medio_pago?
   estadoenvios                       estado_envio @default(facturado)
@@ -958,21 +1148,27 @@ model Envio {
   referencia_sigmaenvios             String?     @db.VarChar(100)
   documentos_generadosenvios         Json        @default("[]") @db.JsonB
   sincronizado_sigmaenvios           Boolean     @default(false)
+  pdf_guia_pathenvios                String?     @db.VarChar(500)
   created_atenvios                   DateTime    @default(now()) @db.Timestamptz(6)
   updated_atenvios                   DateTime    @default(now()) @db.Timestamptz(6)
+
+  ventas_idventas                    Int?
 
   sucursal   Sucursal    @relation(fields: [sucursales_idsucursales], references: [idsucursales])
   sesionCaja SesionCaja? @relation(fields: [sesiones_caja_idsesiones_caja], references: [idsesiones_caja])
   usuario    Usuario     @relation(fields: [usuarios_idusuarios], references: [idusuarios])
   cliente    Cliente?    @relation(fields: [clientes_idclientes], references: [idclientes])
   servicio   Servicio    @relation(fields: [servicios_idservicios], references: [idservicios])
+  venta      Venta?      @relation(fields: [ventas_idventas], references: [idventas])
 
-  items  EnvioItem[]
-  sacas  EnvioSaca[]
+  items      EnvioItem[]
+  sacas      EnvioSaca[]
+  itemMasivo EnvioMasivoItem?
 
   @@index([sucursales_idsucursales, created_atenvios], map: "idx_envios_sucursal_fecha")
   @@index([numero_guiaenvios], map: "idx_envios_guia")
   @@index([estadoenvios], map: "idx_envios_estado")
+  @@index([ventas_idventas], map: "idx_envios_venta")
   @@map("envios")
 }
 
@@ -1172,12 +1368,14 @@ model ApartadoPostal {
   incluye_ivaapartados_postales             Boolean                @default(true)
   dias_alerta_vencimientoapartados_postales Int                    @default(30)
   sesiones_caja_idsesiones_caja             Int?
+  ventas_idventas                           Int?
   created_atapartados_postales              DateTime               @default(now()) @db.Timestamptz(6)
   deleted_atapartados_postales              DateTime?              @db.Timestamptz(6)
 
   sucursal   Sucursal    @relation(fields: [sucursales_idsucursales], references: [idsucursales])
   cliente    Cliente?    @relation(fields: [clientes_idclientes], references: [idclientes])
   sesionCaja SesionCaja? @relation(fields: [sesiones_caja_idsesiones_caja], references: [idsesiones_caja])
+  venta      Venta?      @relation(fields: [ventas_idventas], references: [idventas])
 
   @@unique([sucursales_idsucursales, numeroapartados_postales])
   @@map("apartados_postales")
@@ -1387,29 +1585,9 @@ model Anulacion {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 20. AUDITORÍA
+// 20. AUDITORÍA — vive en MongoDB (`audit_events` NIVEL 1 y `db_changes` NIVEL 4).
+// La tabla `eventos_auditoria` se eliminó en 20260904210000_drop_eventos_auditoria.
 // ══════════════════════════════════════════════════════════════════════════════
-
-model EventoAuditoria {
-  ideventos_auditoria            Int                 @id @default(autoincrement())
-  usuarios_idusuarios            Int?
-  sucursales_idsucursales        Int?
-  tablaeventos_auditoria         String              @db.VarChar(100)
-  operacioneventos_auditoria     operacion_auditoria
-  registro_ideventos_auditoria   Int
-  datos_anteseventos_auditoria   Json?               @db.JsonB
-  datos_despueseventos_auditoria Json?               @db.JsonB
-  ip_origeneventos_auditoria     String?             @db.Inet
-  mac_origeneventos_auditoria    String?             @db.VarChar(30)
-  created_ateventos_auditoria    DateTime            @default(now()) @db.Timestamptz(6)
-
-  usuario  Usuario?  @relation(fields: [usuarios_idusuarios], references: [idusuarios])
-  sucursal Sucursal? @relation(fields: [sucursales_idsucursales], references: [idsucursales])
-
-  @@index([tablaeventos_auditoria, created_ateventos_auditoria], map: "idx_auditoria_tabla_fecha")
-  @@index([usuarios_idusuarios, created_ateventos_auditoria], map: "idx_auditoria_usuario")
-  @@map("eventos_auditoria")
-}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // 21. FEATURE FLAGS
@@ -1451,4 +1629,93 @@ model FeatureFlagUsuario {
 
   @@id([feature_flags_idfeature_flags, usuarios_idusuarios])
   @@map("feature_flag_usuarios")
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 22. ENVÍOS POSTALES MASIVOS (preporteado corporativo)
+// ══════════════════════════════════════════════════════════════════════════════
+
+model EnvioMasivo {
+  idenvios_masivos                     Int                @id @default(autoincrement())
+  sucursales_idsucursales              Int
+  sesiones_caja_idsesiones_caja        Int?
+  usuarios_idusuarios                  Int
+  clientes_idclientes                  Int?
+  servicios_idservicios                Int
+  // Venta del carrito que cobra el lote (se enlaza al confirmarlo)
+  ventas_idventas                      Int?
+  // Remitente compartido (null cuando cada item tiene su propio remitente)
+  remitente_nombreenvios_masivos       String?            @db.VarChar(300)
+  remitente_documentoenvios_masivos    String?            @db.VarChar(30)
+  remitente_emailenvios_masivos        String?            @db.VarChar(200)
+  remitente_telefonoenvios_masivos     String?            @db.VarChar(20)
+  remitente_direccionenvios_masivos    String?
+  remitente_ciudadenvios_masivos       String?            @db.VarChar(100)
+  remitente_cpenvios_masivos           String?            @db.VarChar(20)
+  // Totales calculados en tiempo real
+  total_itemsenvios_masivos            Int                @default(0)
+  total_peso_kgenvios_masivos          Decimal            @default(0) @db.Decimal(10, 3)
+  total_estampillasenvios_masivos      Decimal            @default(0) @db.Decimal(18, 2)
+  total_certificacionenvios_masivos    Decimal            @default(0) @db.Decimal(18, 2)
+  valor_totalenvios_masivos            Decimal            @default(0) @db.Decimal(18, 2)
+  estadoenvios_masivos                 estado_lote_masivo @default(borrador)
+  observacionesenvios_masivos          String?
+  pdf_guias_pathenvios_masivos         String?
+  cobrado_atenvios_masivos             DateTime?          @db.Timestamptz(6)
+  medio_pago_cobroenvios_masivos       String?            @db.VarChar(30)
+  created_atenvios_masivos             DateTime           @default(now()) @db.Timestamptz(6)
+  updated_atenvios_masivos             DateTime           @default(now()) @db.Timestamptz(6)
+
+  sucursal   Sucursal    @relation(fields: [sucursales_idsucursales], references: [idsucursales])
+  sesionCaja SesionCaja? @relation(fields: [sesiones_caja_idsesiones_caja], references: [idsesiones_caja])
+  usuario    Usuario     @relation(fields: [usuarios_idusuarios], references: [idusuarios])
+  cliente    Cliente?    @relation(fields: [clientes_idclientes], references: [idclientes])
+  servicio   Servicio    @relation(fields: [servicios_idservicios], references: [idservicios])
+  venta      Venta?      @relation(fields: [ventas_idventas], references: [idventas])
+  items      EnvioMasivoItem[]
+
+  @@index([sucursales_idsucursales, created_atenvios_masivos], map: "idx_envios_masivos_sucursal_fecha")
+  @@index([estadoenvios_masivos], map: "idx_envios_masivos_estado")
+  @@index([ventas_idventas], map: "idx_envios_masivos_venta")
+  @@map("envios_masivos")
+}
+
+model EnvioMasivoItem {
+  idenvios_masivos_items                          Int     @id @default(autoincrement())
+  envios_masivos_idenvios_masivos                 Int
+  numero_filaenvios_masivos_items                 Int
+  // Destinatario de esta fila
+  destinatario_nombreenvios_masivos_items         String  @db.VarChar(300)
+  destinatario_documentoenvios_masivos_items      String? @db.VarChar(30)
+  destinatario_emailenvios_masivos_items          String? @db.VarChar(200)
+  destinatario_telefonoenvios_masivos_items       String? @db.VarChar(20)
+  destinatario_direccionenvios_masivos_items      String?
+  destinatario_ciudadenvios_masivos_items         String? @db.VarChar(100)
+  destinatario_paisenvios_masivos_items           String  @default("CO") @db.VarChar(5)
+  destinatario_cpenvios_masivos_items             String? @db.VarChar(20)
+  // Remitente propio del item (override del remitente del lote)
+  remitente_nombreenvios_masivos_items            String? @db.VarChar(300)
+  remitente_documentoenvios_masivos_items         String? @db.VarChar(30)
+  remitente_emailenvios_masivos_items             String? @db.VarChar(200)
+  remitente_telefonoenvios_masivos_items          String? @db.VarChar(20)
+  remitente_direccionenvios_masivos_items         String?
+  remitente_ciudadenvios_masivos_items            String? @db.VarChar(100)
+  remitente_cpenvios_masivos_items                String? @db.VarChar(20)
+  // Datos del envío calculados en tiempo real
+  peso_fisico_kgenvios_masivos_items              Decimal @db.Decimal(8, 3)
+  peso_tarificado_kgenvios_masivos_items          Decimal @db.Decimal(8, 3)
+  valor_servicioenvios_masivos_items              Decimal @db.Decimal(18, 2)
+  valor_estampillasenvios_masivos_items           Decimal @default(0) @db.Decimal(18, 2)
+  valor_certificacionenvios_masivos_items         Decimal @default(0) @db.Decimal(18, 2)
+  valor_totalenvios_masivos_items                 Decimal @db.Decimal(18, 2)
+  contenidoenvios_masivos_items                   String? @db.VarChar(200)
+  observacionesenvios_masivos_items               String? @db.VarChar(500)
+  // Referencia al Envio creado al confirmar el lote
+  envios_idenvios                                 Int?    @unique
+
+  lote  EnvioMasivo @relation(fields: [envios_masivos_idenvios_masivos], references: [idenvios_masivos], onDelete: Cascade)
+  envio Envio?       @relation(fields: [envios_idenvios], references: [idenvios])
+
+  @@index([envios_masivos_idenvios_masivos], map: "idx_envios_masivos_items_lote")
+  @@map("envios_masivos_items")
 }

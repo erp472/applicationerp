@@ -1,3 +1,5 @@
+import type { ServicioCajaItem } from './servicios-caja.js';
+
 export type TipoCaja = 'menor' | 'general' | 'pos' | 'pagos';
 export type EstadoSesionCaja = 'abierta' | 'cerrada' | 'forzada';
 export type TipoMovimientoCaja =
@@ -7,13 +9,15 @@ export type TipoMovimientoCaja =
   | 'consignacion' | 'reposicion'
   | 'cambio_custodia_in' | 'cambio_custodia_out'
   | 'diferencia_faltante' | 'diferencia_sobrante'
-  | 'anulacion' | 'recaudo' | 'moneda_circulante'
-  | 'pago_administrativo' | 'traslado_caja_fuerte';
-export type MedioPago = 'efectivo' | 'tarjeta_debito' | 'tarjeta_credito' | 'transferencia' | 'consignacion' | 'preporteado' | 'mixto_preporteado';
+  | 'anulacion' | 'recaudo'
+  | 'pago_administrativo' | 'traslado_caja_fuerte'
+  | 'moneda_circulante';
+export type MedioPago = 'efectivo' | 'tarjeta_debito' | 'tarjeta_credito' | 'transferencia' | 'consignacion' | 'cheque' | 'preporteado' | 'mixto_preporteado' | 'estampilla';
 export type MedioConsignacion = 'banco' | 'transportadora';
 export type TipoCuentaBancaria = 'ahorros' | 'corriente';
-export type EstadoAprobacion = 'pendiente' | 'aprobada' | 'rechazada';
-export type TipoAlerta = 'reposicion_caja' | 'limite_efectivo_caja';
+export type EstadoAprobacion = 'pendiente' | 'aprobada' | 'rechazada' | 'en_transito' | 'confirmada';
+export type TipoDiferencia  = 'faltante' | 'sobrante';
+export type TipoAlerta = 'reposicion_caja' | 'limite_efectivo_caja' | 'cierre_automatico';
 
 export class CajaEntity {
   id: number;
@@ -24,7 +28,9 @@ export class CajaEntity {
   tipo: TipoCaja;
   baseDia: string;
   limiteAlerta: string | null;
+  tTarget: string | null;
   activo: boolean;
+  cajeroFijoId: number | null;
 }
 
 export class CajaPadreEntity {
@@ -33,6 +39,9 @@ export class CajaPadreEntity {
   nombre: string;
   baseGeneral: string;
   horaReset: Date | null;
+  supervisorId: number | null;
+  supervisorNombre: string | null;
+  supervisorEmail: string | null;
 }
 
 export class SesionCajaEntity {
@@ -40,6 +49,7 @@ export class SesionCajaEntity {
   cajaId: number;
   usuarioAperturaId: number;
   usuarioCierreId: number | null;
+  cajeroAsignadoId: number | null;
   equipoMac: string | null;
   montoApertura: string;
   montoCierre: string | null;
@@ -48,6 +58,7 @@ export class SesionCajaEntity {
   cierreForzado: boolean;
   estado: EstadoSesionCaja;
   observaciones: string | null;
+  arqueo?: ArqueoDenominacion[] | null;
   // populated on demand
   saldoActual?: string;
   alertas?: TipoAlerta[];
@@ -63,6 +74,8 @@ export class MovimientoCajaEntity {
   referenciaId: number | null;
   referenciaTipo: string | null;
   descripcion: string | null;
+  franquiciaId: number | null;
+  codigoVoucher: string | null;
   createdAt: Date;
 }
 
@@ -91,6 +104,19 @@ export class ReposicionCajaEntity {
   usuarioId: number | null;
   estado: EstadoAprobacion;
   motivo: string | null;
+  codigoRemesa: string | null;
+  createdAt: Date;
+}
+
+export class DiferenciaCajaEntity {
+  id: number;
+  sesionCajaId: number;
+  tipoDiferencia: TipoDiferencia;
+  monto: string;
+  custodioId: number | null;
+  estado: EstadoAprobacion;
+  aprobadorId: number | null;
+  observaciones: string | null;
   createdAt: Date;
 }
 
@@ -109,6 +135,12 @@ export interface PanelPunto {
   cajaPagos: string;
   cajaFuertePagos: string;
   acumuladoMonedaCirculante: string;
+  /** Σ montos de reposiciones con estado=en_transito en este punto (RF-4.01) */
+  tTransito: string;
+  /** Base restante que puede asignarse a nuevas cajas auxiliares (BR-CAJ-011) */
+  baseDisponible: string;
+  debeReset: boolean;
+  horaReset: string | null;
 }
 
 export interface CardAuxiliar {
@@ -118,16 +150,28 @@ export interface CardAuxiliar {
   nombre: string;
   tipo: TipoCaja;
   cajeroId: number | null;
+  /** Quién opera la caja ahora mismo. Resuelve la misma cadena que cajeroId:
+   *  cajero asignado a la sesión → cajero fijo de la caja → quien la abrió. */
+  cajeroNombre: string | null;
+  cajeroEmail: string | null;
+  cajeroFijoId: number | null;
   estado: EstadoSesionCaja | 'sin_sesion';
   /** Balance de la caja fuerte del auxiliar (= saldo de la sesión activa) */
   saldoActual: string | null;
   baseDia: string;
   limiteAlerta: string | null;
-  ingresosTurno: string;
-  egresosTurno: string;
+  /** Nivel óptimo de liquidez configurado por tesorería (T_target, RF-2.01) */
+  tTarget: string | null;
+  /** Monto recomendado para reposición: tTarget − saldoActual. null si no aplica alerta o no hay tTarget */
+  deltaReposicion: string | null;
+  ingresosSesion: string;
+  egresosSesion: string;
+  saldoPorMedioPago: Record<MedioPago, string>;
   girosCount: number;
   girosValor: string;
   alertas: TipoAlerta[];
+  /** Operaciones habilitadas por el supervisor en esta caja */
+  servicios: ServicioCajaItem[];
 }
 
 export interface StatusPunto {
@@ -145,12 +189,54 @@ export interface ServicioSucursalItem {
   activo: boolean;
 }
 
+export interface PerfilUsuario {
+  id:         number;
+  nombre:     string;
+  rol:        string;
+  sucursalId: number | null;
+}
+
 export interface CajaPosPanel {
   id: number;
   codigo: string;
   nombre: string;
+  tipo: TipoCaja;
   sesionActiva: boolean;
   sesionId: number | null;
+}
+
+// ── Asignación de cajeros por sucursal ────────────────────────────────────────
+
+export interface CajaAsignacionSesion {
+  sesionId:         number;
+  estado:           EstadoSesionCaja;
+  supervisorId:     number;
+  supervisorNombre: string;
+  cajeroId:         number | null;
+  cajeroNombre:     string | null;
+  cajeroEmail:      string | null;
+  fechaApertura:    Date;
+}
+
+export interface CajaAsignacion {
+  id:                 number;
+  codigo:             string;
+  nombre:             string;
+  tipo:               TipoCaja;
+  activo:             boolean;
+  cajeroFijoId:       number | null;
+  cajeroFijoNombre:   string | null;
+  cajeroFijoEmail:    string | null;
+  sesionActiva:       CajaAsignacionSesion | null;
+}
+
+export interface AsignacionSucursal {
+  cajaPadreId:      number | null;
+  cajaPadreNombre:  string | null;
+  supervisorId:     number | null;
+  supervisorNombre: string | null;
+  supervisorEmail:  string | null;
+  cajas:            CajaAsignacion[];
 }
 
 export interface SucursalPanelItem {
@@ -161,6 +247,16 @@ export interface SucursalPanelItem {
   regional:       string;
   ciudad:         string | null;
   departamento:   string | null;
-  cajaPos:        CajaPosPanel | null;
+  cajas:          CajaPosPanel[];
   servicios:      ServicioSucursalItem[];
+}
+
+export interface BalancePagosRow {
+  regional:                 string;
+  punto:                    string;
+  fecha:                    string; // YYYY-MM-DD
+  reposicionBanco:          string;
+  reposicionTransportadora: string;
+  reposicionCheque:         string;
+  cantidadColpensiones:     number;
 }

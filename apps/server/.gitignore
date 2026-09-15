@@ -1,5 +1,5 @@
 node_modules
-
+coverage
 # Variables de entorno — nunca subir al repo
 .env
 .env.local

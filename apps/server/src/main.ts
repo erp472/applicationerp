@@ -5,13 +5,14 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from '@fastify/helmet';
 import cors from '@fastify/cors';
+import fastifyWebsocket from '@fastify/websocket';
 import { trace } from '@opentelemetry/api';
+import { JwtService } from '@nestjs/jwt';
 import { AppModule } from './app.module.js';
+import { ConfigService } from './config/config.service.js';
+import { RealtimeService } from './realtime/realtime.service.js';
 
 async function bootstrap() {
-  const isDev = process.env.NODE_ENV !== 'production';
-
-  // 🤓 active this FastifyApplication then visibility the factory and server to create logger
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter({
@@ -23,47 +24,75 @@ async function bootstrap() {
           if (!ctx) return {};
           return { trace_id: ctx.traceId, span_id: ctx.spanId };
         },
-        ...(isDev && { transport: { target: 'pino-pretty', options: { colorize: true } } }),
+        ...(process.env.NODE_ENV !== 'production' && {
+          transport: { target: 'pino-pretty', options: { colorize: true } },
+        }),
       },
     }),
   );
 
-  // Origen fijo de la app de escritorio Tauri (no depende de CORS_ORIGIN)
-  const DESKTOP_ORIGINS = ['tauri://localhost', 'https://tauri.localhost', 'http://tauri.localhost'];
-  const webOrigins = (process.env.CORS_ORIGIN ?? '*')
-    .split(',')
-    .map((o) => o.trim())
-    .filter(Boolean);
-  const allowAll = webOrigins.includes('*');
+  const config = app.get(ConfigService);
 
   await app.register(cors, {
-    origin: (origin, cb) => {
-      if (!origin || allowAll || webOrigins.includes(origin) || DESKTOP_ORIGINS.includes(origin)) {
-        cb(null, true);
-        return;
-      }
-      cb(new Error(`Origen no permitido por CORS: ${origin}`), false);
-    },
+    // En dev: permite cualquier origen. En prod: whitelist explícita desde CORS_ORIGIN (comma-separated),
+    // que siempre incluye los orígenes de la app de escritorio (ver ConfigService.corsOrigins).
+    origin: config.isDev ? true : config.corsOrigins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
   });
 
-  // 🤓 active helmet
   await app.register(helmet, {
-    contentSecurityPolicy: isDev ? false : undefined,
+    contentSecurityPolicy: config.isDev ? false : undefined,
   });
 
-  // 🤓 active swagger increase version with next release
-  const config = new DocumentBuilder()
+  // 🤓 register @fastify/websocket for /realtime endpoint
+  await app.register(fastifyWebsocket);
+
+  const jwtService      = app.get(JwtService);
+  const realtimeService = app.get(RealtimeService);
+
+  // JWT auth via ?token= query param then upgrade to WS
+  app.getHttpAdapter().getInstance().get(
+    '/realtime',
+    { websocket: true },
+    (socket: import('@fastify/websocket').WebSocket, req: import('fastify').FastifyRequest) => {
+      const token = (req.query as Record<string, string>)['token'];
+      if (!token) {
+        socket.close(4401, 'Unauthorized');
+        return;
+      }
+      let rol: string | undefined;
+      try {
+        // El rol viaja en base64 dentro del payload; se decodifica aquí porque
+        // determina qué eventos puede recibir el socket (p. ej. auditoría).
+        const payload = jwtService.verify<{ rol?: string }>(token);
+        rol = payload.rol ? Buffer.from(payload.rol, 'base64').toString('utf8') : undefined;
+      } catch {
+        socket.close(4401, 'Invalid token');
+        return;
+      }
+      realtimeService.addClient(socket, rol);
+      socket.send(JSON.stringify({ event: 'connection.ack', data: { ts: Date.now() } }));
+
+      socket.on('message', (raw) => {
+        try {
+          const msg = JSON.parse(raw.toString());
+          if (msg?.event === 'ping') socket.send(JSON.stringify({ event: 'pong', data: { ts: Date.now() } }));
+        } catch { /* ignore malformed frames */ }
+      });
+    },
+  );
+
+  const swaggerConfig = new DocumentBuilder()
     .setTitle('Sistema 4-72 POS')
     .setDescription('API del sistema ERP 4-72')
     .setVersion('1.0')
     .addBearerAuth()
     .build();
-  const document = SwaggerModule.createDocument(app, config);
+  const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api/docs', app, document);
 
-  await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
+  await app.listen(config.port, '0.0.0.0');
 }
 
 //🤓 send to bootstraping but use vitetest

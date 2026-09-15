@@ -13,6 +13,11 @@ export interface ServicioEntity {
   factorVolumetrico:     number;
   tiempoEntregaDias:     number | null;
   codigoSigma:           string | null;
+  tarifaCertificacion:   number | null;
+  minimoSeguroPostal:    number | null;
+  altoMaxCm:             number | null;
+  anchoMaxCm:            number | null;
+  largoMaxCm:            number | null;
   activo:                boolean;
   createdAt:             Date;
 }
@@ -22,4 +27,18 @@ export interface ServicioSucursalEntity {
   servicioId: number;
   activo:     boolean;
   sucursal:   { id: number; codigo: string; nombre: string } | null;
+}
+
+export interface TarifaEnvioEntity {
+  id:                number;
+  servicioId:        number;
+  paisDestino:       string;
+  ciudadDestino:     string | null;
+  pesoMinKg:         number;
+  pesoMaxKg:         number | null;
+  tarifa:            number;
+  tarifaKgAdicional: number | null;
+  activa:            boolean;
+  vigenciaInicio:    Date | null;
+  vigenciaFin:       Date | null;
 }

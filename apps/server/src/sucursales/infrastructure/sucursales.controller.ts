@@ -18,6 +18,7 @@ import { Roles } from '../../common/decorators/roles.decorator.js';
 import { Feature } from '../../common/decorators/feature.decorator.js';
 import { SucursalesPresenter } from './sucursales.presenter.js';
 import { SucursalesDomainFilter } from './sucursales-domain.filter.js';
+import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 
 const ROLES_READ  = ['ADMIN_SISTEMA', 'ADMIN_NACIONAL', 'SUPERVISOR_REGIONAL'];
 const ROLES_WRITE = ['ADMIN_SISTEMA', 'ADMIN_NACIONAL'];
@@ -31,6 +32,7 @@ const ROLES_WRITE = ['ADMIN_SISTEMA', 'ADMIN_NACIONAL'];
 export class SucursalesController {
   constructor(private readonly service: SucursalesService) {}
 
+  @AuditKey('ADM-01')
   @Post()
   @Roles(...ROLES_WRITE)
   @ApiOperation({ summary: 'Crear sucursal' })
@@ -63,6 +65,7 @@ export class SucursalesController {
     return SucursalesPresenter.toResponse(await this.service.create(parsed.data));
   }
 
+  @AuditKey('ADM-04')
   @Get()
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Listar sucursales con paginación y filtros' })
@@ -81,6 +84,7 @@ export class SucursalesController {
     return { datos: SucursalesPresenter.toList(datos), meta };
   }
 
+  @AuditKey('ADM-04')
   @Get(':id')
   @Roles(...ROLES_READ)
   @ApiOperation({ summary: 'Obtener sucursal por ID (incluye regional → comercio + geo)' })
@@ -91,6 +95,7 @@ export class SucursalesController {
     return SucursalesPresenter.toResponse(await this.service.findOne(id));
   }
 
+  @AuditKey('ADM-02')
   @Patch(':id')
   @Roles(...ROLES_WRITE)
   @ApiOperation({ summary: 'Actualizar sucursal' })
@@ -104,6 +109,7 @@ export class SucursalesController {
     return SucursalesPresenter.toResponse(await this.service.update(id, parsed.data));
   }
 
+  @AuditKey('ADM-02')
   @Delete(':id')
   @Roles(...ROLES_WRITE)
   @ApiOperation({ summary: 'Desactivar sucursal (soft delete)' })

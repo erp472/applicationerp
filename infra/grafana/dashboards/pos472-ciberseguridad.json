@@ -1,0 +1,137 @@
+{
+  "uid": "pos472-ciberseguridad",
+  "title": "4-72 POS — Ciberseguridad",
+  "description": "Detección de fuerza bruta, IPs sospechosas, accesos denegados y eliminaciones críticas. Fuente: eventos_auditoria.",
+  "tags": ["ciberseguridad", "auditoria"],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "time": { "from": "now-24h", "to": "now" },
+  "timezone": "browser",
+  "panels": [
+
+    {
+      "id": 1, "title": "Logins fallidos (últimos 5 min)",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 3 }, { "color": "red", "value": 10 }] } } },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) AS value FROM eventos_auditoria WHERE datos_despueseventos_auditoria->>'accion' = 'LOGIN' AND datos_despueseventos_auditoria->>'resultado' = 'ERROR' AND created_ateventos_auditoria > NOW() - INTERVAL '5 minutes'",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 2, "title": "Accesos denegados (24h)",
+      "type": "stat",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 5 }, { "color": "red", "value": 20 }] } } },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) AS value FROM eventos_auditoria WHERE datos_despueseventos_auditoria->>'accion' = 'DENIED' AND created_ateventos_auditoria > NOW() - INTERVAL '24 hours'",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 3, "title": "Eliminaciones críticas (24h)",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 5 }] } } },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) AS value FROM eventos_auditoria WHERE operacioneventos_auditoria = 'DELETE' AND created_ateventos_auditoria > NOW() - INTERVAL '24 hours'",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 4, "title": "IPs únicas con fallos (24h)",
+      "type": "stat",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 3 }, { "color": "red", "value": 10 }] } } },
+      "targets": [{
+        "rawSql": "SELECT COUNT(DISTINCT ip_origeneventos_auditoria) AS value FROM eventos_auditoria WHERE datos_despueseventos_auditoria->>'resultado' = 'ERROR' AND ip_origeneventos_auditoria IS NOT NULL AND created_ateventos_auditoria > NOW() - INTERVAL '24 hours'",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 10, "title": "Logins fallidos por hora",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "uid": "pos472_pg" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 15 } } },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [{
+        "rawSql": "SELECT DATE_TRUNC('hour', created_ateventos_auditoria) AS time, COUNT(*) AS \"logins fallidos\" FROM eventos_auditoria WHERE datos_despueseventos_auditoria->>'accion' = 'LOGIN' AND datos_despueseventos_auditoria->>'resultado' = 'ERROR' AND created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() GROUP BY 1 ORDER BY 1",
+        "format": "time_series", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 11, "title": "Accesos denegados por hora",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "datasource": { "uid": "pos472_pg" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 15 } } },
+      "targets": [{
+        "rawSql": "SELECT DATE_TRUNC('hour', created_ateventos_auditoria) AS time, COUNT(*) AS \"accesos denegados\" FROM eventos_auditoria WHERE datos_despueseventos_auditoria->>'accion' = 'DENIED' AND created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() GROUP BY 1 ORDER BY 1",
+        "format": "time_series", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 20, "title": "Top 10 IPs con más fallos (período)",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "sortBy": [{ "displayName": "intentos fallidos", "desc": true }] },
+      "targets": [{
+        "rawSql": "SELECT ip_origeneventos_auditoria::text AS ip, COUNT(*) AS \"intentos fallidos\", MIN(created_ateventos_auditoria) AS \"primer intento\", MAX(created_ateventos_auditoria) AS \"último intento\" FROM eventos_auditoria WHERE datos_despueseventos_auditoria->>'resultado' = 'ERROR' AND ip_origeneventos_auditoria IS NOT NULL AND created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() GROUP BY 1 ORDER BY 2 DESC LIMIT 10",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 21, "title": "Usuarios con más accesos denegados (período)",
+      "type": "table",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "sortBy": [{ "displayName": "denegados", "desc": true }] },
+      "targets": [{
+        "rawSql": "SELECT u.nombreusuarios AS usuario, u.emailusuarios AS email, r.codigoroles AS rol, COUNT(*) AS denegados FROM eventos_auditoria ea LEFT JOIN usuarios u ON u.idusuarios = ea.usuarios_idusuarios LEFT JOIN roles r ON r.idroles = u.roles_idroles WHERE ea.datos_despueseventos_auditoria->>'accion' = 'DENIED' AND ea.created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() GROUP BY u.nombreusuarios, u.emailusuarios, r.codigoroles ORDER BY 4 DESC LIMIT 10",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 30, "title": "Eventos DENIED recientes",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 20, "w": 24, "h": 8 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "sortBy": [{ "displayName": "fecha", "desc": true }] },
+      "targets": [{
+        "rawSql": "SELECT ea.created_ateventos_auditoria AS fecha, u.nombreusuarios AS usuario, r.codigoroles AS rol, ea.tablaeventos_auditoria AS recurso, ea.ip_origeneventos_auditoria::text AS ip, ea.mac_origeneventos_auditoria AS mac, ea.datos_despueseventos_auditoria->>'error' AS detalle FROM eventos_auditoria ea LEFT JOIN usuarios u ON u.idusuarios = ea.usuarios_idusuarios LEFT JOIN roles r ON r.idroles = u.roles_idroles WHERE ea.datos_despueseventos_auditoria->>'accion' = 'DENIED' AND ea.created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() ORDER BY ea.created_ateventos_auditoria DESC LIMIT 50",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 31, "title": "Eliminaciones críticas recientes",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 28, "w": 24, "h": 8 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "sortBy": [{ "displayName": "fecha", "desc": true }] },
+      "targets": [{
+        "rawSql": "SELECT ea.created_ateventos_auditoria AS fecha, u.nombreusuarios AS usuario, r.codigoroles AS rol, ea.tablaeventos_auditoria AS tabla, ea.registro_ideventos_auditoria AS registro_id, ea.ip_origeneventos_auditoria::text AS ip FROM eventos_auditoria ea LEFT JOIN usuarios u ON u.idusuarios = ea.usuarios_idusuarios LEFT JOIN roles r ON r.idroles = u.roles_idroles WHERE ea.operacioneventos_auditoria = 'DELETE' AND ea.created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() ORDER BY ea.created_ateventos_auditoria DESC LIMIT 50",
+        "format": "table", "refId": "A"
+      }]
+    }
+  ]
+}

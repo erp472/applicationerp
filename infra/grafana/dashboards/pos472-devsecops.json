@@ -1,0 +1,88 @@
+{
+  "uid": "pos472-devsecops",
+  "title": "4-72 POS — DevSecOps",
+  "description": "Pipeline CI/CD, vulnerabilidades y lead time. Requiere exporter SAST/DAST — sin datos hasta conectarlo.",
+  "tags": ["devsecops", "placeholder"],
+  "refresh": "5m",
+  "schemaVersion": 38,
+  "time": { "from": "now-7d", "to": "now" },
+  "timezone": "browser",
+  "panels": [
+
+    {
+      "id": 1,
+      "title": "Estado del dashboard",
+      "type": "text",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 4 },
+      "options": {
+        "mode": "markdown",
+        "content": "## ⚠️ Sin datos — requiere exporters externos\n\nEste dashboard necesita conectar:\n- **CI/CD exporter**: éxito/fallo de pipelines (GitHub Actions, GitLab CI, Jenkins)\n- **SAST/DAST scanner**: vulnerabilidades por severidad (Trivy, Snyk, SonarQube)\n- **Patch tracker**: lead time de parches\n\nLos paneles muestran `No data` hasta que esas fuentes estén activas en Prometheus."
+      }
+    },
+
+    {
+      "id": 10, "title": "Pipeline success rate % (7d)",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 4, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "unit": "percent", "noValue": "Sin datos", "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 80 }, { "color": "green", "value": 95 }] } } },
+      "targets": [{ "expr": "100 * sum(ci_pipeline_success_total) / (sum(ci_pipeline_success_total) + sum(ci_pipeline_failure_total))", "instant": true, "legendFormat": "", "refId": "A" }]
+    },
+
+    {
+      "id": 11, "title": "Vulnerabilidades críticas",
+      "type": "stat",
+      "gridPos": { "x": 6, "y": 4, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "noValue": "Sin datos", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 }] } } },
+      "targets": [{ "expr": "sum(vulnerability_count{severity=\"CRITICAL\"})", "instant": true, "legendFormat": "", "refId": "A" }]
+    },
+
+    {
+      "id": 12, "title": "Vulnerabilidades altas",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 4, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "noValue": "Sin datos", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 3 }, { "color": "red", "value": 10 }] } } },
+      "targets": [{ "expr": "sum(vulnerability_count{severity=\"HIGH\"})", "instant": true, "legendFormat": "", "refId": "A" }]
+    },
+
+    {
+      "id": 13, "title": "Lead time parches (días p50)",
+      "type": "stat",
+      "gridPos": { "x": 18, "y": 4, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "unit": "d", "noValue": "Sin datos", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 7 }, { "color": "red", "value": 30 }] } } },
+      "targets": [{ "expr": "histogram_quantile(0.50, rate(patch_lead_time_days_bucket[7d]))", "instant": true, "legendFormat": "", "refId": "A" }]
+    },
+
+    {
+      "id": 20, "title": "Pipeline runs (historial)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 9, "w": 24, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "fieldConfig": { "defaults": { "noValue": "Sin datos", "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10 } } },
+      "targets": [
+        { "expr": "rate(ci_pipeline_success_total[1h])", "legendFormat": "Éxitos/h", "refId": "A" },
+        { "expr": "rate(ci_pipeline_failure_total[1h])", "legendFormat": "Fallos/h", "refId": "B" }
+      ]
+    },
+
+    {
+      "id": 21, "title": "Vulnerabilidades por severidad (tendencia)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 17, "w": 24, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "fieldConfig": { "defaults": { "noValue": "Sin datos", "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10 } } },
+      "targets": [
+        { "expr": "vulnerability_count{severity=\"CRITICAL\"}", "legendFormat": "Críticas", "refId": "A" },
+        { "expr": "vulnerability_count{severity=\"HIGH\"}", "legendFormat": "Altas", "refId": "B" },
+        { "expr": "vulnerability_count{severity=\"MEDIUM\"}", "legendFormat": "Medias", "refId": "C" }
+      ]
+    }
+  ]
+}

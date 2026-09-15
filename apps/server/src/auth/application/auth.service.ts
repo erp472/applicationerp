@@ -2,7 +2,6 @@ import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { compare } from '@node-rs/bcrypt';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { AuditService } from '../../audit/audit.service.js';
 import { PermisosService } from '../../permisos/permisos.service.js';
 import { LoginDto } from '../dto/login.dto.js';
 import { JwtPayload, LoginResult } from '../domain/auth.types.js';
@@ -14,7 +13,6 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
-    private readonly audit: AuditService,
     private readonly permisosService: PermisosService,
   ) {}
 
@@ -22,23 +20,20 @@ export class AuthService {
     const usuario = await this.prisma.usuario.findUnique({
       where: { emailusuarios: dto.email },
       select: {
-        idusuarios:             true,
-        emailusuarios:          true,
-        password_hashusuarios:  true,
+        idusuarios:              true,
+        emailusuarios:           true,
+        password_hashusuarios:   true,
         sucursales_idsucursales: true,
-        nombreusuarios:         true,
-        activousuarios:         true,
-        rol:                    { select: { idroles: true, codigoroles: true } },
+        nombreusuarios:          true,
+        activousuarios:          true,
+        rol:                     { select: { idroles: true, codigoroles: true } },
       },
     });
 
     if (!usuario || !usuario.activousuarios) throw new UnauthorizedException('Credenciales inválidas');
 
     const passwordOk = await compare(dto.password, usuario.password_hashusuarios);
-    if (!passwordOk) {
-      void this.audit.log({ accion: 'LOGIN', entidad: 'auth', entidad_id: dto.email, resultado: 'ERROR', error_msg: 'Credenciales inválidas' });
-      throw new UnauthorizedException('Credenciales inválidas');
-    }
+    if (!passwordOk) throw new UnauthorizedException('Credenciales inválidas');
 
     await this.validateMac(macAddress, plataforma, usuario.idusuarios, usuario.sucursales_idsucursales, usuario.rol.codigoroles);
 
@@ -47,15 +42,24 @@ export class AuthService {
       data:  { ultimo_loginusuarios: new Date() },
     });
 
-    void this.audit.log({ accion: 'LOGIN', entidad: 'auth', usuario_id: usuario.idusuarios, entidad_id: usuario.idusuarios, resultado: 'OK' });
-
     const permisos = await this.obtenerPermisos(usuario.rol.idroles);
+
+    // Resuelve regional_id directamente desde la sucursal (evita ambigüedad en el select de relaciones)
+    let regionalId: number | null = null;
+    if (usuario.sucursales_idsucursales != null) {
+      const suc = await this.prisma.sucursal.findUnique({
+        where:  { idsucursales: usuario.sucursales_idsucursales },
+        select: { regionales_idregionales: true },
+      });
+      regionalId = suc?.regionales_idregionales ?? null;
+    }
 
     const payload: JwtPayload = {
       sub:         usuario.idusuarios,
       email:       usuario.emailusuarios,
       rol:         Buffer.from(usuario.rol.codigoroles).toString('base64'),
       sucursal_id: usuario.sucursales_idsucursales ?? null,
+      regional_id: regionalId,
       nombre:      usuario.nombreusuarios,
       permisos,
     };
@@ -67,6 +71,7 @@ export class AuthService {
         nombre:      usuario.nombreusuarios,
         rol:         usuario.rol.codigoroles,
         sucursal_id: usuario.sucursales_idsucursales ?? null,
+        regional_id: regionalId,
       },
     };
   }
@@ -110,12 +115,15 @@ export class AuthService {
     sucursalId: number | null,
     rol: string,
   ) {
+    // Admins nacionales/sistema no requieren validación de equipo
     if (rol === 'ADMIN_SISTEMA' || rol === 'ADMIN_NACIONAL') return;
 
-    // CAJERO: debe venir de Tauri con MAC aprobada (en producción)
-    if (rol === 'CAJERO') {
-      if (process.env.NODE_ENV === 'development') return;
-      this.logger.log(`[CAJERO login] plataforma=${plataforma} mac=${mac}`);
+    const skipMac = process.env.NODE_ENV === 'development' || process.env.SKIP_MAC_VALIDATION === 'true';
+
+    // Roles operativos de sucursal (cajero auxiliar y principal): solo Tauri + equipo registrado
+    if (rol === 'CAJERO' || rol === 'SUPERVISOR_REGIONAL') {
+      if (skipMac) return;
+      this.logger.log(`[${rol} login] plataforma=${plataforma} mac=${mac}`);
       if (plataforma !== 'tauri') {
         throw new UnauthorizedException('El acceso de cajero solo está permitido desde la aplicación de escritorio.');
       }
@@ -128,11 +136,11 @@ export class AuthService {
           activoequipos_autorizados: true,
         },
       });
-      if (!equipo) throw new UnauthorizedException('Este equipo no está autorizado para este cajero. Contáctese con soporte: applicationerp472@gmail.com');
+      if (!equipo) throw new UnauthorizedException('Este equipo no está autorizado para este usuario. Contáctese con soporte: applicationerp472@gmail.com');
       return;
     }
 
-    if (process.env.NODE_ENV === 'development') return;
+    if (skipMac) return;
 
     if (!mac) throw new UnauthorizedException('Este equipo no está autorizado. Contáctese con soporte: applicationerp472@gmail.com');
 

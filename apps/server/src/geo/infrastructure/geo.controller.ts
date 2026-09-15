@@ -3,6 +3,7 @@ import { ApiTags, ApiBearerAuth, ApiOperation, ApiParam, ApiResponse } from '@ne
 import { GeoService } from '../application/geo.service.js';
 import { GeoPresenter } from './geo.presenter.js';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
+import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 
 @ApiTags('geo')
 @ApiBearerAuth()
@@ -11,6 +12,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
 export class GeoController {
   constructor(private readonly service: GeoService) {}
 
+  @AuditKey('ADM-04')
   @Get('paises')
   @ApiOperation({ summary: 'Lista todos los países' })
   @ApiResponse({ status: 200, description: '214 países ordenados alfabéticamente' })
@@ -18,6 +20,7 @@ export class GeoController {
     return GeoPresenter.paisesList(await this.service.findAllPaises());
   }
 
+  @AuditKey('ADM-04')
   @Get('paises/:id/departamentos')
   @ApiOperation({ summary: 'Departamentos de un país' })
   @ApiParam({ name: 'id', type: Number, description: 'ID del país (ej: 82 = Colombia)' })
@@ -26,6 +29,7 @@ export class GeoController {
     return GeoPresenter.departamentosList(await this.service.findDepartamentosByPais(id));
   }
 
+  @AuditKey('ADM-04')
   @Get('departamentos/:id/ciudades')
   @ApiOperation({ summary: 'Ciudades de un departamento (solo Colombia tiene datos)' })
   @ApiParam({ name: 'id', type: Number, description: 'ID del departamento' })

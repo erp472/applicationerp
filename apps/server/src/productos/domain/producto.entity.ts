@@ -5,6 +5,7 @@ export interface ProductoEntity {
   codigo:           string;
   nombre:           string;
   descripcion:      string | null;
+  serie:            string | null;
   tipo:             TipoProducto;
   precio:           number;
   precioSinTax:     number | null;

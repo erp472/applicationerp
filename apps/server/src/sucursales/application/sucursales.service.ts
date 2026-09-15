@@ -60,6 +60,7 @@ export class SucursalesService {
 
     const { userId, ip } = auditStore.getStore() ?? {};
     void this.audit.log({
+      audit_key:     'ADM-07',
       usuario_id:    userId,
       accion:        'CREATE',
       entidad:       'sucursales',
@@ -95,12 +96,17 @@ export class SucursalesService {
     }
     validateHorario(dto.horario_apertura ?? null, dto.horario_cierre ?? null);
 
+    if (dto.regional_id !== undefined) {
+      validateRegionalExists(dto.regional_id, await this.repo.regionalExists(dto.regional_id));
+    }
+
     if (dto.ciudad_id != null && dto.departamento_id != null) {
       const ciudadDepId = await this.repo.ciudadDepartamentoId(dto.ciudad_id);
       if (ciudadDepId !== null) validateCiudadBelongsToDepartamento(ciudadDepId, dto.departamento_id);
     }
 
     const updated = await this.repo.update(id, {
+      regionalId:      dto.regional_id,
       nombre:          dto.nombre,
       tipo:            dto.tipo,
       direccion:       dto.direccion,
@@ -116,6 +122,7 @@ export class SucursalesService {
 
     const { userId, ip } = auditStore.getStore() ?? {};
     void this.audit.log({
+      audit_key:     'ADM-07',
       usuario_id:    userId,
       accion:        'UPDATE',
       entidad:       'sucursales',
@@ -137,6 +144,7 @@ export class SucursalesService {
 
     const { userId, ip } = auditStore.getStore() ?? {};
     void this.audit.log({
+      audit_key:  'ADM-07',
       usuario_id: userId,
       accion:     'DELETE',
       entidad:    'sucursales',

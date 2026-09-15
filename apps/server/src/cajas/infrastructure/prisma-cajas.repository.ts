@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { Prisma } from '../../../generated/prisma/client.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { ICajasRepository, CreateCajaData, UpdateCajaData, CreateCajaPadreData, UpdateCajaPadreData } from '../domain/caja.repository.js';
-import type { CajaEntity, CajaPadreEntity } from '../domain/caja.entity.js';
+import type { CajaEntity, CajaPadreEntity, AsignacionSucursal, TipoCaja, PerfilUsuario } from '../domain/caja.entity.js';
 
 const SELECT_CAJA = {
   idcajas:                     true,
@@ -13,7 +13,9 @@ const SELECT_CAJA = {
   tipocajas:                   true,
   base_diacajas:               true,
   limite_alertacajas:          true,
+  t_targetcajas:               true,
   activocajas:                 true,
+  usuarios_idusuarios_cajero_fijo: true,
 } satisfies Prisma.CajaSelect;
 
 type CajaRow = Prisma.CajaGetPayload<{ select: typeof SELECT_CAJA }>;
@@ -27,28 +29,37 @@ function toEntity(row: CajaRow): CajaEntity {
     nombre:       row.nombrecajas,
     tipo:         row.tipocajas as CajaEntity['tipo'],
     baseDia:      row.base_diacajas.toString(),
-    limiteAlerta: row.limite_alertacajas ? row.limite_alertacajas.toString() : null,
+    limiteAlerta: row.limite_alertacajas?.toString() ?? null,
+    tTarget:      row.t_targetcajas?.toString() ?? null,
     activo:       row.activocajas,
+    cajeroFijoId: row.usuarios_idusuarios_cajero_fijo,
   };
 }
 
 const SELECT_PADRE = {
-  idcajas_padres:           true,
-  sucursales_idsucursales:  true,
-  nombrecajas_padres:       true,
-  base_generalcajas_padres: true,
-  hora_resetcajas_padres:   true,
+  idcajas_padres:                 true,
+  sucursales_idsucursales:        true,
+  usuarios_idusuarios_supervisor: true,
+  nombrecajas_padres:             true,
+  base_generalcajas_padres:       true,
+  hora_resetcajas_padres:         true,
+  supervisor: {
+    select: { idusuarios: true, nombreusuarios: true, emailusuarios: true },
+  },
 } satisfies Prisma.CajaPadreSelect;
 
 type CajaPadreRow = Prisma.CajaPadreGetPayload<{ select: typeof SELECT_PADRE }>;
 
 function toPadreEntity(row: CajaPadreRow): CajaPadreEntity {
   return {
-    id:          row.idcajas_padres,
-    sucursalId:  row.sucursales_idsucursales,
-    nombre:      row.nombrecajas_padres,
-    baseGeneral: row.base_generalcajas_padres.toString(),
-    horaReset:   row.hora_resetcajas_padres,
+    id:               row.idcajas_padres,
+    sucursalId:       row.sucursales_idsucursales,
+    nombre:           row.nombrecajas_padres,
+    baseGeneral:      row.base_generalcajas_padres.toString(),
+    horaReset:        row.hora_resetcajas_padres,
+    supervisorId:     row.supervisor?.idusuarios      ?? null,
+    supervisorNombre: row.supervisor?.nombreusuarios  ?? null,
+    supervisorEmail:  row.supervisor?.emailusuarios   ?? null,
   };
 }
 
@@ -79,9 +90,20 @@ export class PrismaCajasRepository implements ICajasRepository {
         deleted_atcajas:             null,
         activocajas:                 true,
       },
+      orderBy: { idcajas: 'asc' },
       select: SELECT_CAJA,
     });
     return row ? toEntity(row) : null;
+  }
+
+  // Incluye inactivas: el diagnóstico necesita distinguirlas, no omitirlas.
+  async findByPadre(cajaPadreId: number): Promise<CajaEntity[]> {
+    const rows = await this.prisma.caja.findMany({
+      where:   { cajas_padres_idcajas_padres: cajaPadreId, deleted_atcajas: null },
+      orderBy: { idcajas: 'asc' },
+      select:  SELECT_CAJA,
+    });
+    return rows.map(toEntity);
   }
 
   async findBySucursal(sucursalId: number): Promise<CajaEntity[]> {
@@ -191,9 +213,41 @@ export class PrismaCajasRepository implements ICajasRepository {
     });
   }
 
-  async findPanelAdmin() {
+  async findSucursalRegionalId(sucursalId: number): Promise<number | null> {
+    const row = await this.prisma.sucursal.findFirst({
+      where:  { idsucursales: sucursalId, deleted_atsucursales: null },
+      select: { regionales_idregionales: true },
+    });
+    return row?.regionales_idregionales ?? null;
+  }
+
+  async findAllPadresByRegional(regionalId: number): Promise<CajaPadreEntity[]> {
+    const rows = await this.prisma.cajaPadre.findMany({
+      where: {
+        deleted_atcajas_padres: null,
+        sucursal: { regionales_idregionales: regionalId, deleted_atsucursales: null },
+      },
+      select: SELECT_PADRE,
+      orderBy: { idcajas_padres: 'asc' },
+    });
+    return rows.map(toPadreEntity);
+  }
+
+  async findAllPadresBySucursal(sucursalId: number): Promise<CajaPadreEntity[]> {
+    const rows = await this.prisma.cajaPadre.findMany({
+      where: { sucursales_idsucursales: sucursalId, deleted_atcajas_padres: null },
+      select: SELECT_PADRE,
+      orderBy: { idcajas_padres: 'asc' },
+    });
+    return rows.map(toPadreEntity);
+  }
+
+  async findPanelAdmin(regionalId?: number) {
     const rows = await this.prisma.sucursal.findMany({
-      where:   { deleted_atsucursales: null },
+      where: {
+        deleted_atsucursales: null,
+        ...(regionalId != null && { regionales_idregionales: regionalId }),
+      },
       orderBy: { nombresucursales: 'asc' },
       select: {
         idsucursales:     true,
@@ -204,18 +258,19 @@ export class PrismaCajasRepository implements ICajasRepository {
         ciudad:   { select: { nombreciudades: true } },
         departamento: { select: { nombredepartamentos: true } },
         cajas: {
-          where:  { tipocajas: 'pos', deleted_atcajas: null, activocajas: true },
+          where:   { tipocajas: { in: ['pos', 'pagos'] }, deleted_atcajas: null, activocajas: true },
+          orderBy: { codigocajas: 'asc' },
           select: {
             idcajas:     true,
             codigocajas: true,
             nombrecajas: true,
+            tipocajas:   true,
             sesiones: {
               where:  { estadosesiones_caja: 'abierta' },
               select: { idsesiones_caja: true },
               take:   1,
             },
           },
-          take: 1,
         },
         serviciosSucursal: {
           select: {
@@ -242,13 +297,14 @@ export class PrismaCajasRepository implements ICajasRepository {
       regional:     s.regional.nombreregionales,
       ciudad:       s.ciudad?.nombreciudades ?? null,
       departamento: s.departamento?.nombredepartamentos ?? null,
-      cajaPos: s.cajas[0] ? {
-        id:           s.cajas[0].idcajas,
-        codigo:       s.cajas[0].codigocajas,
-        nombre:       s.cajas[0].nombrecajas,
-        sesionActiva: s.cajas[0].sesiones.length > 0,
-        sesionId:     s.cajas[0].sesiones[0]?.idsesiones_caja ?? null,
-      } : null,
+      cajas: s.cajas.map(c => ({
+        id:           c.idcajas,
+        codigo:       c.codigocajas,
+        nombre:       c.nombrecajas,
+        tipo:         c.tipocajas as TipoCaja,
+        sesionActiva: c.sesiones.length > 0,
+        sesionId:     c.sesiones[0]?.idsesiones_caja ?? null,
+      })),
       servicios: s.serviciosSucursal.map(ss => ({
         id:     ss.servicio.idservicios,
         codigo: ss.servicio.codigoservicios,
@@ -273,6 +329,137 @@ export class PrismaCajasRepository implements ICajasRepository {
         servicios_idservicios:   servicioId,
         activoservicios_sucursal: activo,
       },
+    });
+  }
+
+  async getServiciosCaja(cajaIds: number[]): Promise<Map<number, Map<string, boolean>>> {
+    const filas = await this.prisma.servicioCaja.findMany({
+      where:  { cajas_idcajas: { in: cajaIds } },
+      select: { cajas_idcajas: true, codigoservicios_caja: true, activoservicios_caja: true },
+    });
+
+    const porCaja = new Map<number, Map<string, boolean>>();
+    for (const id of cajaIds) porCaja.set(id, new Map());
+    for (const f of filas) {
+      porCaja.get(f.cajas_idcajas)?.set(f.codigoservicios_caja, f.activoservicios_caja);
+    }
+    return porCaja;
+  }
+
+  async setServicioCaja(cajaId: number, codigo: string, activo: boolean): Promise<void> {
+    await this.prisma.servicioCaja.upsert({
+      where: {
+        cajas_idcajas_codigoservicios_caja: {
+          cajas_idcajas:        cajaId,
+          codigoservicios_caja: codigo,
+        },
+      },
+      update: { activoservicios_caja: activo },
+      create: {
+        cajas_idcajas:        cajaId,
+        codigoservicios_caja: codigo,
+        activoservicios_caja: activo,
+      },
+    });
+  }
+
+  async setSupervisorPunto(cajaPadreId: number, supervisorId: number | null): Promise<void> {
+    await this.prisma.cajaPadre.update({
+      where: { idcajas_padres: cajaPadreId },
+      data:  { usuarios_idusuarios_supervisor: supervisorId },
+    });
+  }
+
+  async getAsignacionSucursal(sucursalId: number): Promise<AsignacionSucursal> {
+    const padre = await this.prisma.cajaPadre.findFirst({
+      where: { sucursales_idsucursales: sucursalId, deleted_atcajas_padres: null },
+      select: {
+        idcajas_padres:   true,
+        nombrecajas_padres: true,
+        supervisor: {
+          select: { idusuarios: true, nombreusuarios: true, emailusuarios: true },
+        },
+        cajas: {
+          where: { deleted_atcajas: null, activocajas: true },
+          orderBy: { codigocajas: 'asc' },
+          select: {
+            idcajas:      true,
+            codigocajas:  true,
+            nombrecajas:  true,
+            tipocajas:    true,
+            activocajas:  true,
+            cajeroFijo:   { select: { idusuarios: true, nombreusuarios: true, emailusuarios: true } },
+            sesiones: {
+              where:   { estadosesiones_caja: 'abierta' },
+              take:    1,
+              orderBy: { fecha_aperturasesiones_caja: 'desc' },
+              select: {
+                idsesiones_caja:             true,
+                estadosesiones_caja:         true,
+                fecha_aperturasesiones_caja: true,
+                usuarioApertura: { select: { idusuarios: true, nombreusuarios: true } },
+                cajeroAsignado:  { select: { idusuarios: true, nombreusuarios: true, emailusuarios: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!padre) return { cajaPadreId: null, cajaPadreNombre: null, supervisorId: null, supervisorNombre: null, supervisorEmail: null, cajas: [] };
+
+    return {
+      cajaPadreId:      padre.idcajas_padres,
+      cajaPadreNombre:  padre.nombrecajas_padres,
+      supervisorId:     padre.supervisor?.idusuarios      ?? null,
+      supervisorNombre: padre.supervisor?.nombreusuarios  ?? null,
+      supervisorEmail:  padre.supervisor?.emailusuarios   ?? null,
+      cajas: padre.cajas.map(c => ({
+        id:               c.idcajas,
+        codigo:           c.codigocajas,
+        nombre:           c.nombrecajas,
+        tipo:             c.tipocajas as AsignacionSucursal['cajas'][0]['tipo'],
+        activo:           c.activocajas,
+        cajeroFijoId:     c.cajeroFijo?.idusuarios ?? null,
+        cajeroFijoNombre: c.cajeroFijo?.nombreusuarios ?? null,
+        cajeroFijoEmail:  c.cajeroFijo?.emailusuarios ?? null,
+        sesionActiva: c.sesiones[0] ? {
+          sesionId:         c.sesiones[0].idsesiones_caja,
+          estado:           c.sesiones[0].estadosesiones_caja as 'abierta',
+          supervisorId:     c.sesiones[0].usuarioApertura.idusuarios,
+          supervisorNombre: c.sesiones[0].usuarioApertura.nombreusuarios,
+          cajeroId:         c.sesiones[0].cajeroAsignado?.idusuarios     ?? c.cajeroFijo?.idusuarios    ?? null,
+          cajeroNombre:     c.sesiones[0].cajeroAsignado?.nombreusuarios ?? c.cajeroFijo?.nombreusuarios ?? null,
+          cajeroEmail:      c.sesiones[0].cajeroAsignado?.emailusuarios  ?? c.cajeroFijo?.emailusuarios  ?? null,
+          fechaApertura:    c.sesiones[0].fecha_aperturasesiones_caja,
+        } : null,
+      })),
+    };
+  }
+
+  async findPerfilUsuario(usuarioId: number): Promise<PerfilUsuario | null> {
+    const u = await this.prisma.usuario.findFirst({
+      where:  { idusuarios: usuarioId, deleted_atusuarios: null, activousuarios: true },
+      select: {
+        idusuarios:              true,
+        nombreusuarios:          true,
+        sucursales_idsucursales: true,
+        rol: { select: { codigoroles: true } },
+      },
+    });
+    if (!u) return null;
+    return {
+      id:         u.idusuarios,
+      nombre:     u.nombreusuarios,
+      rol:        u.rol.codigoroles,
+      sucursalId: u.sucursales_idsucursales,
+    };
+  }
+
+  async setCajeroFijoCaja(cajaId: number, cajeroId: number | null): Promise<void> {
+    await this.prisma.caja.update({
+      where: { idcajas: cajaId },
+      data:  { usuarios_idusuarios_cajero_fijo: cajeroId },
     });
   }
 }

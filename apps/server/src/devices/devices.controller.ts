@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
+import { AuditKey } from '../audit/decorators/audit-key.decorator.js';
 
 const AuthorizeSchema = z.object({
   mac_address: z.string().regex(/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i),
@@ -20,6 +21,7 @@ const AuthorizeSchema = z.object({
 export class DevicesController {
   constructor(private readonly prisma: PrismaService) {}
 
+  @AuditKey('ADM-04')
   @Post('heartbeat')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'MAC heartbeat desde equipo POS' })
@@ -27,6 +29,7 @@ export class DevicesController {
     return { ok: true, mac: body.mac, received_at: new Date().toISOString() };
   }
 
+  @AuditKey('ADM-07')
   @Post('authorize')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN_SISTEMA', 'ADMIN_NACIONAL')
@@ -66,6 +69,7 @@ export class DevicesController {
     return equipo;
   }
 
+  @AuditKey('ADM-07')
   @Delete('authorize/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN_SISTEMA', 'ADMIN_NACIONAL')
@@ -79,6 +83,7 @@ export class DevicesController {
     return { ok: true };
   }
 
+  @AuditKey('ADM-04')
   @Get('authorize')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('ADMIN_SISTEMA', 'ADMIN_NACIONAL', 'SUPERVISOR_REGIONAL')

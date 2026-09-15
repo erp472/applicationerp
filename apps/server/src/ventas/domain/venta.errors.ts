@@ -58,6 +58,14 @@ export class VentaYaAnuladaError extends VentaDomainError {
   }
 }
 
+export class VentaYaConfirmadaError extends VentaDomainError {
+  readonly statusCode = 409;
+  constructor(id: number) {
+    super(`La venta ${id} ya fue confirmada y no puede modificarse`);
+    this.name = 'VentaYaConfirmadaError';
+  }
+}
+
 export class VentaDeOtroTurnoError extends VentaDomainError {
   readonly statusCode = 403;
   constructor(id: number) {
@@ -95,5 +103,69 @@ export class TarifaNoEncontradaError extends VentaDomainError {
   constructor(servicioId: number, pesoKg: number) {
     super(`Sin tarifa para el servicio ${servicioId} con peso ${pesoKg} kg`);
     this.name = 'TarifaNoEncontradaError';
+  }
+}
+
+export class StockInsuficienteError extends VentaDomainError {
+  readonly statusCode = 409;
+  constructor(nombre: string, disponible: number, solicitado: number) {
+    super(`Stock insuficiente para "${nombre}": disponible ${disponible}, solicitado ${solicitado}`);
+    this.name = 'StockInsuficienteError';
+  }
+}
+
+export class CantidadMinimaError extends VentaDomainError {
+  readonly statusCode = 422;
+  constructor(nombre: string, minimo: number) {
+    super(`La cantidad mínima de compra para "${nombre}" es ${minimo} unidades`);
+    this.name = 'CantidadMinimaError';
+  }
+}
+
+export class CantidadMaximaError extends VentaDomainError {
+  readonly statusCode = 422;
+  constructor(nombre: string, maximo: number) {
+    super(`La cantidad máxima de compra para "${nombre}" es ${maximo} unidades`);
+    this.name = 'CantidadMaximaError';
+  }
+}
+
+export class CantidadFueraDeTarifaError extends VentaDomainError {
+  readonly statusCode = 422;
+  constructor(nombre: string, cantidad: number) {
+    super(`La cantidad ${cantidad} no corresponde a ningún tramo de tarifa para "${nombre}"`);
+    this.name = 'CantidadFueraDeTarifaError';
+  }
+}
+
+export class PesoExcedeLimiteError extends VentaDomainError {
+  readonly statusCode = 422;
+  constructor(pesoKg: number, limiteKg: number) {
+    super(`El peso ${pesoKg} kg supera el límite del servicio (${limiteKg} kg)`);
+    this.name = 'PesoExcedeLimiteError';
+  }
+}
+
+export class EfectivoInsuficienteError extends VentaDomainError {
+  readonly statusCode = 422;
+  constructor(recibido: number, total: number) {
+    super(`Efectivo insuficiente: recibido $${recibido.toLocaleString('es-CO')}, total a pagar $${total.toLocaleString('es-CO')}`);
+    this.name = 'EfectivoInsuficienteError';
+  }
+}
+
+export class SaldoInsuficienteError extends VentaDomainError {
+  readonly statusCode = 422;
+  constructor(saldoActual: number, total: number) {
+    super(`Saldo a favor insuficiente: disponible $${saldoActual.toLocaleString('es-CO')}, total a pagar $${total.toLocaleString('es-CO')}`);
+    this.name = 'SaldoInsuficienteError';
+  }
+}
+
+export class ClienteRequeridoError extends VentaDomainError {
+  readonly statusCode = 422;
+  constructor() {
+    super('Se requiere un cliente identificado para pagar con saldo a favor');
+    this.name = 'ClienteRequeridoError';
   }
 }

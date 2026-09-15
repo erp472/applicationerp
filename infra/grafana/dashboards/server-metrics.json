@@ -1,0 +1,162 @@
+{
+  "uid": "pos472-server-metrics",
+  "title": "4-72 POS — Servidor",
+  "description": "CPU, RAM, disco y heap del host. Fuente: node_exporter + prom-client.",
+  "tags": ["servidor", "infraestructura"],
+  "refresh": "15s",
+  "schemaVersion": 38,
+  "time": { "from": "now-1h", "to": "now" },
+  "timezone": "browser",
+  "panels": [
+
+    {
+      "id": 1, "title": "CPU %",
+      "type": "gauge",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "minVizWidth": 75, "minVizHeight": 75 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "min": 0, "max": 100,
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 70 },
+            { "color": "red", "value": 85 }
+          ]}
+        }
+      },
+      "targets": [{ "expr": "100 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[2m])) * 100", "instant": true, "legendFormat": "CPU", "refId": "A" }]
+    },
+
+    {
+      "id": 2, "title": "RAM %",
+      "type": "gauge",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "min": 0, "max": 100,
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 75 },
+            { "color": "red", "value": 90 }
+          ]}
+        }
+      },
+      "targets": [{ "expr": "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)", "instant": true, "legendFormat": "RAM", "refId": "A" }]
+    },
+
+    {
+      "id": 3, "title": "Disco /",
+      "type": "gauge",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "min": 0, "max": 100,
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 75 },
+            { "color": "red", "value": 90 }
+          ]}
+        }
+      },
+      "targets": [{ "expr": "100 - (node_filesystem_avail_bytes{mountpoint=\"/\"} / node_filesystem_size_bytes{mountpoint=\"/\"} * 100)", "instant": true, "legendFormat": "Disco", "refId": "A" }]
+    },
+
+    {
+      "id": 4, "title": "Heap Node.js",
+      "type": "stat",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area", "textMode": "auto" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 300000000 },
+            { "color": "red", "value": 400000000 }
+          ]}
+        }
+      },
+      "targets": [{ "expr": "pos472_nodejs_heap_size_used_bytes", "instant": true, "legendFormat": "Heap", "refId": "A" }]
+    },
+
+    {
+      "id": 10, "title": "CPU % — historial",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 5, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "min": 0, "max": 100, "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10 } }
+      },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "100 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[2m])) * 100", "legendFormat": "CPU total %", "refId": "A" },
+        { "expr": "avg(rate(node_cpu_seconds_total{mode=\"user\"}[2m])) * 100", "legendFormat": "User %", "refId": "B" },
+        { "expr": "avg(rate(node_cpu_seconds_total{mode=\"system\"}[2m])) * 100", "legendFormat": "System %", "refId": "C" }
+      ]
+    },
+
+    {
+      "id": 11, "title": "RAM — historial",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 5, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "fieldConfig": {
+        "defaults": { "unit": "bytes", "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10 } }
+      },
+      "targets": [
+        { "expr": "node_memory_MemTotal_bytes", "legendFormat": "Total", "refId": "A" },
+        { "expr": "node_memory_MemAvailable_bytes", "legendFormat": "Disponible", "refId": "B" },
+        { "expr": "node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes", "legendFormat": "Usada", "refId": "C" }
+      ]
+    },
+
+    {
+      "id": 12, "title": "Heap Node.js — historial",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 13, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "fieldConfig": {
+        "defaults": { "unit": "bytes", "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10 } }
+      },
+      "targets": [
+        { "expr": "pos472_nodejs_heap_size_used_bytes", "legendFormat": "Heap usado", "refId": "A" },
+        { "expr": "pos472_nodejs_heap_size_total_bytes", "legendFormat": "Heap total", "refId": "B" },
+        { "expr": "pos472_nodejs_external_memory_bytes", "legendFormat": "External", "refId": "C" }
+      ]
+    },
+
+    {
+      "id": 13, "title": "Red (bytes/s)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 13, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "fieldConfig": {
+        "defaults": { "unit": "Bps", "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10 } }
+      },
+      "targets": [
+        { "expr": "rate(node_network_receive_bytes_total{device!=\"lo\"}[2m])", "legendFormat": "RX {{device}}", "refId": "A" },
+        { "expr": "rate(node_network_transmit_bytes_total{device!=\"lo\"}[2m])", "legendFormat": "TX {{device}}", "refId": "B" }
+      ]
+    },
+
+    {
+      "id": 14, "title": "Disco I/O (bytes/s)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 21, "w": 24, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "pos472_prom" },
+      "fieldConfig": {
+        "defaults": { "unit": "Bps", "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10 } }
+      },
+      "targets": [
+        { "expr": "rate(node_disk_read_bytes_total[2m])", "legendFormat": "Read {{device}}", "refId": "A" },
+        { "expr": "rate(node_disk_written_bytes_total[2m])", "legendFormat": "Write {{device}}", "refId": "B" }
+      ]
+    }
+  ]
+}

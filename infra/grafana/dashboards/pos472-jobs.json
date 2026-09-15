@@ -1,0 +1,197 @@
+{
+  "uid": "pos472-jobs",
+  "title": "4-72 POS — Jobs Automáticos",
+  "description": "Estado en tiempo real del job de cierre automático de cajas (cron 22:00). Refresco 5s durante ventana de ejecución.",
+  "tags": ["jobs", "cajas", "scheduler"],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "time": { "from": "now-2h", "to": "now" },
+  "timezone": "browser",
+  "panels": [
+
+    {
+      "id": 1, "title": "Estado último job",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none", "textMode": "auto" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [{ "type": "value", "options": { "OK": { "color": "green", "text": "✓ OK" }, "ERROR": { "color": "red", "text": "✗ ERROR" } } }],
+          "noValue": "Sin correr",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] }
+        }
+      },
+      "targets": [{
+        "rawSql": "SELECT datos_despueseventos_auditoria->>'resultado' AS value FROM eventos_auditoria WHERE tablaeventos_auditoria = 'job_cierre_automatico' ORDER BY created_ateventos_auditoria DESC LIMIT 1",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 2, "title": "Sesiones cerradas (último job)",
+      "type": "stat",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "noValue": "—", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } } },
+      "targets": [{
+        "rawSql": "SELECT (datos_despueseventos_auditoria->>'sesiones_cerradas')::int AS value FROM eventos_auditoria WHERE tablaeventos_auditoria = 'job_cierre_automatico' ORDER BY created_ateventos_auditoria DESC LIMIT 1",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 3, "title": "Puntos procesados (último job)",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "noValue": "—", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } } },
+      "targets": [{
+        "rawSql": "SELECT (datos_despueseventos_auditoria->>'puntos_procesados')::int AS value FROM eventos_auditoria WHERE tablaeventos_auditoria = 'job_cierre_automatico' ORDER BY created_ateventos_auditoria DESC LIMIT 1",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 4, "title": "Errores (último job)",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "noValue": "—", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } } },
+      "targets": [{
+        "rawSql": "SELECT (datos_despueseventos_auditoria->>'sesiones_con_error')::int AS value FROM eventos_auditoria WHERE tablaeventos_auditoria = 'job_cierre_automatico' ORDER BY created_ateventos_auditoria DESC LIMIT 1",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 5, "title": "Duración último job (ms)",
+      "type": "stat",
+      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": { "defaults": { "unit": "ms", "noValue": "—", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 30000 }, { "color": "red", "value": 120000 }] } } },
+      "targets": [{
+        "rawSql": "SELECT (datos_despueseventos_auditoria->>'duracion_ms')::int AS value FROM eventos_auditoria WHERE tablaeventos_auditoria = 'job_cierre_automatico' ORDER BY created_ateventos_auditoria DESC LIMIT 1",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 6, "title": "¿Job corrió hoy?",
+      "type": "stat",
+      "gridPos": { "x": 20, "y": 0, "w": 4, "h": 4 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "NO",
+          "mappings": [{ "type": "value", "options": { "1": { "color": "green", "text": "SÍ" }, "0": { "color": "red", "text": "NO" } } }],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        }
+      },
+      "targets": [{
+        "rawSql": "SELECT CASE WHEN COUNT(*) > 0 THEN 1 ELSE 0 END AS value FROM eventos_auditoria WHERE tablaeventos_auditoria = 'job_cierre_automatico' AND created_ateventos_auditoria >= CURRENT_DATE",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 10, "title": "🔴 Sesiones siendo cerradas AHORA (últimos 15 min)",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 4, "w": 24, "h": 8 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "sortBy": [{ "displayName": "hora cierre", "desc": true }] },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "estado" }, "properties": [
+            { "id": "mappings", "value": [{ "type": "value", "options": {
+              "cierre_automatico": { "color": "orange", "text": "⚙ Automático" }
+            }}] }
+          ]}
+        ]
+      },
+      "targets": [{
+        "rawSql": "SELECT ea.created_ateventos_auditoria AS \"hora cierre\", ea.datos_despueseventos_auditoria->>'tipo_evento' AS estado, (ea.datos_despueseventos_auditoria->>'sesion_id')::int AS sesion_id, (ea.datos_despueseventos_auditoria->>'caja_id')::int AS caja_id, (ea.datos_despueseventos_auditoria->>'punto_id')::int AS punto_id, ea.datos_despueseventos_auditoria->>'duracion_minutos' AS duracion_min, u.nombreusuarios AS cajero FROM eventos_auditoria ea LEFT JOIN usuarios u ON u.idusuarios = (ea.datos_despueseventos_auditoria->>'cajero_id')::int WHERE ea.tablaeventos_auditoria = 'sesiones_caja' AND ea.datos_despueseventos_auditoria->>'tipo_evento' = 'cierre_automatico' AND ea.created_ateventos_auditoria > NOW() - INTERVAL '15 minutes' ORDER BY ea.created_ateventos_auditoria DESC",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 20, "title": "Progreso del job actual — cierres por minuto",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 12, "w": 16, "h": 8 },
+      "datasource": { "uid": "pos472_pg" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 20 } } },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [{
+        "rawSql": "SELECT DATE_TRUNC('minute', created_ateventos_auditoria) AS time, COUNT(*) AS \"sesiones cerradas\" FROM eventos_auditoria WHERE tablaeventos_auditoria = 'sesiones_caja' AND datos_despueseventos_auditoria->>'tipo_evento' = 'cierre_automatico' AND created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() GROUP BY 1 ORDER BY 1",
+        "format": "time_series", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 21, "title": "Cierres acumulados (ventana actual)",
+      "type": "stat",
+      "gridPos": { "x": 16, "y": 12, "w": 8, "h": 8 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "area", "textMode": "auto" },
+      "fieldConfig": { "defaults": { "noValue": "0", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null }] } } },
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) AS value FROM eventos_auditoria WHERE tablaeventos_auditoria = 'sesiones_caja' AND datos_despueseventos_auditoria->>'tipo_evento' = 'cierre_automatico' AND created_ateventos_auditoria > NOW() - INTERVAL '30 minutes'",
+        "format": "table", "refId": "A"
+      }]
+    },
+
+    {
+      "id": 30, "title": "Historial de ejecuciones del job",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 20, "w": 24, "h": 7 },
+      "datasource": { "uid": "pos472_pg" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "custom": { "lineWidth": 2, "fillOpacity": 10 } } },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "rawSql": "SELECT created_ateventos_auditoria AS time, (datos_despueseventos_auditoria->>'sesiones_cerradas')::float AS \"sesiones cerradas\" FROM eventos_auditoria WHERE tablaeventos_auditoria = 'job_cierre_automatico' AND created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() ORDER BY 1",
+          "format": "time_series", "refId": "A"
+        },
+        {
+          "rawSql": "SELECT created_ateventos_auditoria AS time, (datos_despueseventos_auditoria->>'sesiones_con_error')::float AS \"con error\" FROM eventos_auditoria WHERE tablaeventos_auditoria = 'job_cierre_automatico' AND created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() ORDER BY 1",
+          "format": "time_series", "refId": "B"
+        },
+        {
+          "rawSql": "SELECT created_ateventos_auditoria AS time, (datos_despueseventos_auditoria->>'duracion_ms')::float / 1000 AS \"duración (s)\" FROM eventos_auditoria WHERE tablaeventos_auditoria = 'job_cierre_automatico' AND created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() ORDER BY 1",
+          "format": "time_series", "refId": "C"
+        }
+      ]
+    },
+
+    {
+      "id": 31, "title": "Log de ejecuciones",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 27, "w": 24, "h": 8 },
+      "datasource": { "uid": "pos472_pg" },
+      "options": { "sortBy": [{ "displayName": "fecha", "desc": true }] },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "resultado" }, "properties": [
+            { "id": "mappings", "value": [{ "type": "value", "options": {
+              "OK": { "color": "green", "text": "✓ OK" },
+              "ERROR": { "color": "red", "text": "✗ ERROR" }
+            }}] },
+            { "id": "custom.width", "value": 100 }
+          ]}
+        ]
+      },
+      "targets": [{
+        "rawSql": "SELECT created_ateventos_auditoria AS fecha, datos_despueseventos_auditoria->>'resultado' AS resultado, (datos_despueseventos_auditoria->>'puntos_procesados')::int AS puntos, (datos_despueseventos_auditoria->>'sesiones_cerradas')::int AS sesiones_cerradas, (datos_despueseventos_auditoria->>'sesiones_con_error')::int AS errores, datos_despueseventos_auditoria->>'puntos_con_error' AS puntos_con_error, (datos_despueseventos_auditoria->>'duracion_ms')::int AS duracion_ms FROM eventos_auditoria WHERE tablaeventos_auditoria = 'job_cierre_automatico' AND created_ateventos_auditoria BETWEEN $__timeFrom() AND $__timeTo() ORDER BY created_ateventos_auditoria DESC",
+        "format": "table", "refId": "A"
+      }]
+    }
+  ]
+}

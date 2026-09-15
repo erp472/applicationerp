@@ -58,3 +58,9 @@ export class ServicioNoAsignadoError extends ServicioDomainError {
     super(`Servicio '${servicioId}' no está asignado a la sucursal '${sucursalId}'`, 404);
   }
 }
+
+export class ServicioTarifaNotFoundError extends ServicioDomainError {
+  constructor(tarifaId: number) {
+    super(`Tarifa con id '${tarifaId}' no encontrada para este servicio`, 404);
+  }
+}

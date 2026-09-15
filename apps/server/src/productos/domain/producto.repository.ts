@@ -5,7 +5,7 @@ export const PRODUCTOS_REPOSITORY = Symbol('PRODUCTOS_REPOSITORY');
 
 export interface IProductosRepository {
   create(data: {
-    codigo: string; nombre: string; descripcion?: string | null;
+    codigo: string; nombre: string; descripcion?: string | null; serie?: string | null;
     tipo: string; precio: number; porcentajeTax: number; precioSinTax?: number | null;
     peso?: number | null; factorVolumetrico?: number | null; imagenUrl?: string | null;
   }): Promise<ProductoEntity>;
@@ -17,7 +17,7 @@ export interface IProductosRepository {
   codigoExists(codigo: string): Promise<boolean>;
 
   update(id: number, data: {
-    nombre?: string; descripcion?: string | null; precio?: number;
+    nombre?: string; descripcion?: string | null; serie?: string | null; precio?: number;
     porcentajeTax?: number; precioSinTax?: number | null;
     peso?: number | null; factorVolumetrico?: number | null;
     imagenUrl?: string | null; activo?: boolean;

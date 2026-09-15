@@ -1,7 +1,22 @@
-import type { ServicioEntity, ServicioSucursalEntity } from './servicio.entity.js';
+import type { ServicioEntity, ServicioSucursalEntity, TarifaEnvioEntity } from './servicio.entity.js';
 import type { QueryServicioDto } from '../dto/query-servicio.dto.js';
 
 export const SERVICIOS_REPOSITORY = Symbol('SERVICIOS_REPOSITORY');
+
+export interface CreateTarifaData {
+  paisDestino:        string;
+  ciudadDestino?:     string | null;
+  pesoMinKg:          number;
+  pesoMaxKg?:         number | null;
+  tarifa:             number;
+  tarifaKgAdicional?: number | null;
+}
+
+export interface UpdateTarifaData {
+  tarifa?:            number;
+  tarifaKgAdicional?: number | null;
+  activa?:            boolean;
+}
 
 export interface IServiciosRepository {
   create(data: {
@@ -10,6 +25,8 @@ export interface IServiciosRepository {
     requiereValorDeclarado: boolean; pesoMaximoKg?: number | null;
     factorVolumetrico: number; tiempoEntregaDias?: number | null;
     codigoSigma?: string | null;
+    minimoSeguroPostal?: number | null;
+    altoMaxCm?: number | null; anchoMaxCm?: number | null; largoMaxCm?: number | null;
   }): Promise<ServicioEntity>;
 
   findAll(query: QueryServicioDto): Promise<{ datos: ServicioEntity[]; total: number }>;
@@ -23,6 +40,8 @@ export interface IServiciosRepository {
     requiereDimensiones?: boolean; requiereValorDeclarado?: boolean;
     pesoMaximoKg?: number | null; factorVolumetrico?: number;
     tiempoEntregaDias?: number | null; codigoSigma?: string | null;
+    minimoSeguroPostal?: number | null;
+    altoMaxCm?: number | null; anchoMaxCm?: number | null; largoMaxCm?: number | null;
     activo?: boolean;
   }): Promise<ServicioEntity>;
 
@@ -37,4 +56,14 @@ export interface IServiciosRepository {
   sucursalExists(sucursalId: number): Promise<boolean>;
 
   isAssigned(servicioId: number, sucursalId: number): Promise<boolean>;
+
+  findTarifasByServicio(servicioId: number): Promise<TarifaEnvioEntity[]>;
+
+  createTarifa(servicioId: number, data: CreateTarifaData): Promise<TarifaEnvioEntity>;
+
+  updateTarifa(tarifaId: number, data: UpdateTarifaData): Promise<TarifaEnvioEntity>;
+
+  deleteTarifa(tarifaId: number): Promise<void>;
+
+  updateCertificacion(servicioId: number, tarifa: number | null): Promise<ServicioEntity>;
 }

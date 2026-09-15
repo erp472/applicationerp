@@ -165,6 +165,7 @@ export class PrismaSucursalesRepository implements ISucursalesRepository {
     const row = await this.prisma.sucursal.update({
       where: { idsucursales: id },
       data: {
+        ...(data.regionalId      !== undefined && { regionales_idregionales:       data.regionalId }),
         ...(data.nombre          !== undefined && { nombresucursales:              data.nombre }),
         ...(data.tipo            !== undefined && { tiposucursales:                data.tipo as 'unipersonal' | 'multipuesto' }),
         ...(data.direccion       !== undefined && { direccionsucursales:           data.direccion }),

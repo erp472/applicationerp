@@ -13,6 +13,7 @@ import {
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../common/guards/roles.guard.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
+import { AuditKey } from '../audit/decorators/audit-key.decorator.js';
 
 const ADMINS = ['ADMIN_NACIONAL', 'ADMIN_SISTEMA'];
 
@@ -25,6 +26,7 @@ export class PermisosController {
 
   // ── MATRIX ─────────────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-08')
   @Get('matrix')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'Get full Rol × Módulo × Permiso matrix' })
@@ -34,6 +36,7 @@ export class PermisosController {
 
   // ── ROLES ───────────────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-08')
   @Get('roles')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'List all active roles' })
@@ -41,6 +44,7 @@ export class PermisosController {
     return this.service.findAllRoles();
   }
 
+  @AuditKey('ADM-08')
   @Post('roles')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'Create role' })
@@ -50,6 +54,7 @@ export class PermisosController {
     return this.service.createRol(parsed.data);
   }
 
+  @AuditKey('ADM-08')
   @Get('roles/:id')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'Get role by ID' })
@@ -57,6 +62,7 @@ export class PermisosController {
     return this.service.findOneRol(id);
   }
 
+  @AuditKey('ADM-08')
   @Patch('roles/:id')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'Update role' })
@@ -66,6 +72,7 @@ export class PermisosController {
     return this.service.updateRol(id, parsed.data);
   }
 
+  @AuditKey('ADM-08')
   @Delete('roles/:id')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'Delete role' })
@@ -75,6 +82,7 @@ export class PermisosController {
 
   // ── ROL ↔ PERMISO ───────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-08')
   @Get('roles/:rolId/permisos')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'Get permissions assigned to a role' })
@@ -82,6 +90,7 @@ export class PermisosController {
     return this.service.getPermisosDeRol(rolId);
   }
 
+  @AuditKey('ADM-08')
   @Post('roles/:rolId/permisos')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'Assign permission to role' })
@@ -91,6 +100,7 @@ export class PermisosController {
     return this.service.asignarPermiso(rolId, parsed.data.permisos_idpermisos);
   }
 
+  @AuditKey('ADM-08')
   @Delete('roles/:rolId/permisos/:permisoId')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'Revoke permission from role' })
@@ -103,6 +113,7 @@ export class PermisosController {
 
   // ── PERMISOS ────────────────────────────────────────────────────────────────
 
+  @AuditKey('ADM-08')
   @Get('permisos')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'List all permissions' })
@@ -111,6 +122,7 @@ export class PermisosController {
     return this.service.findAllPermisos(modulo);
   }
 
+  @AuditKey('ADM-08')
   @Post('permisos')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'Create permission' })
@@ -120,6 +132,7 @@ export class PermisosController {
     return this.service.createPermiso(parsed.data);
   }
 
+  @AuditKey('ADM-08')
   @Patch('permisos/:id')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'Update permission' })
@@ -129,6 +142,7 @@ export class PermisosController {
     return this.service.updatePermiso(id, parsed.data);
   }
 
+  @AuditKey('ADM-08')
   @Delete('permisos/:id')
   @Roles(...ADMINS)
   @ApiOperation({ summary: 'Delete permission' })

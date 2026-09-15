@@ -8,6 +8,14 @@ import type {
   EnvioEntity,
 } from '../domain/venta.entity.js';
 
+// El Envio sólo guarda los ids de servicio y sucursal, pero la guía imprime el
+// código/nombre de ambos. Quien construya la guía debe resolverlos antes.
+export interface GuiaContexto {
+  servicio:             { codigo: string; nombre: string };
+  sucursal:             { codigo: string; nombre: string };
+  fechaEntregaEstimada: string | null;
+}
+
 export class VentasPresenter {
   static toVenta(entity: VentaEntity) {
     return {
@@ -21,7 +29,9 @@ export class VentasPresenter {
       medioPago:    entity.medioPago,
       estado:       entity.estado,
       createdAt:    entity.createdAt.toISOString(),
-      detalle:      entity.detalle?.map(VentasPresenter.toDetalle) ?? [],
+      detalle:               entity.detalle?.map(VentasPresenter.toDetalle) ?? [],
+      enviosPendientes:      entity.envios?.map(VentasPresenter.toEnvio) ?? [],
+      apartadosPendientes:   entity.apartadosPendientes?.map(VentasPresenter.toApartado) ?? [],
     };
   }
 
@@ -29,12 +39,14 @@ export class VentasPresenter {
     return {
       id:             entity.id,
       productoId:     entity.productoId,
-      nombreProducto: entity.nombreProducto ?? null,
-      tipoProducto:   entity.tipoProducto   ?? null,
+      nombreProducto: entity.nombreProducto  ?? null,
+      codigoProducto: entity.codigoProducto  ?? null,
+      tipoProducto:   entity.tipoProducto    ?? null,
       cantidad:       entity.cantidad,
       precioUnitario: entity.precioUnitario,
       descuento:      entity.descuento,
       subtotal:       entity.subtotal,
+      porcentajeTax:  entity.porcentajeTax   ?? 0,
     };
   }
 
@@ -47,6 +59,7 @@ export class VentasPresenter {
       apellido:        entity.apellido,
       email:           entity.email,
       telefono:        entity.telefono,
+      saldoAFavor:     entity.saldoAFavor,
     };
   }
 
@@ -58,8 +71,10 @@ export class VentasPresenter {
       tipo:          entity.tipo,
       precio:        entity.precio,
       porcentajeTax: entity.porcentajeTax,
-      stockActual:   entity.stockActual,
-      stockMinimo:   entity.stockMinimo,
+      stockActual:    entity.stockActual,
+      stockMinimo:    entity.stockMinimo,
+      cantidadMinima: entity.cantidadMinima,
+      cantidadMaxima: entity.cantidadMaxima,
     };
   }
 
@@ -71,6 +86,7 @@ export class VentasPresenter {
       tamano:       entity.tamano,
       estado:       entity.estado,
       clienteId:    entity.clienteId,
+      ventaId:      entity.ventaId,
       fechaInicio:  entity.fechaInicio?.toISOString().slice(0, 10) ?? null,
       fechaFin:     entity.fechaFin?.toISOString().slice(0, 10) ?? null,
       valor:        entity.valor,
@@ -104,9 +120,73 @@ export class VentasPresenter {
       pesoFisicoKg:         entity.pesoFisicoKg,
       pesoTarificadoKg:     entity.pesoTarificadoKg,
       valorServicio:        entity.valorServicio,
+      valorSeguro:          entity.valorSeguro,
+      valorEstampillas:     entity.valorEstampillas,
+      valorCertificacion:   entity.valorCertificacion,
       valorTotal:           entity.valorTotal,
       estado:               entity.estado,
       createdAt:            entity.createdAt.toISOString(),
+      loteMasivoId:         entity.loteMasivoId ?? null,
+    };
+  }
+
+  static toGuia(entity: EnvioEntity, ctx?: GuiaContexto) {
+    const esInternacional = entity.tipo.startsWith('internacional');
+    return {
+      // Lo necesita el cliente para pedir el PDF oficial a /ventas/envios/:id/guia-pdf.
+      envioId:      entity.id,
+      numeroGuia:   entity.numeroGuia,
+      // El código de barras de la guía es el S10 (RA185194038CO); sólo existe
+      // para servicios con rastreo, el resto cae al número de guía.
+      codigoBarras:   entity.codigoTracking ?? entity.numeroGuia,
+      tipo:           esInternacional ? 'internacional' : 'nacional',
+      tipoServicio:   ctx?.servicio.nombre ?? entity.tipo,
+      codigoServicio: ctx?.servicio.codigo ?? '',
+      remitente: {
+        nombre:       entity.remitenteNombre,
+        documento:    entity.remitenteDocumento,
+        telefono:     entity.remitenteTelefono,
+        email:        entity.remitenteEmail,
+        direccion:    entity.remitenteDireccion,
+        ciudad:       entity.remitenteCiudad,
+        departamento: entity.remitenteDepartamento,
+        codigoPostal: entity.remitenteCodigoPostal,
+        pais:         'CO',
+      },
+      destinatario: {
+        nombre:       entity.destinatarioNombre,
+        documento:    entity.destinatarioDocumento,
+        telefono:     entity.destinatarioTelefono,
+        email:        entity.destinatarioEmail,
+        direccion:    entity.destinatarioDireccion,
+        ciudad:       entity.destinatarioCiudad,
+        departamento: entity.destinatarioDepartamento,
+        codigoPostal: entity.destinatarioCodigoPostal,
+        pais:         entity.destinatarioPais,
+      },
+      peso: {
+        fisicoKg:      entity.pesoFisicoKg,
+        tarificadoKg:  entity.pesoTarificadoKg,
+        altoCm:        entity.altoCm,
+        anchoCm:       entity.anchoCm,
+        largoCm:       entity.largoCm,
+        volumetricoKg: entity.pesoVolumetricoKg,
+      },
+      valores: {
+        servicio:   entity.valorServicio,
+        manejo:     entity.valorCertificacion,
+        seguro:     entity.valorSeguro,
+        declarado:  entity.valorDeclarado,
+        total:      entity.valorTotal,
+      },
+      contenido:            entity.contenido,
+      observaciones:        entity.observaciones,
+      estado:               entity.estado,
+      generadoEn:           entity.createdAt.toISOString(),
+      ordenServicio:        entity.id,
+      fechaEntregaEstimada: ctx?.fechaEntregaEstimada ?? null,
+      centroOperativo:       ctx?.sucursal.nombre ?? null,
+      centroOperativoCodigo: ctx?.sucursal.codigo ?? null,
     };
   }
 }

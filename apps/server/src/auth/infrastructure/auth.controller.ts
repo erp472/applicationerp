@@ -1,4 +1,6 @@
-import { Controller, Post, Get, Body, Headers, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Body, Headers, UseGuards, BadRequestException } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
+import { ZodError } from 'zod';
 import {
   ApiTags,
   ApiBearerAuth,
@@ -11,13 +13,16 @@ import { AuthService } from '../application/auth.service.js';
 import { LoginSchema } from '../dto/login.dto.js';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
+import { AuditKey } from '../../audit/decorators/audit-key.decorator.js';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @AuditKey('ADM-03', 'LOGIN')
   @Post('login')
+  @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @ApiOperation({ summary: 'Iniciar sesión', description: 'Devuelve un JWT Bearer token' })
   @ApiBody({
     schema: {
@@ -54,10 +59,18 @@ export class AuthController {
     @Headers('x-mac-address') mac?: string,
     @Headers('x-plataforma') plataforma?: string,
   ) {
-    const dto = LoginSchema.parse(body);
-    return this.authService.login(dto, mac, plataforma);
+    try {
+      const dto = LoginSchema.parse(body);
+      return this.authService.login(dto, mac, plataforma);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
   }
 
+  @AuditKey('ADM-04')
   @UseGuards(JwtAuthGuard)
   @Get('me')
   @ApiBearerAuth()
