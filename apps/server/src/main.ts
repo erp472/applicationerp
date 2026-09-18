@@ -34,9 +34,8 @@ async function bootstrap() {
   const config = app.get(ConfigService);
 
   await app.register(cors, {
-    // En dev: permite cualquier origen. En prod: whitelist explícita desde CORS_ORIGIN (comma-separated),
-    // que siempre incluye los orígenes de la app de escritorio (ver ConfigService.corsOrigins).
-    origin: config.isDev ? true : config.corsOrigins,
+    // CORS abierto temporalmente (cualquier origen) mientras se estabiliza el flujo de login web/Tauri.
+    origin: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
   });

@@ -29,6 +29,7 @@ export class ConfigService {
 
   get corsOrigins(): string[] {
     const configured = this.env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean);
+    // Orígenes de la app de escritorio: siempre permitidos, sin depender de CORS_ORIGIN en el entorno.
     const desktopOrigins = ['tauri://localhost', 'https://tauri.localhost', 'http://tauri.localhost'];
     return [...new Set([...configured, ...desktopOrigins])];
   }
