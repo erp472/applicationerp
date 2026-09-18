@@ -12,7 +12,10 @@ export const envSchema = z.object({
 
   // Comma-separated list of allowed origins. In dev, defaults to localhost + tauri.
   // tauri://localhost = macOS/Linux, https://tauri.localhost = Windows
-  CORS_ORIGIN: z.string().default('http://localhost:5173,tauri://localhost,https://tauri.localhost'),
+  // :5173 = Vite web dev, :5174 = Tauri devUrl (ver tauri.conf.json)
+  CORS_ORIGIN: z.string().default(
+    'http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174,tauri://localhost,https://tauri.localhost',
+  ),
 
   REDIS_HOST: z.string().default('localhost'),
   REDIS_PORT: z.coerce.number().int().min(1).default(6379),
